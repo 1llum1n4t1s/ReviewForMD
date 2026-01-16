@@ -46,6 +46,11 @@
     deferScriptEnabled: true,
     whitelistDomains: [],
     blacklistDomains: [],
+    spaOnly: false,
+    frameworkDetectionEnabled: false,
+    frameworkTargets: ["react", "vue", "angular", "svelte"],
+    optimizationDomThresholdEnabled: false,
+    optimizationDomNodeThreshold: 1500,
   };
 
   const normalizeDomainEntry = (value) => value.trim().toLowerCase();
@@ -69,6 +74,62 @@
 
     if (!isWhitelisted || isBlacklisted) {
       return;
+    }
+
+    const detectFrameworks = () => {
+      const detectors = {
+        react: () =>
+          Boolean(
+            window.__REACT_DEVTOOLS_GLOBAL_HOOK__ ||
+              document.querySelector("[data-reactroot],[data-reactid]"),
+          ),
+        vue: () =>
+          Boolean(
+            window.__VUE_DEVTOOLS_GLOBAL_HOOK__ ||
+              document.querySelector("[data-v-app],[data-vue]"),
+          ),
+        angular: () =>
+          Boolean(
+            window.ng || document.querySelector("[ng-version],[ng-app],[data-ng-app]"),
+          ),
+        svelte: () =>
+          Boolean(
+            window.__SVELTE_DEVTOOLS_GLOBAL_HOOK__ ||
+              document.querySelector("[data-svelte-h]"),
+          ),
+      };
+
+      return Object.entries(detectors)
+        .filter(([, detector]) => detector())
+        .map(([name]) => name);
+    };
+
+    const detectedFrameworks = detectFrameworks();
+    const isSpa = (() => {
+      const spaRoots = document.querySelector(
+        "#app,#root,#__next,#__nuxt,[data-router-view]",
+      );
+      const hasHistoryApi =
+        typeof window.history?.pushState === "function" &&
+        typeof window.history?.replaceState === "function";
+
+      return Boolean(spaRoots && hasHistoryApi) || detectedFrameworks.length > 0;
+    })();
+
+    if (settings.spaOnly && !isSpa) {
+      return;
+    }
+
+    if (settings.frameworkDetectionEnabled) {
+      const targetFrameworks = Array.isArray(settings.frameworkTargets)
+        ? settings.frameworkTargets.map((name) => name.toLowerCase())
+        : [];
+      const hasMatch = detectedFrameworks.some((framework) =>
+        targetFrameworks.includes(framework),
+      );
+      if (!hasMatch) {
+        return;
+      }
     }
 
     if (settings.showBanner) {
@@ -268,6 +329,27 @@
         },
         warnings,
       };
+    };
+
+    const countDomNodes = () => {
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+
+      if (!rootElement) {
+        return 0;
+      }
+
+      let domNodeCount = 0;
+      const stack = [rootElement];
+      while (stack.length > 0) {
+        const node = stack.pop();
+        domNodeCount += 1;
+        Array.from(node.children).forEach((child) => {
+          stack.push(child);
+        });
+      }
+
+      return domNodeCount;
     };
 
     const measureDomStats = () => {
@@ -767,6 +849,27 @@
       return report;
     };
 
+    const runConditionalOptimizations = () => {
+      const domNodeCount = countDomNodes();
+      const threshold = Math.max(
+        0,
+        Number.parseInt(settings.optimizationDomNodeThreshold || "0", 10),
+      );
+
+      if (settings.optimizationDomThresholdEnabled && domNodeCount < threshold) {
+        window.WebLoadingAssistOptimizationReport = {
+          skipped: true,
+          reason: "dom-node-threshold",
+          evaluatedAt: new Date().toISOString(),
+          domNodeCount,
+          threshold,
+        };
+        return;
+      }
+
+      window.WebLoadingAssistOptimizationReport = runOptimizationActions();
+    };
+
     if (settings.imageLazyLoadingEnabled) {
       ensureLazyLoading();
       setupLargeImageObserver();
@@ -777,7 +880,7 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
         window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
-        window.WebLoadingAssistOptimizationReport = runOptimizationActions();
+        runConditionalOptimizations();
         if (settings.deferScriptEnabled) {
           deferScripts();
         }
@@ -785,7 +888,7 @@
       });
     } else {
       window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
-      window.WebLoadingAssistOptimizationReport = runOptimizationActions();
+      runConditionalOptimizations();
       if (settings.deferScriptEnabled) {
         deferScripts();
       }

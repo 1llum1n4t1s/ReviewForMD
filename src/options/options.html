@@ -14,6 +14,32 @@
           <input type="checkbox" id="show-banner" />
           <span>通知バナーを表示する</span>
         </label>
+        <fieldset class="option-group">
+          <legend>最適化機能</legend>
+          <label class="option">
+            <input type="checkbox" id="enable-image-lazy" />
+            <span>画像遅延ロード</span>
+          </label>
+          <label class="option">
+            <input type="checkbox" id="enable-preconnect" />
+            <span>preconnect追加</span>
+          </label>
+          <label class="option">
+            <input type="checkbox" id="enable-defer-script" />
+            <span>script遅延化</span>
+          </label>
+        </fieldset>
+        <fieldset class="option-group">
+          <legend>対象ドメイン</legend>
+          <label class="option option-textarea">
+            <span>ホワイトリスト（1行に1件）</span>
+            <textarea id="whitelist-domains" rows="4"></textarea>
+          </label>
+          <label class="option option-textarea">
+            <span>ブラックリスト（1行に1件）</span>
+            <textarea id="blacklist-domains" rows="4"></textarea>
+          </label>
+        </fieldset>
         <button type="submit" class="primary">保存</button>
       </form>
       <p id="status" role="status" aria-live="polite"></p>

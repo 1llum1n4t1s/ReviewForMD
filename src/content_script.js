@@ -117,6 +117,150 @@
       return;
     }
 
+    const diagnosticThresholds = {
+      domNodeCount: 1500,
+      maxDepth: 20,
+      maxChildrenPerElement: 200,
+      offscreenLargeElementHeight: 5000,
+      tableCellCount: 50000,
+    };
+
+    const buildDiagnosticsReport = () => {
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+
+      if (!rootElement) {
+        return {
+          generatedAt: new Date().toISOString(),
+          thresholds: { ...diagnosticThresholds },
+          metrics: {
+            domNodeCount: 0,
+            maxDepth: 0,
+            maxChildrenPerElement: 0,
+            offscreenLargeElementCount: 0,
+            maxTableCellCount: 0,
+          },
+          warnings: [],
+        };
+      }
+
+      let domNodeCount = 0;
+      let maxDepth = 0;
+      let maxChildrenPerElement = 0;
+      let offscreenLargeElementCount = 0;
+      let maxTableCellCount = 0;
+      const offscreenLargeSamples = [];
+
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+
+      const stack = [{ node: rootElement, depth: 1 }];
+      while (stack.length > 0) {
+        const { node, depth } = stack.pop();
+        domNodeCount += 1;
+        maxDepth = Math.max(maxDepth, depth);
+        maxChildrenPerElement = Math.max(
+          maxChildrenPerElement,
+          node.children.length,
+        );
+
+        const rect = node.getBoundingClientRect();
+        const height = Math.max(node.offsetHeight || 0, rect.height || 0);
+        const isOutsideViewport =
+          rect.bottom < 0 ||
+          rect.top > viewportHeight ||
+          rect.right < 0 ||
+          rect.left > viewportWidth;
+
+        if (
+          height >= diagnosticThresholds.offscreenLargeElementHeight &&
+          isOutsideViewport
+        ) {
+          offscreenLargeElementCount += 1;
+          if (offscreenLargeSamples.length < 5) {
+            offscreenLargeSamples.push({
+              tagName: node.tagName.toLowerCase(),
+              height,
+              rect: {
+                top: rect.top,
+                bottom: rect.bottom,
+                left: rect.left,
+                right: rect.right,
+              },
+            });
+          }
+        }
+
+        Array.from(node.children).forEach((child) => {
+          stack.push({ node: child, depth: depth + 1 });
+        });
+      }
+
+      rootElement.querySelectorAll("table").forEach((table) => {
+        const cellCount = table.querySelectorAll("td, th").length;
+        maxTableCellCount = Math.max(maxTableCellCount, cellCount);
+      });
+
+      const warnings = [];
+      if (domNodeCount >= diagnosticThresholds.domNodeCount) {
+        warnings.push({
+          id: "dom-node-count",
+          label: "DOMノード総数",
+          value: domNodeCount,
+          threshold: diagnosticThresholds.domNodeCount,
+        });
+      }
+      if (maxDepth >= diagnosticThresholds.maxDepth) {
+        warnings.push({
+          id: "max-depth",
+          label: "ネスト深度",
+          value: maxDepth,
+          threshold: diagnosticThresholds.maxDepth,
+        });
+      }
+      if (maxChildrenPerElement >= diagnosticThresholds.maxChildrenPerElement) {
+        warnings.push({
+          id: "max-children",
+          label: "1要素あたりの子要素数",
+          value: maxChildrenPerElement,
+          threshold: diagnosticThresholds.maxChildrenPerElement,
+        });
+      }
+      if (
+        offscreenLargeElementCount > 0 &&
+        diagnosticThresholds.offscreenLargeElementHeight > 0
+      ) {
+        warnings.push({
+          id: "offscreen-large-elements",
+          label: "画面外に配置された巨大要素",
+          value: offscreenLargeElementCount,
+          threshold: diagnosticThresholds.offscreenLargeElementHeight,
+          samples: offscreenLargeSamples,
+        });
+      }
+      if (maxTableCellCount >= diagnosticThresholds.tableCellCount) {
+        warnings.push({
+          id: "table-cell-count",
+          label: "tableのセル数",
+          value: maxTableCellCount,
+          threshold: diagnosticThresholds.tableCellCount,
+        });
+      }
+
+      return {
+        generatedAt: new Date().toISOString(),
+        thresholds: { ...diagnosticThresholds },
+        metrics: {
+          domNodeCount,
+          maxDepth,
+          maxChildrenPerElement,
+          offscreenLargeElementCount,
+          maxTableCellCount,
+        },
+        warnings,
+      };
+    };
+
     const ensureLazyLoading = () => {
       root.querySelectorAll(options.imageLazySelector).forEach((img) => {
         if (!img.hasAttribute("loading")) {
@@ -325,12 +469,14 @@
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
+        window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
         if (settings.deferScriptEnabled) {
           deferScripts();
         }
         scheduleIdleLoad();
       });
     } else {
+      window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
       if (settings.deferScriptEnabled) {
         deferScripts();
       }

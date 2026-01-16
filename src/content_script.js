@@ -28,6 +28,15 @@
     deferScriptSameOriginOnly: true,
     idleResourceSelector: "[data-idle-src],[data-idle-href]",
     idleTimeout: 2000,
+    offscreenLazySelector: "section,article,div,table,ul,ol",
+    offscreenLazyMinHeight: 1200,
+    offscreenLazyRootMargin: "400px 0px",
+    virtualizeListThreshold: 120,
+    virtualizeTableRowThreshold: 200,
+    virtualizedItemIntrinsicSize: "1px 800px",
+    deepTreeDepthThreshold: 14,
+    deepTreeMinDescendants: 60,
+    lazyPlaceholderBackground: "rgba(0,0,0,0.02)",
   };
 
   const settingsDefaults = {
@@ -261,6 +270,36 @@
       };
     };
 
+    const measureDomStats = () => {
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+
+      if (!rootElement) {
+        return {
+          domNodeCount: 0,
+          layoutCostMs: 0,
+        };
+      }
+
+      let domNodeCount = 0;
+      const stack = [rootElement];
+      const start = performance.now();
+
+      while (stack.length > 0) {
+        const node = stack.pop();
+        domNodeCount += 1;
+        node.getBoundingClientRect();
+        Array.from(node.children).forEach((child) => {
+          stack.push(child);
+        });
+      }
+
+      return {
+        domNodeCount,
+        layoutCostMs: Math.round((performance.now() - start) * 100) / 100,
+      };
+    };
+
     const ensureLazyLoading = () => {
       root.querySelectorAll(options.imageLazySelector).forEach((img) => {
         if (!img.hasAttribute("loading")) {
@@ -460,6 +499,274 @@
       window.setTimeout(loadIdleResources, options.idleTimeout);
     };
 
+    const setupLazyPlaceholderObserver = () => {
+      if (!("IntersectionObserver" in window)) {
+        return null;
+      }
+
+      const placeholderMap = new Map();
+      const observer = new IntersectionObserver(
+        (entries, currentObserver) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) {
+              return;
+            }
+
+            const placeholder = entry.target;
+            const original = placeholderMap.get(placeholder);
+            if (!original || !placeholder.parentNode) {
+              currentObserver.unobserve(placeholder);
+              placeholderMap.delete(placeholder);
+              return;
+            }
+
+            placeholder.replaceWith(original);
+            currentObserver.unobserve(placeholder);
+            placeholderMap.delete(placeholder);
+          });
+        },
+        { rootMargin: options.offscreenLazyRootMargin },
+      );
+
+      return { observer, placeholderMap };
+    };
+
+    const createPlaceholder = (original, reason, placeholderMap, observer) => {
+      const rect = original.getBoundingClientRect();
+      const height = Math.max(original.offsetHeight || 0, rect.height || 0);
+      const width = Math.max(original.offsetWidth || 0, rect.width || 0);
+
+      const placeholder = document.createElement("div");
+      placeholder.dataset.wlaPlaceholder = reason;
+      placeholder.style.minHeight = `${height}px`;
+      placeholder.style.minWidth = `${width}px`;
+      placeholder.style.background = options.lazyPlaceholderBackground;
+      placeholder.style.borderRadius = "2px";
+
+      placeholderMap.set(placeholder, original);
+      observer.observe(placeholder);
+      original.replaceWith(placeholder);
+    };
+
+    const isElementOffscreen = (rect, viewportWidth, viewportHeight) =>
+      rect.bottom < 0 ||
+      rect.top > viewportHeight ||
+      rect.right < 0 ||
+      rect.left > viewportWidth;
+
+    const lazyRenderOffscreenLargeElements = (placeholderManager) => {
+      if (!placeholderManager) {
+        return 0;
+      }
+
+      const { observer, placeholderMap } = placeholderManager;
+      const candidates = Array.from(
+        root.querySelectorAll(options.offscreenLazySelector),
+      );
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      let replacedCount = 0;
+
+      candidates.forEach((element) => {
+        if (
+          element.dataset.wlaPlaceholder ||
+          element.closest("[data-wla-placeholder]")
+        ) {
+          return;
+        }
+
+        if (["HTML", "BODY"].includes(element.tagName)) {
+          return;
+        }
+
+        const style = window.getComputedStyle(element);
+        if (style.position === "fixed" || style.position === "sticky") {
+          return;
+        }
+
+        const rect = element.getBoundingClientRect();
+        const height = Math.max(element.offsetHeight || 0, rect.height || 0);
+
+        if (
+          height < options.offscreenLazyMinHeight ||
+          !isElementOffscreen(rect, viewportWidth, viewportHeight)
+        ) {
+          return;
+        }
+
+        createPlaceholder(element, "offscreen-large", placeholderMap, observer);
+        replacedCount += 1;
+      });
+
+      return replacedCount;
+    };
+
+    const virtualizeListsAndTables = () => {
+      let virtualizedCount = 0;
+      const listSelectors = ["ul", "ol"];
+      listSelectors.forEach((selector) => {
+        root.querySelectorAll(selector).forEach((list) => {
+          const items = Array.from(list.children).filter(
+            (child) => child.tagName === "LI",
+          );
+          if (items.length < options.virtualizeListThreshold) {
+            return;
+          }
+
+          items.forEach((item) => {
+            item.style.contentVisibility = "auto";
+            item.style.containIntrinsicSize = options.virtualizedItemIntrinsicSize;
+          });
+          virtualizedCount += items.length;
+        });
+      });
+
+      root.querySelectorAll("table").forEach((table) => {
+        const rows = Array.from(
+          table.querySelectorAll("tbody tr, tr"),
+        );
+        if (rows.length < options.virtualizeTableRowThreshold) {
+          return;
+        }
+
+        rows.forEach((row) => {
+          row.style.contentVisibility = "auto";
+          row.style.containIntrinsicSize = options.virtualizedItemIntrinsicSize;
+        });
+        virtualizedCount += rows.length;
+      });
+
+      return virtualizedCount;
+    };
+
+    const mergeUnnecessaryWrappers = () => {
+      let mergeCount = 0;
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+      if (!rootElement) {
+        return mergeCount;
+      }
+
+      const candidates = Array.from(rootElement.querySelectorAll("div,span"));
+      candidates.forEach((wrapper) => {
+        if (wrapper.attributes.length > 0) {
+          return;
+        }
+
+        if (wrapper.childNodes.length !== 1) {
+          return;
+        }
+
+        const onlyChild = wrapper.firstChild;
+        if (!onlyChild || onlyChild.nodeType !== Node.ELEMENT_NODE) {
+          return;
+        }
+
+        if (!wrapper.parentNode || wrapper === rootElement) {
+          return;
+        }
+
+        wrapper.replaceWith(onlyChild);
+        mergeCount += 1;
+      });
+
+      return mergeCount;
+    };
+
+    const lazyDeepDisplayTrees = (placeholderManager) => {
+      if (!placeholderManager) {
+        return 0;
+      }
+
+      const { observer, placeholderMap } = placeholderManager;
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+      if (!rootElement) {
+        return 0;
+      }
+
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      let lazyCount = 0;
+
+      const stack = [{ node: rootElement, depth: 1 }];
+      while (stack.length > 0) {
+        const { node, depth } = stack.pop();
+        const descendantCount = node.querySelectorAll("*").length;
+        if (
+          depth >= options.deepTreeDepthThreshold &&
+          descendantCount >= options.deepTreeMinDescendants
+        ) {
+          const rect = node.getBoundingClientRect();
+          if (isElementOffscreen(rect, viewportWidth, viewportHeight)) {
+            createPlaceholder(node, "deep-tree", placeholderMap, observer);
+            lazyCount += 1;
+            continue;
+          }
+        }
+
+        Array.from(node.children).forEach((child) => {
+          stack.push({ node: child, depth: depth + 1 });
+        });
+      }
+
+      return lazyCount;
+    };
+
+    const runOptimizationActions = () => {
+      const report = {
+        generatedAt: new Date().toISOString(),
+        before: measureDomStats(),
+        after: null,
+        actions: [],
+      };
+
+      const placeholderManager = setupLazyPlaceholderObserver();
+      const offscreenCount = lazyRenderOffscreenLargeElements(placeholderManager);
+      if (offscreenCount > 0) {
+        report.actions.push({
+          id: "offscreen-lazy-render",
+          label: "画面外の巨大要素を遅延描画",
+          affectedCount: offscreenCount,
+        });
+      }
+
+      const virtualizedCount = virtualizeListsAndTables();
+      if (virtualizedCount > 0) {
+        report.actions.push({
+          id: "virtualize-long-lists",
+          label: "長大なリスト/テーブルの仮想化",
+          affectedCount: virtualizedCount,
+        });
+      }
+
+      const mergedCount = mergeUnnecessaryWrappers();
+      if (mergedCount > 0) {
+        report.actions.push({
+          id: "merge-wrappers",
+          label: "不要なネストの統合",
+          affectedCount: mergedCount,
+        });
+      }
+
+      const deepTreeCount = lazyDeepDisplayTrees(placeholderManager);
+      if (deepTreeCount > 0) {
+        report.actions.push({
+          id: "lazy-deep-trees",
+          label: "深い表示ツリーの遅延生成",
+          affectedCount: deepTreeCount,
+        });
+      }
+
+      report.after = measureDomStats();
+      report.diff = {
+        domNodeCount: report.after.domNodeCount - report.before.domNodeCount,
+        layoutCostMs: report.after.layoutCostMs - report.before.layoutCostMs,
+      };
+
+      return report;
+    };
+
     if (settings.imageLazyLoadingEnabled) {
       ensureLazyLoading();
       setupLargeImageObserver();
@@ -470,6 +777,7 @@
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
         window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
+        window.WebLoadingAssistOptimizationReport = runOptimizationActions();
         if (settings.deferScriptEnabled) {
           deferScripts();
         }
@@ -477,6 +785,7 @@
       });
     } else {
       window.WebLoadingAssistDiagnostics = buildDiagnosticsReport();
+      window.WebLoadingAssistOptimizationReport = runOptimizationActions();
       if (settings.deferScriptEnabled) {
         deferScripts();
       }

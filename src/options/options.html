@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web Loading Assist 設定</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Web Loading Assist 設定</h1>
+      <form id="options-form">
+        <label class="option">
+          <input type="checkbox" id="show-banner" />
+          <span>通知バナーを表示する</span>
+        </label>
+        <button type="submit" class="primary">保存</button>
+      </form>
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

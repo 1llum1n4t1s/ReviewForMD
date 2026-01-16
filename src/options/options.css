@@ -27,6 +27,29 @@ h1 {
   margin-bottom: 16px;
 }
 
+.option-inline {
+  align-items: center;
+}
+
+.option-number {
+  width: 120px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-family: inherit;
+}
+
+.option-subgroup {
+  margin: 0 0 12px;
+  padding-left: 8px;
+}
+
+.option-subgroup-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
 .option-group {
   border: 1px solid #e2e4ea;
   border-radius: 10px;

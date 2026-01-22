@@ -2,6 +2,9 @@
 
 # Web Loading Assist拡張機能パッケージ生成スクリプト
 
+# スクリプトのディレクトリに移動
+cd "$(dirname "$0")" || exit 1
+
 echo "拡張機能パッケージを生成中..."
 echo ""
 

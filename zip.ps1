@@ -3,7 +3,10 @@
 Write-Host "拡張機能パッケージを生成中..." -ForegroundColor Cyan
 Write-Host ""
 
-# アイコン生成関数
+# スクリプトのディレクトリをカレントディレクトリに設定
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Push-Location $scriptDir
+
 function Resize-Icon {
     param(
         [string]$SourcePath,
@@ -12,13 +15,17 @@ function Resize-Icon {
     )
 
     try {
+        $absoluteSourcePath = (Resolve-Path -Path $SourcePath -ErrorAction Stop).Path
+        $absoluteDestPath = (Resolve-Path -Path (Split-Path -Parent $DestinationPath) -ErrorAction Stop).Path
+        $absoluteDestinationPath = Join-Path -Path $absoluteDestPath -ChildPath (Split-Path -Leaf $DestinationPath)
+
         [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null
 
-        $image = [System.Drawing.Image]::FromFile($SourcePath)
+        $image = [System.Drawing.Image]::FromFile($absoluteSourcePath)
         $bitmap = New-Object System.Drawing.Bitmap($Size, $Size)
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         $graphics.DrawImage($image, 0, 0, $Size, $Size)
-        $bitmap.Save($DestinationPath)
+        $bitmap.Save($absoluteDestinationPath)
         $graphics.Dispose()
         $bitmap.Dispose()
         $image.Dispose()
@@ -98,7 +105,9 @@ if (Test-Path "./WebLoadingAssist.zip") {
     Write-Host "   $fileSizeMB MB" -ForegroundColor White
     Write-Host ""
     Write-Host "パッケージが正常に作成されました!" -ForegroundColor Green
+    Pop-Location
 } else {
     Write-Host "ZIPファイルの作成に失敗しました" -ForegroundColor Red
+    Pop-Location
     exit 1
 }

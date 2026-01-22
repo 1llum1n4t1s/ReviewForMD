@@ -133,22 +133,175 @@
     }
 
     if (settings.showBanner) {
-      const bannerId = "web-loading-assist-banner";
-      if (!document.getElementById(bannerId)) {
-        const banner = document.createElement("div");
-        banner.id = bannerId;
-        banner.textContent = "Web Loading Assist が有効です";
-        banner.style.position = "fixed";
-        banner.style.bottom = "16px";
-        banner.style.right = "16px";
-        banner.style.zIndex = "9999";
-        banner.style.padding = "8px 12px";
-        banner.style.background = "rgba(20, 20, 20, 0.85)";
-        banner.style.color = "#fff";
-        banner.style.fontSize = "12px";
-        banner.style.borderRadius = "6px";
+      const indicatorId = "web-loading-assist-indicator";
+      if (!document.getElementById(indicatorId)) {
+        const styleId = "web-loading-assist-styles";
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement("style");
+          style.id = styleId;
+          style.textContent = `
+            #web-loading-assist-indicator {
+              position: fixed;
+              bottom: 16px;
+              right: 16px;
+              z-index: 9999;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              font-size: 12px;
+              color: #fff;
+              background: linear-gradient(135deg, rgba(20, 20, 20, 0.95) 0%, rgba(40, 40, 40, 0.95) 100%);
+              border-radius: 8px;
+              padding: 12px 16px;
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+              min-width: 200px;
+              max-width: 280px;
+              transition: all 0.3s ease;
+              cursor: pointer;
+            }
+            #web-loading-assist-indicator:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+            }
+            #web-loading-assist-indicator.collapsed {
+              padding: 10px 14px;
+              min-width: 160px;
+            }
+            .wla-indicator-header {
+              display: flex;
+              align-items: center;
+              margin-bottom: 8px;
+              font-weight: 600;
+            }
+            .wla-indicator-icon {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 20px;
+              height: 20px;
+              margin-right: 8px;
+              background: rgba(76, 175, 80, 0.3);
+              border-radius: 4px;
+              font-size: 10px;
+            }
+            .wla-indicator-content {
+              display: none;
+            }
+            #web-loading-assist-indicator.expanded .wla-indicator-content {
+              display: block;
+            }
+            .wla-indicator-stat {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 4px 0;
+              font-size: 11px;
+              line-height: 1.4;
+              opacity: 0.9;
+            }
+            .wla-indicator-stat-label {
+              flex: 1;
+              color: #ccc;
+            }
+            .wla-indicator-stat-value {
+              font-weight: 600;
+              color: #4caf50;
+              margin-left: 8px;
+              text-align: right;
+            }
+            .wla-indicator-actions {
+              display: flex;
+              gap: 6px;
+              margin-top: 10px;
+              padding-top: 8px;
+              border-top: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .wla-indicator-action-btn {
+              flex: 1;
+              padding: 4px 8px;
+              background: rgba(76, 175, 80, 0.2);
+              border: 1px solid rgba(76, 175, 80, 0.4);
+              border-radius: 4px;
+              color: #4caf50;
+              font-size: 10px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.2s ease;
+            }
+            .wla-indicator-action-btn:hover {
+              background: rgba(76, 175, 80, 0.3);
+              border-color: rgba(76, 175, 80, 0.6);
+            }
+            .wla-indicator-progress {
+              width: 100%;
+              height: 3px;
+              background: rgba(255, 255, 255, 0.1);
+              border-radius: 2px;
+              margin-top: 6px;
+              overflow: hidden;
+            }
+            .wla-indicator-progress-bar {
+              height: 100%;
+              background: linear-gradient(90deg, #4caf50, #81c784);
+              border-radius: 2px;
+              transition: width 0.3s ease;
+            }
+          `;
+          document.head.appendChild(style);
+        }
 
-        document.body.appendChild(banner);
+        const indicator = document.createElement("div");
+        indicator.id = indicatorId;
+        indicator.className = "collapsed";
+
+        const header = document.createElement("div");
+        header.className = "wla-indicator-header";
+        header.innerHTML = '<div class="wla-indicator-icon">⚡</div><span>Web Loading Assist</span>';
+
+        const content = document.createElement("div");
+        content.className = "wla-indicator-content";
+
+        const stats = document.createElement("div");
+        stats.id = "wla-indicator-stats";
+
+        const actions = document.createElement("div");
+        actions.className = "wla-indicator-actions";
+        const detailsBtn = document.createElement("button");
+        detailsBtn.className = "wla-indicator-action-btn";
+        detailsBtn.textContent = "詳細";
+        detailsBtn.type = "button";
+        detailsBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const report = window.WebLoadingAssistOptimizationReport;
+          if (report) {
+            console.log("Web Loading Assist Optimization Report:", report);
+            alert("パフォーマンスレポートをコンソールに出力しました。");
+          }
+        });
+
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "wla-indicator-action-btn";
+        closeBtn.textContent = "閉じる";
+        closeBtn.type = "button";
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          indicator.remove();
+        });
+
+        actions.appendChild(detailsBtn);
+        actions.appendChild(closeBtn);
+
+        content.appendChild(stats);
+        content.appendChild(actions);
+
+        indicator.appendChild(header);
+        indicator.appendChild(content);
+
+        indicator.addEventListener("click", () => {
+          indicator.classList.toggle("collapsed");
+          indicator.classList.toggle("expanded");
+        });
+
+        document.body.appendChild(indicator);
+        window.WebLoadingAssistIndicator = indicator;
       }
     }
 
@@ -795,6 +948,89 @@
       return lazyCount;
     };
 
+    const updateIndicatorDisplay = (report) => {
+      const indicator = window.WebLoadingAssistIndicator;
+      if (!indicator) {
+        return;
+      }
+
+      const statsContainer = document.getElementById("wla-indicator-stats");
+      if (!statsContainer) {
+        return;
+      }
+
+      statsContainer.innerHTML = "";
+
+      if (!report || report.skipped) {
+        const message = document.createElement("div");
+        message.className = "wla-indicator-stat";
+        message.innerHTML = '<span class="wla-indicator-stat-label">最適化をスキップしました</span>';
+        statsContainer.appendChild(message);
+        return;
+      }
+
+      const domReduction = report.before.domNodeCount + report.diff.domNodeCount;
+      const reductionRate = report.before.domNodeCount > 0
+        ? Math.abs((domReduction / report.before.domNodeCount) * 100)
+        : 0;
+      const layoutImprovement = -report.diff.layoutCostMs;
+
+      const statItems = [
+        {
+          label: "最適化処理",
+          value: `${report.actions.length}件`,
+        },
+        {
+          label: "DOM削減",
+          value: `${Math.abs(domReduction)}個 (${reductionRate.toFixed(1)}%)`,
+        },
+        {
+          label: "レイアウト改善",
+          value: `${layoutImprovement.toFixed(2)}ms`,
+        },
+      ];
+
+      statItems.forEach((item) => {
+        const statEl = document.createElement("div");
+        statEl.className = "wla-indicator-stat";
+        statEl.innerHTML = `
+          <span class="wla-indicator-stat-label">${item.label}</span>
+          <span class="wla-indicator-stat-value">${item.value}</span>
+        `;
+        statsContainer.appendChild(statEl);
+      });
+
+      if (report.actions.length > 0) {
+        const actionList = document.createElement("div");
+        actionList.style.marginTop = "8px";
+        actionList.style.paddingTop = "8px";
+        actionList.style.borderTop = "1px solid rgba(255, 255, 255, 0.1)";
+        actionList.style.fontSize = "10px";
+        actionList.style.opacity = "0.8";
+
+        report.actions.forEach((action) => {
+          const actionEl = document.createElement("div");
+          actionEl.style.padding = "2px 0";
+          actionEl.textContent = `• ${action.label} (${action.affectedCount}件)`;
+          actionList.appendChild(actionEl);
+        });
+
+        statsContainer.appendChild(actionList);
+      }
+
+      const progressBar = document.createElement("div");
+      progressBar.className = "wla-indicator-progress";
+      const barInner = document.createElement("div");
+      barInner.className = "wla-indicator-progress-bar";
+      const improvement = Math.min(100, Math.max(0, reductionRate * 2));
+      barInner.style.width = `${improvement}%`;
+      progressBar.appendChild(barInner);
+      statsContainer.appendChild(progressBar);
+
+      indicator.classList.remove("collapsed");
+      indicator.classList.add("expanded");
+    };
+
     const runOptimizationActions = () => {
       const report = {
         generatedAt: new Date().toISOString(),
@@ -846,6 +1082,7 @@
         layoutCostMs: report.after.layoutCostMs - report.before.layoutCostMs,
       };
 
+      updateIndicatorDisplay(report);
       return report;
     };
 

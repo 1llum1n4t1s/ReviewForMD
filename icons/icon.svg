@@ -1,0 +1,99 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- ネオングロー効果 -->
+    <filter id="neonGlow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="strongGlow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- サイバーグラデーション -->
+    <linearGradient id="cyberGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0e27;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#1a1f3a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f1629;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- ネオンシアングラデーション -->
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00f0ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- マゼンタグラデーション -->
+    <linearGradient id="neonMagenta" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff00ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ff0080;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="512" height="512" rx="115" fill="url(#cyberGradient)"/>
+
+  <!-- サイバーグリッド（背景装飾） -->
+  <g opacity="0.15">
+    <!-- 横線 -->
+    <line x1="0" y1="128" x2="512" y2="128" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="0" y1="256" x2="512" y2="256" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="0" y1="384" x2="512" y2="384" stroke="#00f0ff" stroke-width="1"/>
+    <!-- 縦線 -->
+    <line x1="128" y1="0" x2="128" y2="512" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="256" y1="0" x2="256" y2="512" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="384" y1="0" x2="384" y2="512" stroke="#00f0ff" stroke-width="1"/>
+  </g>
+
+  <!-- コーナーアクセント（サイバー感） -->
+  <g stroke="url(#neonCyan)" stroke-width="4" fill="none" filter="url(#neonGlow)">
+    <!-- 左上 -->
+    <path d="M 60,120 L 60,60 L 120,60"/>
+    <!-- 右上 -->
+    <path d="M 392,60 L 452,60 L 452,120"/>
+    <!-- 左下 -->
+    <path d="M 120,452 L 60,452 L 60,392"/>
+    <!-- 右下 -->
+    <path d="M 452,392 L 452,452 L 392,452"/>
+  </g>
+
+  <!-- メインの「N」文字 -->
+  <g filter="url(#strongGlow)">
+    <text x="256" y="340"
+          font-family="'Arial Black', 'Arial', sans-serif"
+          font-size="280"
+          font-weight="900"
+          fill="url(#neonCyan)"
+          text-anchor="middle"
+          letter-spacing="-10">N</text>
+  </g>
+
+  <!-- アクセントドット -->
+  <g filter="url(#neonGlow)">
+    <circle cx="420" cy="420" r="12" fill="url(#neonMagenta)"/>
+    <circle cx="92" cy="92" r="8" fill="url(#neonCyan)"/>
+    <circle cx="420" cy="92" r="8" fill="url(#neonMagenta)"/>
+  </g>
+
+  <!-- サブテキスト「FONT」 -->
+  <g filter="url(#neonGlow)">
+    <text x="256" y="420"
+          font-family="'Arial', sans-serif"
+          font-size="40"
+          font-weight="bold"
+          fill="url(#neonMagenta)"
+          text-anchor="middle"
+          letter-spacing="8"
+          opacity="0.9">FONT</text>
+  </g>
+</svg>

@@ -6,8 +6,8 @@ const updateStorage = async () => {
   const nextValue = !showBanner;
   await chrome.storage.sync.set({ showBanner: nextValue });
   result.textContent = nextValue
-    ? "バナー表示を有効にしました。"
-    : "バナー表示を無効にしました。";
+    ? "パフォーマンスインジケーターを有効にしました。"
+    : "パフォーマンスインジケーターを無効にしました。";
 };
 
 toggleButton.addEventListener("click", updateStorage);

@@ -1,0 +1,10 @@
+# Generated files
+WebLoadingAssist.zip
+icons/icon-*.png
+temp-build/
+
+# OS files
+.DS_Store
+*.swp
+*~
+Thumbs.db

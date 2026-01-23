@@ -586,12 +586,41 @@
       }
     };
 
+    const isScriptAlreadyLoaded = (script) => {
+      if (!script.src) {
+        return false;
+      }
+
+      if (script.readyState) {
+        if (script.readyState === 'complete' || script.readyState === 'loaded') {
+          return true;
+        }
+      }
+
+      if (script.parentNode && script.parentNode.tagName === 'HEAD') {
+        const allScripts = document.querySelectorAll('script[src]');
+        for (const s of allScripts) {
+          if (s.src === script.src && s !== script) {
+            if (s.readyState === 'complete' || s.readyState === 'loaded') {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    };
+
     const isSafeToDefer = (script) => {
       if (script.defer || script.async || !script.src) {
         return false;
       }
 
-      if (script.type && script.type !== "text/javascript") {
+      if (isScriptAlreadyLoaded(script)) {
+        return false;
+      }
+
+      if (script.type && script.type !== "text/javascript" && script.type !== "text/ecmascript" && script.type !== "") {
         return false;
       }
 
@@ -620,7 +649,13 @@
       });
 
       scripts.forEach((script) => {
-        script.defer = true;
+        const canDefer = !script.readyState || script.readyState === 'uninitialized' || script.readyState === 'loading';
+        if (canDefer) {
+          script.defer = true;
+          if ('fetchPriority' in script) {
+            script.fetchPriority = 'low';
+          }
+        }
       });
     };
 
@@ -753,6 +788,29 @@
       return replacedCount;
     };
 
+    const calculateAverageHeight = (elements) => {
+      if (elements.length === 0) {
+        return 0;
+      }
+
+      const heights = [];
+      elements.forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        const height = Math.max(element.offsetHeight || 0, rect.height || 0);
+        if (height > 0) {
+          heights.push(height);
+        }
+      });
+
+      if (heights.length === 0) {
+        return 0;
+      }
+
+      const sum = heights.reduce((acc, h) => acc + h, 0);
+      const average = Math.round(sum / heights.length);
+      return average;
+    };
+
     const virtualizeListsAndTables = () => {
       let virtualizedCount = 0;
       const listSelectors = ["ul", "ol"];
@@ -765,9 +823,14 @@
             return;
           }
 
+          const averageHeight = calculateAverageHeight(items);
+          const intrinsicSize = averageHeight > 0
+            ? `1px ${averageHeight}px`
+            : options.virtualizedItemIntrinsicSize;
+
           items.forEach((item) => {
             item.style.contentVisibility = "auto";
-            item.style.containIntrinsicSize = options.virtualizedItemIntrinsicSize;
+            item.style.containIntrinsicSize = intrinsicSize;
           });
           virtualizedCount += items.length;
         });
@@ -781,9 +844,14 @@
           return;
         }
 
+        const averageHeight = calculateAverageHeight(rows);
+        const intrinsicSize = averageHeight > 0
+          ? `1px ${averageHeight}px`
+          : options.virtualizedItemIntrinsicSize;
+
         rows.forEach((row) => {
           row.style.contentVisibility = "auto";
-          row.style.containIntrinsicSize = options.virtualizedItemIntrinsicSize;
+          row.style.containIntrinsicSize = intrinsicSize;
         });
         virtualizedCount += rows.length;
       });

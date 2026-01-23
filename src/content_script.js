@@ -8,21 +8,6 @@
     largeImageRootMargin: "200px 0px",
     lazyPlaceholder:
       "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-    preconnect: {
-      enabled: true,
-      includeFirstParty: true,
-      hosts: [
-        "https://fonts.googleapis.com",
-        "https://fonts.gstatic.com",
-        "https://ajax.googleapis.com",
-        "https://cdnjs.cloudflare.com",
-        "https://cdn.jsdelivr.net",
-        "https://code.jquery.com",
-        "https://unpkg.com",
-        "https://www.googletagmanager.com",
-        "https://www.google-analytics.com",
-      ],
-    },
     deferScriptSelector: "script[src]",
     deferScriptExcludeSelector: "[data-critical],[data-no-defer]",
     deferScriptSameOriginOnly: true,
@@ -42,10 +27,7 @@
   const settingsDefaults = {
     showBanner: true,
     imageLazyLoadingEnabled: true,
-    preconnectEnabled: true,
     deferScriptEnabled: true,
-    whitelistDomains: [],
-    blacklistDomains: [],
     spaOnly: false,
     frameworkDetectionEnabled: false,
     frameworkTargets: ["react", "vue", "angular", "svelte"],
@@ -53,28 +35,8 @@
     optimizationDomNodeThreshold: 1500,
   };
 
-  const normalizeDomainEntry = (value) => value.trim().toLowerCase();
-
-  const matchesDomain = (host, entry) =>
-    host === entry || host.endsWith(`.${entry}`);
-
   const init = async () => {
     const settings = await chrome.storage.sync.get(settingsDefaults);
-    const host = window.location.hostname.toLowerCase();
-    const whitelist = settings.whitelistDomains
-      .map(normalizeDomainEntry)
-      .filter(Boolean);
-    const blacklist = settings.blacklistDomains
-      .map(normalizeDomainEntry)
-      .filter(Boolean);
-
-    const isWhitelisted =
-      whitelist.length === 0 || whitelist.some((entry) => matchesDomain(host, entry));
-    const isBlacklisted = blacklist.some((entry) => matchesDomain(host, entry));
-
-    if (!isWhitelisted || isBlacklisted) {
-      return;
-    }
 
     const detectFrameworks = () => {
       const detectors = {
@@ -144,7 +106,7 @@
               position: fixed;
               bottom: 16px;
               right: 16px;
-              z-index: 9999;
+              z-index: 2147483647;
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
               font-size: 12px;
               color: #fff;
@@ -251,7 +213,6 @@
         const indicator = document.createElement("div");
         indicator.id = indicatorId;
         indicator.className = "collapsed";
-
         const header = document.createElement("div");
         header.className = "wla-indicator-header";
         header.innerHTML = '<div class="wla-indicator-icon">⚡</div><span>Web Loading Assist</span>';
@@ -288,10 +249,8 @@
 
         actions.appendChild(detailsBtn);
         actions.appendChild(closeBtn);
-
         content.appendChild(stats);
         content.appendChild(actions);
-
         indicator.appendChild(header);
         indicator.appendChild(content);
 
@@ -300,7 +259,14 @@
           indicator.classList.toggle("expanded");
         });
 
-        document.body.appendChild(indicator);
+        const appendToBody = () => {
+          if (document.body) {
+            document.body.appendChild(indicator);
+          } else {
+            setTimeout(appendToBody, 100);
+          }
+        };
+        appendToBody();
         window.WebLoadingAssistIndicator = indicator;
       }
     }
@@ -309,18 +275,15 @@
       if (!override || typeof override !== "object") {
         return { ...base };
       }
-
       return Object.entries(base).reduce((acc, [key, value]) => {
         if (Array.isArray(value)) {
           acc[key] = Array.isArray(override[key]) ? override[key] : value;
           return acc;
         }
-
         if (value && typeof value === "object") {
           acc[key] = mergeDeep(value, override[key]);
           return acc;
         }
-
         acc[key] = Object.prototype.hasOwnProperty.call(override, key)
           ? override[key]
           : value;
@@ -329,9 +292,6 @@
     };
 
     const options = mergeDeep(defaultOptions, window.WebLoadingAssistOptions);
-    options.preconnect.enabled =
-      options.preconnect.enabled && settings.preconnectEnabled;
-
     const root = options.scopeSelector
       ? document.querySelector(options.scopeSelector)
       : document;
@@ -484,27 +444,6 @@
       };
     };
 
-    const countDomNodes = () => {
-      const rootElement =
-        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
-
-      if (!rootElement) {
-        return 0;
-      }
-
-      let domNodeCount = 0;
-      const stack = [rootElement];
-      while (stack.length > 0) {
-        const node = stack.pop();
-        domNodeCount += 1;
-        Array.from(node.children).forEach((child) => {
-          stack.push(child);
-        });
-      }
-
-      return domNodeCount;
-    };
-
     const measureDomStats = () => {
       const rootElement =
         root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
@@ -535,55 +474,25 @@
       };
     };
 
+    const countDomNodes = () => {
+      const rootElement =
+        root.nodeType === Node.DOCUMENT_NODE ? root.documentElement : root;
+      if (!rootElement) return 0;
+      let count = 0;
+      const stack = [rootElement];
+      while (stack.length > 0) {
+        const node = stack.pop();
+        count++;
+        Array.from(node.children).forEach(c => stack.push(c));
+      }
+      return count;
+    };
+
     const ensureLazyLoading = () => {
       root.querySelectorAll(options.imageLazySelector).forEach((img) => {
         if (!img.hasAttribute("loading")) {
           img.setAttribute("loading", "lazy");
         }
-      });
-    };
-
-    const normalizeOrigin = (value) => {
-      try {
-        return new URL(value, window.location.href).origin;
-      } catch {
-        return null;
-      }
-    };
-
-    const addPreconnectLinks = () => {
-      if (!options.preconnect.enabled) {
-        return;
-      }
-
-      const origins = new Set();
-      options.preconnect.hosts.forEach((host) => {
-        const origin = normalizeOrigin(host);
-        if (origin) {
-          origins.add(origin);
-        }
-      });
-
-      if (options.preconnect.includeFirstParty) {
-        origins.add(window.location.origin);
-      }
-
-      const existing = new Set(
-        Array.from(document.querySelectorAll('link[rel="preconnect"]')).map(
-          (link) => link.href,
-        ),
-      );
-
-      origins.forEach((origin) => {
-        if (existing.has(origin)) {
-          return;
-        }
-
-        const link = document.createElement("link");
-        link.rel = "preconnect";
-        link.href = origin;
-        link.crossOrigin = "anonymous";
-        document.head.appendChild(link);
       });
     };
 
@@ -667,6 +576,14 @@
         img.setAttribute("loading", "lazy");
         observer.observe(img);
       });
+    };
+
+    const normalizeOrigin = (value) => {
+      try {
+        return new URL(value, window.location.href).origin;
+      } catch {
+        return null;
+      }
     };
 
     const isSafeToDefer = (script) => {
@@ -1111,8 +1028,6 @@
       ensureLazyLoading();
       setupLargeImageObserver();
     }
-
-    addPreconnectLinks();
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {

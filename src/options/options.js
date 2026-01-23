@@ -1,10 +1,7 @@
 const form = document.getElementById("options-form");
 const bannerCheckbox = document.getElementById("show-banner");
 const imageLazyCheckbox = document.getElementById("enable-image-lazy");
-const preconnectCheckbox = document.getElementById("enable-preconnect");
 const deferScriptCheckbox = document.getElementById("enable-defer-script");
-const whitelistTextarea = document.getElementById("whitelist-domains");
-const blacklistTextarea = document.getElementById("blacklist-domains");
 const spaOnlyCheckbox = document.getElementById("spa-only");
 const frameworkDetectionCheckbox = document.getElementById(
   "framework-detection-enabled",
@@ -22,10 +19,7 @@ const status = document.getElementById("status");
 const defaults = {
   showBanner: true,
   imageLazyLoadingEnabled: true,
-  preconnectEnabled: true,
   deferScriptEnabled: true,
-  whitelistDomains: [],
-  blacklistDomains: [],
   spaOnly: false,
   frameworkDetectionEnabled: false,
   frameworkTargets: ["react", "vue", "angular", "svelte"],
@@ -33,22 +27,11 @@ const defaults = {
   optimizationDomNodeThreshold: 1500,
 };
 
-const parseDomains = (value) =>
-  value
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-const formatDomains = (domains) => domains.join("\n");
-
 const restoreOptions = async () => {
   const stored = await chrome.storage.sync.get(defaults);
   bannerCheckbox.checked = stored.showBanner;
   imageLazyCheckbox.checked = stored.imageLazyLoadingEnabled;
-  preconnectCheckbox.checked = stored.preconnectEnabled;
   deferScriptCheckbox.checked = stored.deferScriptEnabled;
-  whitelistTextarea.value = formatDomains(stored.whitelistDomains);
-  blacklistTextarea.value = formatDomains(stored.blacklistDomains);
   spaOnlyCheckbox.checked = stored.spaOnly;
   frameworkDetectionCheckbox.checked = stored.frameworkDetectionEnabled;
   frameworkReactCheckbox.checked = stored.frameworkTargets.includes("react");
@@ -63,10 +46,7 @@ const saveOptions = async (event) => {
   event.preventDefault();
   const showBanner = bannerCheckbox.checked;
   const imageLazyLoadingEnabled = imageLazyCheckbox.checked;
-  const preconnectEnabled = preconnectCheckbox.checked;
   const deferScriptEnabled = deferScriptCheckbox.checked;
-  const whitelistDomains = parseDomains(whitelistTextarea.value);
-  const blacklistDomains = parseDomains(blacklistTextarea.value);
   const spaOnly = spaOnlyCheckbox.checked;
   const frameworkDetectionEnabled = frameworkDetectionCheckbox.checked;
   const frameworkTargets = [
@@ -83,10 +63,7 @@ const saveOptions = async (event) => {
   await chrome.storage.sync.set({
     showBanner,
     imageLazyLoadingEnabled,
-    preconnectEnabled,
     deferScriptEnabled,
-    whitelistDomains,
-    blacklistDomains,
     spaOnly,
     frameworkDetectionEnabled,
     frameworkTargets,

@@ -9,35 +9,23 @@
   <body>
     <main class="container">
       <h1>Web Loading Assist 設定</h1>
+      <p style="font-size:13px; color:#666; margin-bottom:20px;">
+        DNR（広告ブロッカー等）ができない、ページ描画後のDOM最適化を行います。
+      </p>
       <form id="options-form">
         <label class="option">
           <input type="checkbox" id="show-banner" />
           <span>パフォーマンスインジケーターを表示する</span>
         </label>
         <fieldset class="option-group">
-          <legend>最適化機能</legend>
+          <legend>DOM最適化機能</legend>
           <label class="option">
             <input type="checkbox" id="enable-image-lazy" />
-            <span>画像遅延ロード</span>
-          </label>
-          <label class="option">
-            <input type="checkbox" id="enable-preconnect" />
-            <span>preconnect追加</span>
+            <span>画像遅延ロード・仮想化</span>
           </label>
           <label class="option">
             <input type="checkbox" id="enable-defer-script" />
-            <span>script遅延化</span>
-          </label>
-        </fieldset>
-        <fieldset class="option-group">
-          <legend>対象ドメイン</legend>
-          <label class="option option-textarea">
-            <span>ホワイトリスト（1行に1件）</span>
-            <textarea id="whitelist-domains" rows="4"></textarea>
-          </label>
-          <label class="option option-textarea">
-            <span>ブラックリスト（1行に1件）</span>
-            <textarea id="blacklist-domains" rows="4"></textarea>
+            <span>script遅延化 (DOM操作)</span>
           </label>
         </fieldset>
         <fieldset class="option-group">

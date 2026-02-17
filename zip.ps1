@@ -1,4 +1,4 @@
-# Web Loading Assist拡張機能パッケージ生成スクリプト (Windows PowerShell版)
+# ReviewForMD 拡張機能パッケージ生成スクリプト (Windows PowerShell版)
 
 Write-Host "拡張機能パッケージを生成中..." -ForegroundColor Cyan
 Write-Host ""
@@ -8,8 +8,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 # 古いZIPファイルを削除
-if (Test-Path "WebLoadingAssist.zip") {
-    Remove-Item "WebLoadingAssist.zip" -Force
+if (Test-Path "ReviewForMD.zip") {
+    Remove-Item "ReviewForMD.zip" -Force
     Write-Host "既存のZIPファイルを削除しました" -ForegroundColor Yellow
 }
 
@@ -32,18 +32,18 @@ Get-ChildItem -Path $tempDir -Recurse -Include "*.DS_Store", "*.swp", "*~" | Rem
 
 # ZIPファイルを作成
 Write-Host "ZIPファイルを作成中..." -ForegroundColor Cyan
-Compress-Archive -Path "$tempDir/*" -DestinationPath "WebLoadingAssist.zip" -Force
+Compress-Archive -Path "$tempDir/*" -DestinationPath "ReviewForMD.zip" -Force
 
 # 一時ディレクトリを削除
 Remove-Item $tempDir -Recurse -Force
 
-if (Test-Path "WebLoadingAssist.zip") {
-    Write-Host "ZIPファイルを作成しました: WebLoadingAssist.zip" -ForegroundColor Green
+if (Test-Path "ReviewForMD.zip") {
+    Write-Host "ZIPファイルを作成しました: ReviewForMD.zip" -ForegroundColor Green
     Write-Host ""
     Write-Host "ファイルサイズ:" -ForegroundColor Cyan
-    $fileSize = (Get-Item "WebLoadingAssist.zip").Length
-    $fileSizeMB = [math]::Round($fileSize / 1MB, 2)
-    Write-Host "   $fileSizeMB MB" -ForegroundColor White
+    $fileSize = (Get-Item "ReviewForMD.zip").Length
+    $fileSizeMB = [math]::Round($fileSize / 1KB, 2)
+    Write-Host "   $fileSizeMB KB" -ForegroundColor White
     Write-Host ""
     Write-Host "パッケージが正常に作成されました!" -ForegroundColor Green
 } else {

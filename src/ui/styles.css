@@ -1,0 +1,99 @@
+/* ── ReviewForMD ボタン共通スタイル ──────────────── */
+
+.rfmd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  cursor: pointer;
+  line-height: 20px;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.rfmd-btn:hover {
+  background: #eaeef2;
+  border-color: #afb8c1;
+}
+
+.rfmd-btn:active {
+  background: #d8dee4;
+}
+
+/* 全てMDコピー (メイン) ボタン */
+.rfmd-btn--primary {
+  background: #2da44e;
+  color: #ffffff;
+  border-color: #2da44e;
+}
+
+.rfmd-btn--primary:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
+.rfmd-btn--primary:active {
+  background: #1a7f37;
+}
+
+/* コピー成功フィードバック */
+.rfmd-btn--success {
+  background: #1a7f37 !important;
+  color: #ffffff !important;
+  border-color: #1a7f37 !important;
+}
+
+/* コピー失敗フィードバック */
+.rfmd-btn--error {
+  background: #cf222e !important;
+  color: #ffffff !important;
+  border-color: #cf222e !important;
+}
+
+/* アイコン */
+.rfmd-btn-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* ── 全てMDコピーボタン コンテナ ──────────────────── */
+
+.rfmd-all-copy-container {
+  display: inline-flex;
+  margin-left: 8px;
+}
+
+/* ── DevOps テーマ対応 ─────────────────────────── */
+
+.repos-pr-details-page .rfmd-btn {
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  border-radius: 2px;
+}
+
+.repos-pr-details-page .rfmd-btn--primary {
+  background: #0078d4;
+  border-color: #0078d4;
+}
+
+.repos-pr-details-page .rfmd-btn--primary:hover {
+  background: #106ebe;
+  border-color: #106ebe;
+}
+
+/* ── 各コメントの MDコピー ボタン位置 ──────────── */
+
+.rfmd-comment-btn-wrap {
+  display: inline-flex;
+  margin-left: 8px;
+  flex-shrink: 0;
+}

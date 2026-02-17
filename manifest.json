@@ -1,22 +1,50 @@
 {
   "manifest_version": 3,
-  "name": "Web Loading Assist",
-  "version": "0.1.0",
-  "description": "ページ読み込み補助用の拡張機能",
-  "permissions": ["storage", "scripting"],
-  "host_permissions": ["<all_urls>"],
-  "action": {
-    "default_popup": "src/popup/popup.html"
-  },
-  "options_page": "src/options/options.html",
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["src/content_script.js"],
-      "run_at": "document_start"
-    }
+  "name": "プルリクMDコピー",
+  "version": "1.0.0",
+  "description": "プルリクエストのタイトル・本文・レビューコメントをMarkdown形式でコピーするChrome拡張機能",
+  "permissions": ["activeTab", "scripting", "webNavigation"],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://*.github.com/*",
+    "https://dev.azure.com/*",
+    "https://*.visualstudio.com/*"
   ],
+  "icons": {
+    "48": "icons/icon.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": "icons/icon.png"
+  },
   "background": {
     "service_worker": "src/service_worker.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*/pull/*",
+        "https://*.github.com/*/pull/*",
+        "https://dev.azure.com/*/_git/*/pullrequest/*",
+        "https://*.visualstudio.com/*/_git/*/pullrequest/*"
+      ],
+      "js": [
+        "src/lib/site_detector.js",
+        "src/lib/markdown_builder.js",
+        "src/lib/clipboard.js",
+        "src/extractors/github_extractor.js",
+        "src/extractors/devops_extractor.js",
+        "src/ui/button_injector.js",
+        "src/content_script.js"
+      ],
+      "css": ["src/ui/styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/inject/navigation_hook.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

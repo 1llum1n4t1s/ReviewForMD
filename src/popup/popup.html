@@ -1,18 +1,89 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Web Loading Assist</title>
-    <link rel="stylesheet" href="popup.css" />
-  </head>
-  <body>
-    <div class="popup">
-      <h1>Web Loading Assist</h1>
-      <p>現在のページで補助機能を有効化します。</p>
-      <button id="toggle" class="primary">パフォーマンスインジケーターを切り替え</button>
-      <p id="result" class="result" role="status" aria-live="polite"></p>
-    </div>
-    <script src="popup.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      color: #24292f;
+      background: #ffffff;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .header img {
+      width: 24px;
+      height: 24px;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .description {
+      color: #57606a;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .status {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status--active {
+      background: #dafbe1;
+      color: #116329;
+    }
+    .status--inactive {
+      background: #fff8c5;
+      color: #4d2d00;
+    }
+    .platforms {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #57606a;
+    }
+    .platforms ul {
+      list-style: none;
+      margin-top: 4px;
+    }
+    .platforms li {
+      padding: 2px 0;
+    }
+    .platforms li::before {
+      content: "✓ ";
+      color: #2da44e;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="../../icons/icon.png" alt="">
+    <h1>Review For MD</h1>
+  </div>
+  <p class="description">
+    プルリクエストのタイトル・本文・レビューコメントを<br>
+    Markdown 形式でクリップボードにコピーします。
+  </p>
+  <div id="status" class="status status--inactive">
+    PR ページを開いてください
+  </div>
+  <div class="platforms">
+    <strong>対応プラットフォーム:</strong>
+    <ul>
+      <li>GitHub</li>
+      <li>Azure DevOps（カスタムドメイン対応）</li>
+    </ul>
+  </div>
+  <script src="popup.js"></script>
+</body>
 </html>

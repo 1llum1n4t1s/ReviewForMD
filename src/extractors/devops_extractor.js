@@ -317,6 +317,15 @@ const DevOpsExtractor = (() => {
 
   /**
    * comment-file-header 内の diff コンテキスト（行番号・ソースコード）を抽出する
+   *
+   * DevOps では "View original diff" / "View latest diff" の切り替えにより
+   * SPAN[0] の .screen-reader-only テキストが変化する：
+   *   - latest diff 表示時: "Commented 15 16" / "12 13" （旧行番号 新行番号）
+   *   - original diff 表示時: "Commented 15" / "13" （旧行番号のみ）
+   * 常に旧行番号（= コメントが付いた時点での行番号）を使うため、
+   * テキスト内の最初の数値トークンだけを取り出す。
+   * SPAN[1] は常に空なので使用しない。
+   *
    * @param {Element} fileHeader - .comment-file-header 要素
    * @returns {{ lineRange: string, diffLines: Array<{prefix: string, lineNum: string, code: string}> }|undefined}
    */
@@ -337,18 +346,13 @@ const DevOpsExtractor = (() => {
       const spans = row.children;
       if (spans.length < 3) return;
 
-      // 旧行番号（SPAN[0] 内の .screen-reader-only）
-      const oldSr = spans[0].querySelector('.screen-reader-only');
-      let oldNum = oldSr ? oldSr.textContent.trim() : '';
-      // "Commented 417" のような形式から数値だけ取得
-      oldNum = oldNum.replace(/^Commented\s+/i, '');
-
-      // 新行番号（SPAN[1] 内の .screen-reader-only）
-      const newSr = spans[1].querySelector('.screen-reader-only');
-      let newNum = newSr ? newSr.textContent.trim() : '';
-      newNum = newNum.replace(/^Commented\s+/i, '');
-
-      const lineNum = newNum || oldNum;
+      // SPAN[0] の .screen-reader-only から旧行番号（最初の数値トークン）を取得
+      // latest diff時: "Commented 15 16" / "12 13" → 最初の数値 = 旧行番号
+      // original diff時: "Commented 15" / "13" → 最初の数値 = 旧行番号
+      const srEl = spans[0].querySelector('.screen-reader-only');
+      const srText = srEl ? srEl.textContent.trim() : '';
+      const numTokens = srText.match(/\d+/g) || [];
+      const lineNum = numTokens[0] || '';
 
       // コード内容（SPAN[2] = .repos-line-content、screen-reader-only 除外）
       const contentSpan = spans[2];

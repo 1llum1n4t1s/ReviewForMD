@@ -32,103 +32,78 @@ const ButtonInjector = (() => {
   }
 
   /**
-   * 「全てMDコピー」ボタンを作成する
+   * ボタン生成ファクトリ
+   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<string> }} opts
+   * @returns {HTMLButtonElement}
    */
+  function _createButton({ className, dataRfmd, label, title, extractFn }) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.setAttribute('data-rfmd', dataRfmd);
+    btn.setAttribute('aria-label', title);
+    btn.innerHTML = label;
+    btn.dataset.rfmdOriginal = label;
+    btn.dataset.rfmdBusy = '0';
+    btn.title = title;
+
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.dataset.rfmdBusy === '1') return;
+      try {
+        const md = await extractFn();
+        const ok = await Clipboard.copy(md);
+        _showFeedback(btn, ok);
+      } catch (err) {
+        console.error('[ReviewForMD]', err);
+        _showFeedback(btn, false);
+      }
+    });
+
+    return btn;
+  }
+
+  /** サイトタイプに対応する Extractor を返す */
+  const _EXTRACTORS = {
+    [SiteDetector.SiteType.GITHUB]: GitHubExtractor,
+    [SiteDetector.SiteType.AZURE_DEVOPS]: DevOpsExtractor,
+  };
+
   function _createAllCopyButton(siteType) {
-    const btn = document.createElement('button');
-    btn.className = 'rfmd-btn rfmd-btn--primary';
-    btn.setAttribute('data-rfmd', 'all');
-    btn.innerHTML = ALL_COPY_LABEL;
-    btn.dataset.rfmdOriginal = ALL_COPY_LABEL;
-    btn.dataset.rfmdBusy = '0';
-    btn.title = 'PR タイトル・本文・全レビューコメントを Markdown 形式でコピー';
-
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (btn.dataset.rfmdBusy === '1') return;
-      try {
-        let md;
-        if (siteType === SiteDetector.SiteType.GITHUB) {
-          md = GitHubExtractor.extractAll();
-        } else {
-          md = await DevOpsExtractor.extractAll();
-        }
-        const ok = await Clipboard.copy(md);
-        _showFeedback(btn, ok);
-      } catch (err) {
-        console.error('[ReviewForMD]', err);
-        _showFeedback(btn, false);
-      }
+    return _createButton({
+      className: 'rfmd-btn rfmd-btn--primary',
+      dataRfmd: 'all',
+      label: ALL_COPY_LABEL,
+      title: 'PR タイトル・本文・全レビューコメントを Markdown 形式でコピー',
+      extractFn: () => _EXTRACTORS[siteType].extractAll(),
     });
-
-    return btn;
   }
 
-  /**
-   * 個別コメントの「MDコピー」ボタンを作成する
-   */
   function _createCommentCopyButton(siteType, commentContainer) {
-    const btn = document.createElement('button');
-    btn.className = 'rfmd-btn';
-    btn.setAttribute('data-rfmd', 'single');
-    btn.innerHTML = SINGLE_COPY_LABEL;
-    btn.dataset.rfmdOriginal = SINGLE_COPY_LABEL;
-    btn.dataset.rfmdBusy = '0';
-    btn.title = 'このコメントを Markdown 形式でコピー';
-
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (btn.dataset.rfmdBusy === '1') return;
-      try {
-        let comment;
-        if (siteType === SiteDetector.SiteType.GITHUB) {
-          comment = GitHubExtractor.extractSingleComment(commentContainer);
-        } else {
-          comment = DevOpsExtractor.extractSingleComment(commentContainer);
-        }
-        const md = MarkdownBuilder.formatSingleComment(comment);
-        const ok = await Clipboard.copy(md);
-        _showFeedback(btn, ok);
-      } catch (err) {
-        console.error('[ReviewForMD]', err);
-        _showFeedback(btn, false);
-      }
+    return _createButton({
+      className: 'rfmd-btn',
+      dataRfmd: 'single',
+      label: SINGLE_COPY_LABEL,
+      title: 'このコメントを Markdown 形式でコピー',
+      extractFn: () => {
+        const comment = _EXTRACTORS[siteType].extractSingleComment(commentContainer);
+        return MarkdownBuilder.formatSingleComment(comment);
+      },
     });
-
-    return btn;
   }
 
-  /**
-   * DevOps スレッド全体の「MDコピー」ボタンを作成する
-   * スレッド内の親コメント + 返信をまとめてコピーする
-   */
   function _createThreadCopyButton(threadContainer) {
-    const btn = document.createElement('button');
-    btn.className = 'rfmd-btn';
-    btn.setAttribute('data-rfmd', 'single');
-    btn.innerHTML = SINGLE_COPY_LABEL;
-    btn.dataset.rfmdOriginal = SINGLE_COPY_LABEL;
-    btn.dataset.rfmdBusy = '0';
-    btn.title = 'このスレッド（返信含む）を Markdown 形式でコピー';
-
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (btn.dataset.rfmdBusy === '1') return;
-      try {
+    return _createButton({
+      className: 'rfmd-btn',
+      dataRfmd: 'single',
+      label: SINGLE_COPY_LABEL,
+      title: 'このスレッド（返信含む）を Markdown 形式でコピー',
+      extractFn: () => {
         const comments = DevOpsExtractor.extractThreadComments(threadContainer);
-        const md = MarkdownBuilder.formatThreadComments(comments);
-        const ok = await Clipboard.copy(md);
-        _showFeedback(btn, ok);
-      } catch (err) {
-        console.error('[ReviewForMD]', err);
-        _showFeedback(btn, false);
-      }
+        return MarkdownBuilder.formatThreadComments(comments);
+      },
     });
-
-    return btn;
   }
 
   /* ── GitHub 用ボタン注入 ──────────────────────── */
@@ -244,7 +219,6 @@ const ButtonInjector = (() => {
     if (insertTarget && !document.querySelector('[data-rfmd="all"]')) {
       const wrap = document.createElement('div');
       wrap.className = 'rfmd-all-copy-container';
-      wrap.style.marginLeft = '12px';
       wrap.appendChild(_createAllCopyButton(SiteDetector.SiteType.AZURE_DEVOPS));
 
       if (voteButton) {

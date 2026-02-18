@@ -23,13 +23,8 @@ const SiteDetector = (() => {
     return _isGitHubByHost() && /\/pull\/\d+/.test(location.pathname);
   }
 
-  function _isGitHubPRByDom() {
-    return !!(
-      document.querySelector('.gh-header-title') ||
-      document.querySelector('[data-testid="issue-title"]') ||
-      document.querySelector('meta[name="github-keyboard-shortcuts"]')
-    );
-  }
+  // NOTE: _isGitHubPRByDom は GHES（GitHub Enterprise Server）対応時に使用予定
+  // 現在は URL ベース判定のみで十分なため detect() からは呼んでいない
 
   /* ── Azure DevOps 判定 ────────────────────────── */
 
@@ -64,20 +59,25 @@ const SiteDetector = (() => {
    * カスタムドメインでも URL パスと DOM シグナルの組み合わせで判定する。
    */
   function _isDevOpsPRByDom() {
-    const signals = [
-      // PR 詳細ページ固有コンテナ（最も信頼性が高い）
-      !!document.querySelector('.repos-pr-details-page'),
-      // bolt UI フレームワークのヘッダー
-      !!document.querySelector('[class*="bolt-header"]'),
-      // PR タブバー
-      !!document.querySelector('.repos-pr-details-page-tabbar'),
-      // repos- プレフィクスのクラスが複数存在
-      document.querySelectorAll('[class*="repos-"]').length >= 3,
-      // URL パスパターンも 1 シグナルとしてカウント（カスタムドメイン対応）
-      _isDevOpsPRPath(),
-    ];
     // 2 つ以上のシグナルが一致すれば DevOps と判定
-    return signals.filter(Boolean).length >= 2;
+    // 軽量なチェックから順に評価し、閾値に達したら早期 return
+    let count = 0;
+    const THRESHOLD = 2;
+
+    // PR 詳細ページ固有コンテナ（最も信頼性が高い・軽量）
+    if (document.querySelector('.repos-pr-details-page')) count++;
+    // URL パスパターン（DOM アクセスなし・最軽量）
+    if (_isDevOpsPRPath()) count++;
+    if (count >= THRESHOLD) return true;
+    // bolt UI フレームワークのヘッダー
+    if (document.querySelector('[class*="bolt-header"]')) count++;
+    if (count >= THRESHOLD) return true;
+    // PR タブバー
+    if (document.querySelector('.repos-pr-details-page-tabbar')) count++;
+    if (count >= THRESHOLD) return true;
+    // repos- プレフィクスのクラスが複数存在（重いセレクタなので最後に評価）
+    if (document.querySelectorAll('[class*="repos-"]').length >= 3) count++;
+    return count >= THRESHOLD;
   }
 
   /* ── 公開 API ─────────────────────────────────── */

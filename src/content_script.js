@@ -7,6 +7,10 @@
 (() => {
   'use strict';
 
+  // 多重実行防止（動的注入で IIFE が再実行されるケース対策）
+  if (window.__rfmd_initialized) return;
+  window.__rfmd_initialized = true;
+
   /** 初期化試行間隔 (ms) */
   const RETRY_INTERVAL = 1500;
   /** 最大リトライ回数 */
@@ -30,13 +34,15 @@
       if (_retries < MAX_RETRIES) {
         _retries++;
         setTimeout(init, RETRY_INTERVAL);
+      } else {
+        console.info('[ReviewForMD] Site detection failed after max retries.');
       }
       return;
     }
 
     _currentSiteType = siteType;
     _retries = 0;
-    console.log(`[ReviewForMD] Detected: ${siteType}`);
+    console.debug(`[ReviewForMD] Detected: ${siteType}`);
 
     // ボタンを注入
     ButtonInjector.inject(siteType);
@@ -56,7 +62,18 @@
       _observer = null;
     }
 
-    _observer = new MutationObserver(() => {
+    _observer = new MutationObserver((mutations) => {
+      // 自身のボタン注入による DOM 変更は無視する
+      const hasRelevantChange = mutations.some((m) =>
+        [...m.addedNodes].some(
+          (n) => n.nodeType === Node.ELEMENT_NODE &&
+                 !/** @type {Element} */(n).hasAttribute('data-rfmd') &&
+                 !/** @type {Element} */(n).classList?.contains('rfmd-comment-btn-wrap') &&
+                 !/** @type {Element} */(n).classList?.contains('rfmd-all-copy-container')
+        )
+      );
+      if (!hasRelevantChange) return;
+
       if (_debounceTimer) clearTimeout(_debounceTimer);
       _debounceTimer = setTimeout(() => {
         ButtonInjector.inject(siteType);
@@ -72,16 +89,21 @@
   /**
    * SPA ナビゲーション対応
    *
-   * 3 つの方法で検出する:
+   * 4 つの方法で検出する:
    * 1. Service Worker からの chrome.runtime.onMessage
    * 2. main world に注入した navigation_hook.js からのカスタムイベント
    * 3. popstate イベント（ブラウザの戻る/進む）
    * 4. GitHub 固有の turbo:load イベント
    */
   function _watchNavigation() {
+    let _reinitTimer = null;
     const reinit = () => {
-      _retries = 0;
-      setTimeout(init, 300);
+      if (_reinitTimer) clearTimeout(_reinitTimer);
+      _reinitTimer = setTimeout(() => {
+        _reinitTimer = null;
+        _retries = 0;
+        init();
+      }, 300);
     };
 
     // 1. Service Worker / Popup からのメッセージ
@@ -96,8 +118,10 @@
           return; // sendResponse を同期的に呼んでいるので true 不要
         }
       });
-    } catch {
-      // chrome.runtime が利用できない場合（動的注入時など）は無視
+    } catch (e) {
+      if (!e?.message?.includes('Extension context invalidated')) {
+        console.warn('[ReviewForMD] onMessage listener error:', e);
+      }
     }
 
     // 2. main world の navigation_hook.js からのカスタムイベント
@@ -123,8 +147,10 @@
       script.src = chrome.runtime.getURL('src/inject/navigation_hook.js');
       script.onload = () => script.remove();
       (document.head || document.documentElement).appendChild(script);
-    } catch {
-      // chrome.runtime が利用できない場合は無視
+    } catch (e) {
+      if (!e?.message?.includes('Extension context invalidated')) {
+        console.warn('[ReviewForMD] Navigation hook injection error:', e);
+      }
     }
   }
 

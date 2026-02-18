@@ -97,8 +97,11 @@ const MarkdownBuilder = (() => {
       case 'img': {
         const alt = el.getAttribute('alt') || '';
         const src = el.getAttribute('src') || '';
-        // GitHub Camo 経由のプライオリティバッジ等の装飾画像はスキップ
-        if (src.includes('camo.githubusercontent.com')) return '';
+        // 装飾画像のスキップ: 幅/高さが小さい（バッジ等）、または alt も src もない場合
+        const w = parseInt(el.getAttribute('width'), 10);
+        const h = parseInt(el.getAttribute('height'), 10);
+        if ((w > 0 && w <= 1) || (h > 0 && h <= 1)) return '';
+        if (!src) return '';
         return `![${alt}](${src})`;
       }
 

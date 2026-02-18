@@ -86,6 +86,14 @@ async function injectContentScripts(tabId) {
 
 // ── webNavigation によるSPA遷移検出 ──
 
+/** URL フィルタ: PR ページに該当するパスパターンのみ Service Worker を起動 */
+const NAV_URL_FILTERS = {
+  url: [
+    { urlMatches: '.*/pull/\\d+.*' },                  // GitHub
+    { urlMatches: '.*/_git/[^/]+/pullrequest/\\d+.*' }, // Azure DevOps
+  ],
+};
+
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
   if (details.frameId !== 0) return; // メインフレームのみ
   if (!isPRPageUrl(details.url)) return;
@@ -96,7 +104,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
     // カスタムドメイン → 動的注入
     injectContentScripts(details.tabId);
   }
-});
+}, NAV_URL_FILTERS);
 
 // タブ更新時にも検出（フルリロード時）
 chrome.webNavigation.onCompleted.addListener((details) => {
@@ -105,4 +113,4 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   if (!isKnownDomain(details.url)) {
     injectContentScripts(details.tabId);
   }
-});
+}, NAV_URL_FILTERS);

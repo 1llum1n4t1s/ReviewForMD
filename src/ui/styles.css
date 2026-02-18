@@ -30,33 +30,35 @@
 }
 
 /* 全てMDコピー (メイン) ボタン */
-.rfmd-btn--primary {
+.rfmd-btn.rfmd-btn--primary {
   background: #2da44e;
   color: #ffffff;
   border-color: #2da44e;
 }
 
-.rfmd-btn--primary:hover {
+.rfmd-btn.rfmd-btn--primary:hover {
   background: #218838;
   border-color: #218838;
 }
 
-.rfmd-btn--primary:active {
+.rfmd-btn.rfmd-btn--primary:active {
   background: #1a7f37;
 }
 
-/* コピー成功フィードバック */
-.rfmd-btn--success {
-  background: #1a7f37 !important;
-  color: #ffffff !important;
-  border-color: #1a7f37 !important;
+/* コピー成功フィードバック（詳細度を上げて !important を排除） */
+.rfmd-btn.rfmd-btn--success,
+.rfmd-btn.rfmd-btn--success:hover {
+  background: #1a7f37;
+  color: #ffffff;
+  border-color: #1a7f37;
 }
 
 /* コピー失敗フィードバック */
-.rfmd-btn--error {
-  background: #cf222e !important;
-  color: #ffffff !important;
-  border-color: #cf222e !important;
+.rfmd-btn.rfmd-btn--error,
+.rfmd-btn.rfmd-btn--error:hover {
+  background: #cf222e;
+  color: #ffffff;
+  border-color: #cf222e;
 }
 
 /* アイコン */
@@ -80,14 +82,18 @@
   border-radius: 2px;
 }
 
-.repos-pr-details-page .rfmd-btn--primary {
+.repos-pr-details-page .rfmd-btn.rfmd-btn--primary {
   background: #0078d4;
   border-color: #0078d4;
 }
 
-.repos-pr-details-page .rfmd-btn--primary:hover {
+.repos-pr-details-page .rfmd-btn.rfmd-btn--primary:hover {
   background: #106ebe;
   border-color: #106ebe;
+}
+
+.repos-pr-details-page .rfmd-all-copy-container {
+  margin-left: 12px;
 }
 
 /* ── 各コメントの MDコピー ボタン位置 ──────────── */
@@ -97,3 +103,37 @@
   margin-left: 8px;
   flex-shrink: 0;
 }
+
+/* ── ダークモード対応 ──────────────────────────── */
+
+/* GitHub dark mode */
+[data-color-mode="dark"] .rfmd-btn,
+[data-dark-theme] .rfmd-btn,
+html.dark .rfmd-btn {
+  background: #21262d;
+  color: #c9d1d9;
+  border-color: #30363d;
+}
+
+[data-color-mode="dark"] .rfmd-btn:hover,
+[data-dark-theme] .rfmd-btn:hover,
+html.dark .rfmd-btn:hover {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+/* DevOps dark theme */
+.vss-PlatformCore--theme-dark .rfmd-btn,
+body[data-theme="dark"] .rfmd-btn {
+  background: #252526;
+  color: #cccccc;
+  border-color: #3e3e42;
+}
+
+body[data-theme="dark"] .rfmd-btn:hover,
+.vss-PlatformCore--theme-dark .rfmd-btn:hover {
+  background: #3e3e42;
+  border-color: #6e6e6e;
+}
+
+/* primary ボタンはダークモードでも緑/青のまま維持 */

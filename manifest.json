@@ -44,7 +44,12 @@
   "web_accessible_resources": [
     {
       "resources": ["src/inject/navigation_hook.js"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "https://github.com/*",
+        "https://*.github.com/*",
+        "https://dev.azure.com/*",
+        "https://*.visualstudio.com/*"
+      ]
     }
   ]
 }

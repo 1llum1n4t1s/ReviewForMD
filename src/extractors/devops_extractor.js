@@ -69,87 +69,108 @@ const DevOpsExtractor = (() => {
   }
 
   /**
-   * 全レビューコメントを取得する（DOM ベース）
-   * @returns {Array<{author:string, body:string, filePath?:string, timestamp?:string}>}
+   * 全レビューコメントをスレッド単位で取得する（DOM ベース）
+   * @returns {Array<Array<{author:string, body:string, filePath?:string, timestamp?:string}>>}
    */
   function getComments() {
-    const comments = [];
+    const threads = [];
 
     // Activity/Discussion タブのコメント
-    _extractActivityComments(comments);
+    _extractActivityComments(threads);
 
     // Files タブのインラインコメント
-    _extractInlineComments(comments);
+    _extractInlineComments(threads);
 
-    return _deduplicateComments(comments);
+    return _deduplicateThreads(threads);
   }
 
   /**
-   * Activity タブのディスカッションコメントを抽出
+   * Activity タブのディスカッションコメントをスレッド単位で抽出
+   * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
    */
   function _extractActivityComments(out) {
-    // DevOps のコメントスレッドコンテナ（具体的なクラス名を優先）
-    const specificSelectors = [
-      '.vc-discussion-thread-comment',
-      '.repos-discussion-comment',
-    ];
-
-    let found = false;
-
-    for (const selector of specificSelectors) {
-      const elements = document.querySelectorAll(selector);
-      if (elements.length > 0) {
-        found = true;
-        elements.forEach((el) => {
+    // .repos-discussion-thread を1スレッドとして扱う
+    const threadEls = document.querySelectorAll('.repos-discussion-thread');
+    if (threadEls.length > 0) {
+      threadEls.forEach((threadEl) => {
+        const threadComments = [];
+        const commentEls = threadEl.querySelectorAll(
+          '.repos-discussion-comment, .vc-discussion-thread-comment'
+        );
+        commentEls.forEach((el) => {
           const comment = _parseDevOpsComment(el);
-          if (comment && comment.body) out.push(comment);
+          if (comment && comment.body) threadComments.push(comment);
+        });
+        if (threadComments.length > 0) out.push(threadComments);
+      });
+      return;
+    }
+
+    // フォールバック: discussion-thread / comment-thread を1スレッドとして扱う
+    const legacyThreads = document.querySelectorAll('.discussion-thread, .comment-thread');
+    legacyThreads.forEach((thread) => {
+      const threadComments = [];
+      const commentEls = thread.querySelectorAll('.comment-content');
+      if (commentEls.length === 0) {
+        const comment = _parseDevOpsComment(thread);
+        if (comment && comment.body) threadComments.push(comment);
+      } else {
+        commentEls.forEach((el) => {
+          const comment = _parseDevOpsComment(el);
+          if (comment && comment.body) threadComments.push(comment);
         });
       }
-    }
-
-    // 具体的なセレクタでヒットしなかった場合のフォールバック
-    if (!found) {
-      // discussion-thread 内の comment-content を探す
-      const threads = document.querySelectorAll('.discussion-thread, .comment-thread');
-      threads.forEach((thread) => {
-        const commentEls = thread.querySelectorAll('.comment-content');
-        if (commentEls.length === 0) {
-          const comment = _parseDevOpsComment(thread);
-          if (comment && comment.body) out.push(comment);
-        } else {
-          commentEls.forEach((el) => {
-            const comment = _parseDevOpsComment(el);
-            if (comment && comment.body) out.push(comment);
-          });
-        }
-      });
-    }
+      if (threadComments.length > 0) out.push(threadComments);
+    });
   }
 
   /**
-   * ファイル差分上のインラインコメントを抽出
+   * ファイル差分上のインラインコメントをスレッド単位で抽出
+   * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
    */
   function _extractInlineComments(out) {
     const inlineThreads = document.querySelectorAll('.repos-discussion-thread');
 
     inlineThreads.forEach((thread) => {
-      // ファイルパスを取得
-      const fileContainer = thread.closest('.repos-summary-item, .file-container');
-      const filePathEl = fileContainer?.querySelector(
-        '.repos-summary-header .file-name-link, .repos-summary-header-path'
-      );
-      const filePath = filePathEl ? filePathEl.textContent.trim() : '';
+      // ファイルパスと diff コンテキストを取得
+      let filePath = '';
+      let diffContext;
+      const prevSibling = thread.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
+        const linkEl = prevSibling.querySelector('.comment-file-header-link');
+        if (linkEl) filePath = linkEl.textContent.trim();
+        if (!filePath) {
+          const pathEl = prevSibling.querySelector('.secondary-text');
+          if (pathEl) filePath = pathEl.textContent.trim();
+        }
+        diffContext = _extractDiffContext(prevSibling);
+      }
+      // フォールバック: 従来のセレクタ
+      if (!filePath) {
+        const fileContainer = thread.closest('.repos-summary-item, .file-container');
+        const filePathEl = fileContainer?.querySelector(
+          '.repos-summary-header .file-name-link, .repos-summary-header-path'
+        );
+        if (filePathEl) filePath = filePathEl.textContent.trim();
+      }
 
+      const threadComments = [];
       const commentEls = thread.querySelectorAll(
-        '.vc-discussion-thread-comment, .comment-content'
+        '.vc-discussion-thread-comment, .repos-discussion-comment, .comment-content'
       );
       commentEls.forEach((el) => {
         const comment = _parseDevOpsComment(el);
         if (comment && comment.body) {
-          if (filePath) comment.filePath = filePath;
-          out.push(comment);
+          // ファイルパスと diff コンテキストは最初のコメントにのみ付与
+          if (threadComments.length === 0) {
+            if (filePath) comment.filePath = filePath;
+            if (diffContext) comment.diffContext = diffContext;
+          }
+          threadComments.push(comment);
         }
       });
+
+      if (threadComments.length > 0) out.push(threadComments);
     });
   }
 
@@ -228,24 +249,43 @@ const DevOpsExtractor = (() => {
 
       const title = prData.title || '';
       const body = prData.description || '';
-      const comments = [];
+      const apiThreads = [];
 
       if (threads && threads.value) {
         threads.value.forEach((thread) => {
           if (!thread.comments) return;
+          const tc = thread.threadContext;
+          // threadContext から行範囲を生成
+          let lineRange = '';
+          if (tc) {
+            const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
+            const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
+            if (start && end && start !== end) {
+              lineRange = `行 ${start}-${end}`;
+            } else if (start) {
+              lineRange = `行 ${start}`;
+            }
+          }
+          const threadComments = [];
           thread.comments.forEach((c) => {
             if (c.commentType === 'system') return;
-            comments.push({
+            const comment = {
               author: c.author?.displayName || '',
               body: c.content || '',
-              filePath: thread.threadContext?.filePath || undefined,
+              filePath: tc?.filePath || undefined,
               timestamp: c.publishedDate || '',
-            });
+            };
+            // 行範囲はスレッドの最初のユーザーコメントにのみ付与
+            if (threadComments.length === 0 && lineRange) {
+              comment.diffContext = { lineRange, diffLines: [] };
+            }
+            threadComments.push(comment);
           });
+          if (threadComments.length > 0) apiThreads.push(threadComments);
         });
       }
 
-      return { title, body, comments };
+      return { title, body, threads: apiThreads };
     } catch (e) {
       console.warn('[ReviewForMD] API fetch failed:', e);
       return null;
@@ -276,12 +316,90 @@ const DevOpsExtractor = (() => {
   }
 
   /**
-   * 重複コメントを除去する
+   * comment-file-header 内の diff コンテキスト（行番号・ソースコード）を抽出する
+   * @param {Element} fileHeader - .comment-file-header 要素
+   * @returns {{ lineRange: string, diffLines: Array<{prefix: string, lineNum: string, code: string}> }|undefined}
    */
-  function _deduplicateComments(comments) {
+  function _extractDiffContext(fileHeader) {
+    if (!fileHeader) return undefined;
+
+    const diffContainer = fileHeader.querySelector('.comment-file-diff-container');
+    if (!diffContainer) return undefined;
+
+    const rows = diffContainer.querySelectorAll('.repos-diff-contents-row');
+    if (rows.length === 0) return undefined;
+
+    const diffLines = [];
+    let firstLineNum = '';
+    let lastLineNum = '';
+
+    rows.forEach((row) => {
+      const spans = row.children;
+      if (spans.length < 3) return;
+
+      // 旧行番号（SPAN[0] 内の .screen-reader-only）
+      const oldSr = spans[0].querySelector('.screen-reader-only');
+      let oldNum = oldSr ? oldSr.textContent.trim() : '';
+      // "Commented 417" のような形式から数値だけ取得
+      oldNum = oldNum.replace(/^Commented\s+/i, '');
+
+      // 新行番号（SPAN[1] 内の .screen-reader-only）
+      const newSr = spans[1].querySelector('.screen-reader-only');
+      let newNum = newSr ? newSr.textContent.trim() : '';
+      newNum = newNum.replace(/^Commented\s+/i, '');
+
+      const lineNum = newNum || oldNum;
+
+      // コード内容（SPAN[2] = .repos-line-content、screen-reader-only 除外）
+      const contentSpan = spans[2];
+      const contentCls = typeof contentSpan.className === 'string' ? contentSpan.className : '';
+      const isAdded = contentCls.includes('added');
+      const isRemoved = contentCls.includes('removed');
+      const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+
+      let code = '';
+      for (const child of contentSpan.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          code += child.textContent;
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          const cls = typeof child.className === 'string' ? child.className : '';
+          if (!cls.includes('screen-reader-only')) {
+            code += child.textContent;
+          }
+        }
+      }
+
+      diffLines.push({ prefix, lineNum, code: code.trimEnd() });
+
+      // 行範囲の計算用
+      if (lineNum && !firstLineNum) firstLineNum = lineNum;
+      if (lineNum) lastLineNum = lineNum;
+    });
+
+    if (diffLines.length === 0) return undefined;
+
+    // 行範囲テキストを生成
+    let lineRange = '';
+    if (firstLineNum && lastLineNum && firstLineNum !== lastLineNum) {
+      lineRange = `行 ${firstLineNum}-${lastLineNum}`;
+    } else if (firstLineNum) {
+      lineRange = `行 ${firstLineNum}`;
+    }
+
+    return { lineRange, diffLines };
+  }
+
+  /**
+   * 重複スレッドを除去する（先頭コメントのauthor+bodyで判定）
+   * @param {Array<Array>} threads
+   * @returns {Array<Array>}
+   */
+  function _deduplicateThreads(threads) {
     const seen = new Set();
-    return comments.filter((c) => {
-      const key = `${c.author}::${(c.body || '').substring(0, 100)}`;
+    return threads.filter((thread) => {
+      if (!thread || thread.length === 0) return false;
+      const first = thread[0];
+      const key = `${first.author}::${(first.body || '').substring(0, 100)}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -305,9 +423,10 @@ const DevOpsExtractor = (() => {
   function extractThreadComments(threadContainer) {
     const comments = [];
 
-    // ファイルパスを取得
+    // ファイルパスと diff コンテキストを取得
     // 1) スレッドの前の兄弟要素 .comment-file-header からファイル名リンクを取得
     let filePath = '';
+    let diffContext;
     const prevSibling = threadContainer.previousElementSibling;
     if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
       const linkEl = prevSibling.querySelector('.comment-file-header-link');
@@ -317,6 +436,8 @@ const DevOpsExtractor = (() => {
         const pathEl = prevSibling.querySelector('.secondary-text');
         if (pathEl) filePath = pathEl.textContent.trim();
       }
+      // diff コンテキストを抽出
+      diffContext = _extractDiffContext(prevSibling);
     }
     // 2) フォールバック: 従来のセレクタ
     if (!filePath) {
@@ -334,8 +455,11 @@ const DevOpsExtractor = (() => {
       if (el.querySelector('.bolt-spinner') && !el.querySelector('.repos-discussion-comment-header')) return;
       const comment = _parseDevOpsComment(el);
       if (comment && comment.body) {
-        // ファイルパスは親コメント（最初の1件）にのみ付与
-        if (filePath && comments.length === 0) comment.filePath = filePath;
+        // ファイルパスと diff コンテキストは親コメント（最初の1件）にのみ付与
+        if (comments.length === 0) {
+          if (filePath) comment.filePath = filePath;
+          if (diffContext) comment.diffContext = diffContext;
+        }
         comments.push(comment);
       }
     });
@@ -344,28 +468,60 @@ const DevOpsExtractor = (() => {
   }
 
   /**
+   * DOM 上に未ロードのコメント（スピナー）が残っているかどうか判定する
+   * @returns {boolean}
+   */
+  function _hasUnloadedComments() {
+    // コメントスレッド内のスピナーを確認
+    const threads = document.querySelectorAll('.repos-discussion-thread');
+    for (const thread of threads) {
+      const spinners = thread.querySelectorAll('.bolt-spinner');
+      for (const sp of spinners) {
+        // スピナーがあっても、同じコメント要素内にヘッダーがあればロード済み
+        const comment = sp.closest('.repos-discussion-comment');
+        if (comment && !comment.querySelector('.repos-discussion-comment-header')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * 全データを取得して Markdown を生成する
-   * DOM ベースで取得し、コメントが 0 件なら API フォールバック
+   * DOM に未ロードコメントがある場合は API を優先使用する
    * @returns {Promise<string>}
    */
   async function extractAll() {
-    let title = `${getTitle()} ${getPRNumber()}`;
+    let domTitle = getTitle();
     let body = getBody();
-    let comments = getComments();
+    let threads = getComments(); // Array<Array<comment>>
 
-    // DOM でコメントが取れなかった場合、API を試す
-    if (comments.length === 0) {
+    // DOM でコメントが取れなかった場合、または未ロードのコメントがある場合、API を試す
+    const domCommentCount = threads.reduce((sum, t) => sum + t.length, 0);
+    const needApi = domCommentCount === 0 || _hasUnloadedComments();
+
+    let title = '';
+    if (needApi) {
       const apiData = await fetchViaApi();
       if (apiData) {
-        if (!title.trim() || title.trim() === '#') {
-          title = `${apiData.title} ${getPRNumber()}`;
-        }
+        // API タイトルを優先（DOM より確実）
+        if (apiData.title) title = `${apiData.title} ${getPRNumber()}`;
         if (!body) body = apiData.body;
-        comments = apiData.comments;
+        // API から取得したコメントが DOM より多い場合のみ API を採用
+        const apiCommentCount = apiData.threads.reduce((sum, t) => sum + t.length, 0);
+        if (apiCommentCount > domCommentCount) {
+          threads = apiData.threads;
+        }
       }
     }
 
-    return MarkdownBuilder.buildFullMarkdown({ title: title.trim(), body, comments });
+    // API タイトルが取れなかった場合は DOM タイトルにフォールバック
+    if (!title) {
+      title = domTitle ? `${domTitle} ${getPRNumber()}` : getPRNumber();
+    }
+
+    return MarkdownBuilder.buildFullMarkdown({ title: title.trim(), body, threads });
   }
 
   return {

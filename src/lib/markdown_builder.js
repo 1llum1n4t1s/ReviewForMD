@@ -269,7 +269,14 @@ const MarkdownBuilder = (() => {
 
   /**
    * PR 全体を Markdown にフォーマットする
-   * @param {{ title: string, body: string, comments: Array<{author:string, body:string, filePath?:string, timestamp?:string}> }} data
+   * @param {{
+   *   title: string,
+   *   body: string,
+   *   bodyAuthor?: string,
+   *   bodyTimestamp?: string,
+   *   threads?: Array<Array<{author:string, body:string, filePath?:string, timestamp?:string}>>,
+   *   comments?: Array<{author:string, body:string, filePath?:string, timestamp?:string}>
+   * }} data
    * @returns {string}
    */
   function buildFullMarkdown(data) {
@@ -293,16 +300,60 @@ const MarkdownBuilder = (() => {
     }
 
     // レビューコメント
-    if (data.comments && data.comments.length > 0) {
+    // threads: Array<Array<comment>> 形式（スレッド階層あり）を優先
+    // comments: Array<comment> 形式（GitHub 等のフラット配列）はフォールバック
+    const threads = data.threads;
+    const flatComments = data.comments;
+
+    if (threads && threads.length > 0) {
       lines.push('## レビューコメント');
       lines.push('');
-      data.comments.forEach((c, i) => {
+      threads.forEach((thread, i) => {
+        lines.push(formatThreadAsComment(thread, i + 1));
+        lines.push('');
+      });
+    } else if (flatComments && flatComments.length > 0) {
+      lines.push('## レビューコメント');
+      lines.push('');
+      flatComments.forEach((c, i) => {
         lines.push(formatSingleComment(c, i + 1));
         lines.push('');
       });
     }
 
     return lines.join('\n').trim();
+  }
+
+  /**
+   * スレッド（親コメント＋返信）を「コメント N」見出し付きで Markdown にフォーマットする
+   * buildFullMarkdown 内で使用する（全体コピー用）
+   * @param {Array<{author:string, body:string, filePath?:string, timestamp?:string, diffContext?:any}>} thread
+   * @param {number} index - コメント番号（1始まり）
+   * @returns {string}
+   */
+  function formatThreadAsComment(thread, index) {
+    if (!thread || thread.length === 0) return '';
+
+    const lines = [];
+
+    // 「コメント N」見出し
+    lines.push(`### コメント ${index}`);
+    lines.push('');
+
+    // 親コメント（見出しは既に出力済みなので index=null で呼ぶ）
+    lines.push(formatSingleComment(thread[0]));
+
+    // 返信（2件目以降）
+    thread.slice(1).forEach((c, i) => {
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+      lines.push(`**↩ 返信 ${i + 1}**`);
+      lines.push('');
+      lines.push(formatSingleComment(c));
+    });
+
+    return lines.join('\n');
   }
 
   /**

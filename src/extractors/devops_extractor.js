@@ -159,8 +159,10 @@ const DevOpsExtractor = (() => {
   function _parseDevOpsComment(container) {
     // 著者（具体的なセレクタから汎用へフォールバック）
     const authorSelectors = [
+      '.repos-discussion-comment-header .font-weight-semibold',
       '.vc-discussion-thread-comment-header .identity-name',
       '.comment-header .identity-name',
+      '.font-weight-semibold',
       '.identity-name',
     ];
     let author = '';
@@ -185,8 +187,9 @@ const DevOpsExtractor = (() => {
       }
     }
 
-    // 本文（rendered-markdown を優先）
+    // 本文（markdown-content / rendered-markdown を優先）
     const bodySelectors = [
+      '.markdown-content',
       '.rendered-markdown',
       '.comment-content .rendered-markdown',
     ];
@@ -195,8 +198,8 @@ const DevOpsExtractor = (() => {
       const el = container.querySelector(sel);
       if (el) { body = MarkdownBuilder.htmlToMarkdown(el); break; }
     }
-    // フォールバック: コンテナ自体が rendered-markdown の場合
-    if (!body && container.classList.contains('rendered-markdown')) {
+    // フォールバック: コンテナ自体が markdown 系クラスの場合
+    if (!body && (container.classList.contains('rendered-markdown') || container.classList.contains('markdown-content'))) {
       body = MarkdownBuilder.htmlToMarkdown(container);
     }
 
@@ -295,6 +298,52 @@ const DevOpsExtractor = (() => {
   }
 
   /**
+   * スレッド（.repos-discussion-thread）内の全コメント（親＋返信）を取得
+   * @param {Element} threadContainer
+   * @returns {Array<{ author: string, body: string, filePath?: string, timestamp?: string }>}
+   */
+  function extractThreadComments(threadContainer) {
+    const comments = [];
+
+    // ファイルパスを取得
+    // 1) スレッドの前の兄弟要素 .comment-file-header からファイル名リンクを取得
+    let filePath = '';
+    const prevSibling = threadContainer.previousElementSibling;
+    if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
+      const linkEl = prevSibling.querySelector('.comment-file-header-link');
+      if (linkEl) filePath = linkEl.textContent.trim();
+      // フォールバック: セカンダリテキスト（フルパス）
+      if (!filePath) {
+        const pathEl = prevSibling.querySelector('.secondary-text');
+        if (pathEl) filePath = pathEl.textContent.trim();
+      }
+    }
+    // 2) フォールバック: 従来のセレクタ
+    if (!filePath) {
+      const fileContainer = threadContainer.closest('.repos-summary-item, .file-container');
+      const filePathEl = fileContainer?.querySelector(
+        '.repos-summary-header .file-name-link, .repos-summary-header-path'
+      );
+      if (filePathEl) filePath = filePathEl.textContent.trim();
+    }
+
+    // スレッド内の全コメント要素
+    const commentEls = threadContainer.querySelectorAll('.repos-discussion-comment');
+    commentEls.forEach((el) => {
+      // spinner（未ロード）はスキップ
+      if (el.querySelector('.bolt-spinner') && !el.querySelector('.repos-discussion-comment-header')) return;
+      const comment = _parseDevOpsComment(el);
+      if (comment && comment.body) {
+        // ファイルパスは親コメント（最初の1件）にのみ付与
+        if (filePath && comments.length === 0) comment.filePath = filePath;
+        comments.push(comment);
+      }
+    });
+
+    return comments;
+  }
+
+  /**
    * 全データを取得して Markdown を生成する
    * DOM ベースで取得し、コメントが 0 件なら API フォールバック
    * @returns {Promise<string>}
@@ -326,6 +375,7 @@ const DevOpsExtractor = (() => {
     getComments,
     extractAll,
     extractSingleComment,
+    extractThreadComments,
     fetchViaApi,
   };
 })();

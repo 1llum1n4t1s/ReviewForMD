@@ -100,6 +100,37 @@ const ButtonInjector = (() => {
     return btn;
   }
 
+  /**
+   * DevOps スレッド全体の「MDコピー」ボタンを作成する
+   * スレッド内の親コメント + 返信をまとめてコピーする
+   */
+  function _createThreadCopyButton(threadContainer) {
+    const btn = document.createElement('button');
+    btn.className = 'rfmd-btn';
+    btn.setAttribute('data-rfmd', 'single');
+    btn.innerHTML = SINGLE_COPY_LABEL;
+    btn.dataset.rfmdOriginal = SINGLE_COPY_LABEL;
+    btn.dataset.rfmdBusy = '0';
+    btn.title = 'このスレッド（返信含む）を Markdown 形式でコピー';
+
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.dataset.rfmdBusy === '1') return;
+      try {
+        const comments = DevOpsExtractor.extractThreadComments(threadContainer);
+        const md = MarkdownBuilder.formatThreadComments(comments);
+        const ok = await Clipboard.copy(md);
+        _showFeedback(btn, ok);
+      } catch (err) {
+        console.error('[ReviewForMD]', err);
+        _showFeedback(btn, false);
+      }
+    });
+
+    return btn;
+  }
+
   /* ── GitHub 用ボタン注入 ──────────────────────── */
 
   function _injectGitHub() {
@@ -123,29 +154,31 @@ const ButtonInjector = (() => {
       }
     }
 
-    // 各コメントに「MDコピー」ボタンを注入
-    const commentContainers = document.querySelectorAll(
-      '.timeline-comment, .react-issue-comment, .review-comment'
+    // ── 通常コメント（タイムライン上）に「MDコピー」ボタンを注入 ──
+    const timelineContainers = document.querySelectorAll(
+      '.timeline-comment, .react-issue-comment'
     );
 
-    commentContainers.forEach((container) => {
+    timelineContainers.forEach((container) => {
       // PR 本文はスキップ
       if (
         container.querySelector('#issue-body') ||
         container.querySelector('.js-issue-body') ||
-        container.querySelector('.react-issue-body')
+        container.querySelector('.react-issue-body') ||
+        (container.id && container.id.startsWith('pullrequest-'))
       ) {
         return;
       }
 
+      // レビュースレッド内のコメントはスキップ（下で別処理）
+      if (container.closest('.js-resolvable-timeline-thread-container')) return;
+
       // 既に注入済みならスキップ
       if (container.querySelector('[data-rfmd="single"]')) return;
 
-      // コメントヘッダーに注入
       const header =
         container.querySelector('.timeline-comment-header') ||
-        container.querySelector('[data-testid="comment-header"]') ||
-        container.querySelector('.review-comment-header');
+        container.querySelector('[data-testid="comment-header"]');
 
       if (header) {
         const wrap = document.createElement('span');
@@ -154,9 +187,6 @@ const ButtonInjector = (() => {
           _createCommentCopyButton(SiteDetector.SiteType.GITHUB, container)
         );
 
-        // GitHub のコメントヘッダーは flex + row-reverse のため、
-        // timeline-comment-actions 内の先頭に挿入して
-        // 「...」メニューの左隣に配置する
         const commentActions =
           header.querySelector('.timeline-comment-actions');
         if (commentActions) {
@@ -166,45 +196,93 @@ const ButtonInjector = (() => {
         }
       }
     });
+
+    // ── レビュースレッド（インラインコメント）のファイルヘッダーに
+    //    「MDコピー」ボタンを注入 ──
+    const threads = document.querySelectorAll(
+      '.js-resolvable-timeline-thread-container'
+    );
+
+    threads.forEach((thread) => {
+      // 既に注入済みならスキップ
+      if (thread.querySelector('summary [data-rfmd="single"]')) return;
+
+      // スレッド内の最初のコメントコンテナを特定
+      const commentContainer =
+        thread.querySelector('.timeline-comment-group') ||
+        thread.querySelector('.review-comment') ||
+        thread.querySelector('.timeline-comment');
+      if (!commentContainer) return;
+
+      // ファイルヘッダー（summary 内の flex コンテナ）にボタンを配置
+      const summary = thread.querySelector('summary');
+      if (!summary) return;
+
+      const flexDiv = summary.querySelector('.d-flex');
+      if (!flexDiv) return;
+
+      const wrap = document.createElement('span');
+      wrap.className = 'rfmd-comment-btn-wrap';
+      wrap.appendChild(
+        _createCommentCopyButton(SiteDetector.SiteType.GITHUB, commentContainer)
+      );
+      flexDiv.appendChild(wrap);
+    });
   }
 
   /* ── Azure DevOps 用ボタン注入 ───────────────── */
 
   function _injectDevOps() {
-    // 「全てMDコピー」ボタンをヘッダーに注入
+    // 「全てMDコピー」ボタンを Approve ボタンの左隣に注入
+    const voteButton = document.querySelector('.repos-pr-header-vote-button');
     const headerArea =
       document.querySelector('.bolt-header-title-area') ||
       document.querySelector('.repos-pr-details-page-tabbar') ||
       document.querySelector('.repos-pr-details-page');
+    const insertTarget = voteButton ? voteButton.parentElement : headerArea;
 
-    if (headerArea && !headerArea.querySelector('[data-rfmd="all"]')) {
+    if (insertTarget && !document.querySelector('[data-rfmd="all"]')) {
       const wrap = document.createElement('div');
       wrap.className = 'rfmd-all-copy-container';
       wrap.style.marginLeft = '12px';
       wrap.appendChild(_createAllCopyButton(SiteDetector.SiteType.AZURE_DEVOPS));
-      headerArea.appendChild(wrap);
+
+      if (voteButton) {
+        // Approve ボタンの直前に挿入
+        voteButton.parentElement.insertBefore(wrap, voteButton);
+      } else if (headerArea) {
+        headerArea.appendChild(wrap);
+      }
     }
 
-    // 各コメントに「MDコピー」ボタンを注入（具体的なセレクタを優先）
-    const commentContainers = document.querySelectorAll(
-      '.vc-discussion-thread-comment, .repos-discussion-comment'
-    );
+    // 各ファイルヘッダー（ファイル名 + View original diff）に「MDコピー」ボタンを注入
+    // ファイルヘッダーの隣接スレッド全体（親コメント＋返信）をまとめてコピーする
+    const fileHeaders = document.querySelectorAll('.comment-file-header');
 
-    commentContainers.forEach((container) => {
-      if (container.querySelector('[data-rfmd="single"]')) return;
+    fileHeaders.forEach((fileHeader) => {
+      // 既に注入済みならスキップ
+      if (fileHeader.querySelector('[data-rfmd="single"]')) return;
 
-      const header =
-        container.querySelector('.vc-discussion-thread-comment-header') ||
-        container.querySelector('.comment-header') ||
-        container.firstElementChild;
+      // ファイルヘッダーの次の兄弟がスレッド
+      const thread = fileHeader.nextElementSibling;
+      if (!thread || !thread.classList.contains('repos-discussion-thread')) return;
 
-      if (header) {
-        const wrap = document.createElement('span');
-        wrap.className = 'rfmd-comment-btn-wrap';
-        wrap.appendChild(
-          _createCommentCopyButton(SiteDetector.SiteType.AZURE_DEVOPS, container)
-        );
-        header.appendChild(wrap);
+      // タイトル行の右側エリア（View original diff ボタン等が並ぶ場所）
+      const titleRow = fileHeader.querySelector('.comment-file-header-title');
+      if (!titleRow) return;
+      const rightArea = titleRow.querySelector('.flex-row.flex-noshrink.flex-center');
+      if (!rightArea) return;
+
+      // View original diff ボタンの前にMDコピーボタンを挿入
+      const viewOrigBtn = rightArea.querySelector('button');
+      const wrap = document.createElement('span');
+      wrap.className = 'rfmd-comment-btn-wrap';
+      wrap.appendChild(_createThreadCopyButton(thread));
+
+      if (viewOrigBtn) {
+        rightArea.insertBefore(wrap, viewOrigBtn);
+      } else {
+        rightArea.prepend(wrap);
       }
     });
   }

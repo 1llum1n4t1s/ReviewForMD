@@ -97,6 +97,8 @@ const MarkdownBuilder = (() => {
       case 'img': {
         const alt = el.getAttribute('alt') || '';
         const src = el.getAttribute('src') || '';
+        // GitHub Camo 経由のプライオリティバッジ等の装飾画像はスキップ
+        if (src.includes('camo.githubusercontent.com')) return '';
         return `![${alt}](${src})`;
       }
 
@@ -281,11 +283,9 @@ const MarkdownBuilder = (() => {
     if (data.body) {
       lines.push('## 本文');
       lines.push('');
-      const meta = [];
-      if (data.bodyAuthor) meta.push(`**投稿者:** ${data.bodyAuthor}`);
-      if (data.bodyTimestamp) meta.push(`**日時:** ${formatTimestamp(data.bodyTimestamp)}`);
-      if (meta.length > 0) {
-        lines.push(meta.join('  '));
+      if (data.bodyAuthor) lines.push(`**投稿者:** ${data.bodyAuthor}`);
+      if (data.bodyTimestamp) lines.push(`**日時:** ${formatTimestamp(data.bodyTimestamp)}`);
+      if (data.bodyAuthor || data.bodyTimestamp) {
         lines.push('');
       }
       lines.push(data.body);
@@ -307,24 +307,41 @@ const MarkdownBuilder = (() => {
 
   /**
    * 単一コメントを Markdown にフォーマットする
-   * @param {{ author: string, body: string, filePath?: string, timestamp?: string }} comment
+   * @param {{ author: string, body: string, filePath?: string, timestamp?: string, diffContext?: { lineRange: string, diffLines: Array<{prefix: string, lineNum: string, code: string}> } }} comment
    * @param {number} [index]
    * @returns {string}
    */
   function formatSingleComment(comment, index) {
     const lines = [];
-    const header = index != null ? `### コメント ${index}` : `### コメント`;
-    lines.push(header);
-    lines.push('');
-
-    // メタ情報
-    const meta = [];
-    if (comment.author) meta.push(`**投稿者:** ${comment.author}`);
-    if (comment.timestamp) meta.push(`**日時:** ${formatTimestamp(comment.timestamp)}`);
-    if (comment.filePath) meta.push(`**ファイル:** \`${comment.filePath}\``);
-    if (meta.length > 0) {
-      lines.push(meta.join('  '));
+    // 「全てMDコピー」時のみ見出しを付与（個別コピー時は不要）
+    if (index != null) {
+      lines.push(`### コメント ${index}`);
       lines.push('');
+    }
+
+    // メタ情報（各項目を改行で区切る）
+    if (comment.author) lines.push(`**投稿者:** ${comment.author}`);
+    if (comment.timestamp) lines.push(`**日時:** ${formatTimestamp(comment.timestamp)}`);
+    if (comment.filePath) lines.push(`**ファイル:** \`${comment.filePath}\``);
+    if (comment.author || comment.timestamp || comment.filePath) {
+      lines.push('');
+    }
+
+    // diff コンテキスト（対象ファイルの変更行・ソースコード）
+    if (comment.diffContext) {
+      const dc = comment.diffContext;
+      if (dc.lineRange) {
+        lines.push(`**対象行:** ${dc.lineRange}`);
+        lines.push('');
+      }
+      if (dc.diffLines && dc.diffLines.length > 0) {
+        lines.push('```diff');
+        dc.diffLines.forEach((dl) => {
+          lines.push(`${dl.prefix}${dl.code}`);
+        });
+        lines.push('```');
+        lines.push('');
+      }
     }
 
     // 本文
@@ -333,5 +350,37 @@ const MarkdownBuilder = (() => {
     return lines.join('\n');
   }
 
-  return { buildFullMarkdown, formatSingleComment, htmlToMarkdown, formatTimestamp };
+  /**
+   * スレッド（親コメント＋返信）を Markdown にフォーマットする
+   * @param {Array<{ author: string, body: string, filePath?: string, timestamp?: string }>} comments
+   * @returns {string}
+   */
+  function formatThreadComments(comments) {
+    if (!comments || comments.length === 0) return '';
+
+    // コメントが 1 件だけの場合はシングルと同じ（ヘッダーなし）
+    if (comments.length === 1) {
+      return formatSingleComment(comments[0]);
+    }
+
+    // 複数コメント：親コメント + 返信
+    const lines = [];
+
+    // 親コメント（最初の1件）
+    lines.push(formatSingleComment(comments[0]));
+
+    // 返信（2件目以降）
+    comments.slice(1).forEach((c, i) => {
+      lines.push('');
+      lines.push(`---`);
+      lines.push('');
+      lines.push(`**↩ 返信 ${i + 1}**`);
+      lines.push('');
+      lines.push(formatSingleComment(c));
+    });
+
+    return lines.join('\n');
+  }
+
+  return { buildFullMarkdown, formatSingleComment, formatThreadComments, htmlToMarkdown, formatTimestamp };
 })();

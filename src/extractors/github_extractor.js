@@ -163,11 +163,65 @@ const GitHubExtractor = (() => {
     const body = MarkdownBuilder.htmlToMarkdown(bodyEl);
 
     // ファイルパス（インラインコメントの場合）
-    const filePathEl = container.closest('.js-resolvable-timeline-thread-container')
+    const thread = container.closest('.js-resolvable-timeline-thread-container');
+    const filePathEl = thread
       ?.querySelector('.file-header [data-path]');
-    const filePath = filePathEl ? filePathEl.getAttribute('data-path') : undefined;
+    let filePath = filePathEl ? filePathEl.getAttribute('data-path') : undefined;
 
-    return { author, body, filePath, timestamp };
+    // 新 UI: summary 内の a タグからファイルパスを取得
+    if (!filePath && thread) {
+      const summaryLink = thread.querySelector('summary a');
+      if (summaryLink) filePath = summaryLink.textContent.trim();
+    }
+
+    // diff コンテキスト（行番号・ソースコード）
+    const diffContext = thread ? _extractDiffContext(thread) : undefined;
+
+    return { author, body, filePath, timestamp, diffContext };
+  }
+
+  /**
+   * レビュースレッドから diff コンテキスト（変更行・ソースコード）を抽出する
+   * @param {Element} thread - .js-resolvable-timeline-thread-container
+   * @returns {{ lineRange: string, diffLines: Array<{prefix: string, lineNum: string, code: string}> }|undefined}
+   */
+  function _extractDiffContext(thread) {
+    // スレッドの展開部分（summary の次の div）
+    const contentDiv = thread.children[1];
+    if (!contentDiv) return undefined;
+
+    // "Comment on lines +XX to +YY" テキスト
+    const lineHeaderEl = contentDiv.querySelector('.f6.py-2');
+    let lineRange = '';
+    if (lineHeaderEl) {
+      lineRange = lineHeaderEl.textContent.trim().replace(/\s+/g, ' ');
+    }
+
+    // diff テーブル
+    const table = contentDiv.querySelector('.blob-wrapper table');
+    if (!table) return undefined;
+
+    const diffLines = [];
+    table.querySelectorAll('tr').forEach((row) => {
+      const blobNums = row.querySelectorAll('td.blob-num');
+      const codeCell = row.querySelector('td.blob-code');
+      if (!codeCell) return;
+
+      const oldNum = blobNums[0] ? blobNums[0].getAttribute('data-line-number') || '' : '';
+      const newNum = blobNums[1] ? blobNums[1].getAttribute('data-line-number') || '' : '';
+      const isAddition = codeCell.classList.contains('blob-code-addition');
+      const isDeletion = codeCell.classList.contains('blob-code-deletion');
+      const prefix = isAddition ? '+' : isDeletion ? '-' : ' ';
+      const lineNum = newNum || oldNum;
+      // blob-code-inner からコードテキストを取得（余分な空白を回避）
+      const innerEl = codeCell.querySelector('.blob-code-inner');
+      const code = (innerEl || codeCell).textContent.trim();
+
+      diffLines.push({ prefix, lineNum, code });
+    });
+
+    if (diffLines.length === 0) return undefined;
+    return { lineRange, diffLines };
   }
 
   /**

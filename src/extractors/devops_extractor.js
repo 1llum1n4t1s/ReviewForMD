@@ -262,6 +262,7 @@ const DevOpsExtractor = (() => {
       const title = prData.title || '';
       const body = prData.description || '';
       const apiThreads = [];
+      const rawApiThreads = []; // Items API 補完用に生スレッドデータを保持
 
       // threads.value が配列でない場合（API レスポンス異常）を安全にスキップ
       const threadValues = threads?.value;
@@ -298,11 +299,14 @@ const DevOpsExtractor = (() => {
             }
             threadComments.push(comment);
           });
-          if (threadComments.length > 0) apiThreads.push(threadComments);
+          if (threadComments.length > 0) {
+            apiThreads.push(threadComments);
+            rawApiThreads.push(thread); // apiThreads と同期
+          }
         });
       }
 
-      return { title, body, threads: apiThreads };
+      return { title, body, threads: apiThreads, rawApiThreads, urlInfo };
     } catch (e) {
       console.warn('[ReviewForMD] API fetch failed:', e);
       return null;
@@ -340,6 +344,182 @@ const DevOpsExtractor = (() => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // JSON パース失敗時にも呼び出し元の catch で捕捉できるよう await する
     return await res.json();
+  }
+
+  /**
+   * テキスト（非JSON）を同一オリジンから安全に取得するヘルパー
+   * @param {string} url
+   * @returns {Promise<string|null>} テキスト内容。失敗時は null
+   */
+  async function _fetchText(url) {
+    const parsed = new URL(url, location.origin);
+    if (parsed.origin !== location.origin) return null;
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return null;
+      return await res.text();
+    } catch {
+      return null;
+    }
+  }
+
+  /* ── Items API による差分コード補完 ────────────── */
+
+  /**
+   * PR のイテレーション一覧を取得し、iterationId → commitId のマップを返す
+   * @param {{ baseUrl: string, repo: string, prId: string }} urlInfo
+   * @returns {Promise<Map<number, string>>} iterationId → commitId
+   */
+  async function _fetchIterations(urlInfo) {
+    const data = await _fetchJson(
+      `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/pullRequests/${urlInfo.prId}/iterations?api-version=7.1`
+    );
+    const map = new Map();
+    if (Array.isArray(data?.value)) {
+      data.value.forEach((iter) => {
+        if (iter.id && iter.sourceRefCommit?.commitId) {
+          map.set(iter.id, iter.sourceRefCommit.commitId);
+        }
+      });
+    }
+    return map;
+  }
+
+  /**
+   * 指定コミット時点のファイル内容を取得する
+   * @param {{ baseUrl: string, repo: string }} urlInfo
+   * @param {string} filePath - ファイルパス（/CooKai/... 形式）
+   * @param {string} commitId - コミット SHA
+   * @returns {Promise<string|null>} ファイル内容テキスト。404（削除/移動済み）は null
+   */
+  async function _fetchFileContent(urlInfo, filePath, commitId) {
+    // path パラメータはパス区切り (/) を含むためそのまま渡す（encodeURIComponent 不可）
+    const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/items`
+      + `?path=${encodeURI(filePath)}&version=${commitId}&versionType=commit&api-version=7.1`;
+    return _fetchText(url);
+  }
+
+  /**
+   * ファイル内容から対象行の前後を含むコードスニペットを抽出する
+   * @param {string} fileContent - ファイル全文テキスト
+   * @param {number} startLine - 開始行番号（1-based）
+   * @param {number} endLine - 終了行番号（1-based）
+   * @param {number} [contextLines=3] - 前後に含めるコンテキスト行数
+   * @returns {Array<{prefix: string, lineNum: string, code: string}>}
+   */
+  function _extractLinesAroundTarget(fileContent, startLine, endLine, contextLines = 3) {
+    const lines = fileContent.split('\n');
+    const from = Math.max(0, startLine - 1 - contextLines);
+    const to = Math.min(lines.length, endLine + contextLines);
+    const result = [];
+    for (let i = from; i < to; i++) {
+      result.push({
+        prefix: ' ',
+        lineNum: String(i + 1),
+        code: lines[i],
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Items API を使って API スレッドに差分コード（ファイル内容スニペット）を補完する
+   *
+   * _enrichWithDomContext で既に diffLines が設定済みのスレッドはスキップし、
+   * 残りのスレッドについて iterations API → items API でファイル内容を取得する。
+   * ファイルパス+コミットIDで重複排除し、並列フェッチする。
+   *
+   * @param {Array<Array>} apiThreads - 処理済みスレッド配列
+   * @param {Array} rawApiThreads - API 生スレッドデータ（threadContext 等を持つ）
+   * @param {{ baseUrl: string, repo: string, prId: string }} urlInfo
+   */
+  async function _enrichWithItemsApi(apiThreads, rawApiThreads, urlInfo) {
+    // 1. イテレーション一覧を取得
+    let iterationMap;
+    try {
+      iterationMap = await _fetchIterations(urlInfo);
+    } catch {
+      console.warn('[ReviewForMD] イテレーション取得失敗、Items API 補完をスキップ');
+      return;
+    }
+    if (iterationMap.size === 0) return;
+
+    // 2. フェッチ対象を収集（filePath + commitId で重複排除）
+    const fetchTasks = new Map(); // "filePath\0commitId" → { filePath, commitId, entries: [{idx, rawThread}] }
+
+    apiThreads.forEach((thread, idx) => {
+      if (!thread || thread.length === 0) return;
+      const first = thread[0];
+      // DOM 補完で既に diffLines 取得済み → スキップ
+      if (first.diffContext?.diffLines?.length > 0) return;
+      // ファイルパスなし（全体コメント等）→ スキップ
+      if (!first.filePath) return;
+
+      const rawThread = rawApiThreads[idx];
+      if (!rawThread) return;
+      const iterCtx = rawThread.pullRequestThreadContext?.iterationContext;
+      const iterationId = iterCtx?.secondComparingIteration;
+      if (!iterationId) return;
+
+      const commitId = iterationMap.get(iterationId);
+      if (!commitId) return;
+
+      const key = `${first.filePath}\0${commitId}`;
+      if (!fetchTasks.has(key)) {
+        fetchTasks.set(key, { filePath: first.filePath, commitId, entries: [] });
+      }
+      fetchTasks.get(key).entries.push({ idx, rawThread });
+    });
+
+    if (fetchTasks.size === 0) return;
+
+    // 3. ファイル内容を並列取得（同時6件ずつ）
+    const CONCURRENCY = 6;
+    const tasks = Array.from(fetchTasks.values());
+    const fileContents = new Map(); // key → content|null
+
+    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+      const batch = tasks.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (task) => {
+          const content = await _fetchFileContent(urlInfo, task.filePath, task.commitId);
+          return { key: `${task.filePath}\0${task.commitId}`, content };
+        })
+      );
+      results.forEach(({ key, content }) => fileContents.set(key, content));
+    }
+
+    // 4. 各スレッドに diffLines を設定
+    for (const [key, task] of fetchTasks) {
+      const content = fileContents.get(key);
+      if (!content) continue; // ファイル削除/移動 → lineRange のみ保持
+
+      task.entries.forEach(({ idx, rawThread }) => {
+        const thread = apiThreads[idx];
+        const first = thread[0];
+        const tc = rawThread.threadContext;
+        if (!tc) return;
+
+        const startLine = tc.rightFileStart?.line || tc.leftFileStart?.line;
+        const endLine = tc.rightFileEnd?.line || tc.leftFileEnd?.line || startLine;
+        if (!startLine) return;
+
+        const diffLines = _extractLinesAroundTarget(content, startLine, endLine);
+        if (diffLines.length === 0) return;
+
+        if (!first.diffContext) {
+          let lineRange = '';
+          if (startLine && endLine && startLine !== endLine) {
+            lineRange = `行 ${startLine}-${endLine}`;
+          } else if (startLine) {
+            lineRange = `行 ${startLine}`;
+          }
+          first.diffContext = { lineRange, diffLines };
+        } else {
+          first.diffContext.diffLines = diffLines;
+        }
+      });
+    }
   }
 
   /**
@@ -612,6 +792,12 @@ const DevOpsExtractor = (() => {
         if (apiCommentCount > domCommentCount) {
           // API スレッドには diffLines が空のため、DOM から差分コードを補完
           _enrichWithDomContext(apiData.threads);
+          // DOM で補完できなかった残りのスレッドを Items API で補完
+          try {
+            await _enrichWithItemsApi(apiData.threads, apiData.rawApiThreads, apiData.urlInfo);
+          } catch (e) {
+            console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
+          }
           threads = apiData.threads;
         }
       }

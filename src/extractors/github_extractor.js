@@ -13,8 +13,10 @@ const GitHubExtractor = (() => {
     );
     if (prcTitle) return prcTitle.textContent.trim();
 
-    // React ベースの新 UI
-    const reactTitle = document.querySelector('[data-testid="issue-title"]');
+    // React ベースの新 UI（PR 専用 testid → issue 汎用 testid の順でフォールバック）
+    const reactTitle =
+      document.querySelector('[data-testid="pull-request-title"]') ||
+      document.querySelector('[data-testid="issue-title"]');
     if (reactTitle) return reactTitle.textContent.trim();
 
     // bdi.markdown-title (新 UI のフォールバック)
@@ -71,20 +73,23 @@ const GitHubExtractor = (() => {
   }
 
   /**
-   * 全レビューコメントを取得する
-   * @returns {Array<{author:string, body:string, filePath?:string, timestamp?:string}>}
+   * 全レビューコメントをスレッド単位で取得する
+   * タイムラインコメントは1件=1スレッド、レビュースレッドは返信をまとめて1スレッド
+   * @returns {Array<Array<{author:string, body:string, filePath?:string, timestamp?:string}>>}
    */
   function getComments() {
-    const comments = [];
+    const threads = [];
 
-    // ── Conversation タブのタイムラインコメント ──
-    _extractTimelineComments(comments);
+    // ── Conversation タブのタイムラインコメント（各コメントを1件のスレッドとして格納）──
+    const timelineComments = [];
+    _extractTimelineComments(timelineComments);
+    timelineComments.forEach((c) => threads.push([c]));
 
-    // ── レビュースレッド（インラインコメント）──
-    _extractReviewThreadComments(comments);
+    // ── レビュースレッド（インラインコメント）をスレッド単位で取得 ──
+    _extractReviewThreadsGrouped(threads);
 
-    // 重複除去（同じ内容・同じ著者のコメント）
-    return _deduplicateComments(comments);
+    // 重複除去（スレッド単位）
+    return _deduplicateThreads(threads);
   }
 
   /**
@@ -108,46 +113,58 @@ const GitHubExtractor = (() => {
   }
 
   /**
-   * レビュースレッド（コード上のインラインコメント）を抽出
+   * レビュースレッド（コード上のインラインコメント）をスレッド単位で抽出
+   * 各 DOM スレッドコンテナ内のコメントを1つの配列にまとめ、out に追加する
+   * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
    */
-  function _extractReviewThreadComments(out) {
-    const threads = document.querySelectorAll(
+  function _extractReviewThreadsGrouped(out) {
+    const threadEls = document.querySelectorAll(
       '.js-resolvable-timeline-thread-container'
     );
 
-    threads.forEach((thread) => {
+    threadEls.forEach((threadEl) => {
       // ファイルパスを取得
       const filePathEl =
-        thread.querySelector('.file-header [data-path]') ||
-        thread.querySelector('.file-header .file-info a');
+        threadEl.querySelector('.file-header [data-path]') ||
+        threadEl.querySelector('.file-header .file-info a');
       const filePath = filePathEl
         ? filePathEl.getAttribute('data-path') || filePathEl.textContent.trim()
         : '';
 
-      // スレッド内の各コメント
-      const commentEls = thread.querySelectorAll(
+      // スレッド内の各コメントをグループ化
+      const threadComments = [];
+      const commentEls = threadEl.querySelectorAll(
         '.review-comment, .timeline-comment'
       );
       commentEls.forEach((el) => {
         const comment = _parseCommentContainer(el);
-        if (comment && comment.body) {
-          if (filePath) comment.filePath = filePath;
-          out.push(comment);
+        if (comment) {
+          // _parseCommentContainer でファイルパスが取れなかった場合、スレッドレベルのパスで補完
+          if (!comment.filePath && filePath) {
+            comment.filePath = filePath;
+          }
+          threadComments.push(comment);
         }
       });
+
+      // コメントが1件以上あるスレッドのみ追加
+      if (threadComments.length > 0) {
+        out.push(threadComments);
+      }
     });
   }
 
   /**
    * コメントコンテナから情報を抽出する
+   * @returns {{ author: string, body: string, filePath?: string, timestamp?: string, diffContext?: object }|null}
    */
   function _parseCommentContainer(container) {
-    // 著者
+    // 著者: 取得できない場合は "(unknown)" をフォールバックとして使用
     const authorEl =
       container.querySelector('.author') ||
       container.querySelector('[data-testid="author-link"]') ||
       container.querySelector('a[data-hovercard-type="user"]');
-    const author = authorEl ? authorEl.textContent.trim() : '';
+    const author = (authorEl ? authorEl.textContent.trim() : '') || '(unknown)';
 
     // タイムスタンプ
     const timeEl = container.querySelector('relative-time');
@@ -160,13 +177,17 @@ const GitHubExtractor = (() => {
       container.querySelector('.js-comment-body .markdown-body') ||
       container.querySelector('.comment-body .markdown-body') ||
       container.querySelector('.markdown-body');
-    const body = MarkdownBuilder.htmlToMarkdown(bodyEl);
+    const body = bodyEl ? MarkdownBuilder.htmlToMarkdown(bodyEl) : '';
+
+    // 本文が空の場合は null を返し、呼び出し元でスキップさせる
+    if (!body) return null;
 
     // ファイルパス（インラインコメントの場合）
     const thread = container.closest('.js-resolvable-timeline-thread-container');
-    const filePathEl = thread
-      ?.querySelector('.file-header [data-path]');
-    let filePath = filePathEl ? filePathEl.getAttribute('data-path') : undefined;
+    const filePathEl = thread?.querySelector('.file-header [data-path]');
+    let filePath = filePathEl
+      ? filePathEl.getAttribute('data-path') || ''
+      : '';
 
     // 新 UI: summary 内の a タグからファイルパスを取得
     if (!filePath && thread) {
@@ -177,7 +198,10 @@ const GitHubExtractor = (() => {
     // diff コンテキスト（行番号・ソースコード）
     const diffContext = thread ? _extractDiffContext(thread) : undefined;
 
-    return { author, body, filePath, timestamp, diffContext };
+    // filePath が空文字の場合はプロパティ自体を含めない（undefined 漏れ防止）
+    const result = { author, body, timestamp, diffContext };
+    if (filePath) result.filePath = filePath;
+    return result;
   }
 
   /**
@@ -226,25 +250,39 @@ const GitHubExtractor = (() => {
 
   /**
    * PR 本文のコメントかどうかを判定
+   * 注意: closest('.js-discussion') による祖先チェックは、同一 discussion 内の
+   * 全コメントを PR 本文と誤判定するリスクがあるため、container 自身の直接判定のみ行う
    */
   function _isPRBodyComment(container) {
-    return !!(
+    // container 自身が PR 本文を含むかどうかを直接チェック
+    if (
       container.querySelector('#issue-body') ||
       container.querySelector('.js-issue-body') ||
-      container.querySelector('.react-issue-body') ||
-      container.closest('.js-discussion')?.querySelector('.js-issue-body') ||
-      // 新 UI (2025〜): PR 本文コメントは id="pullrequest-*"
-      (container.id && container.id.startsWith('pullrequest-'))
-    );
+      container.querySelector('.react-issue-body')
+    ) {
+      return true;
+    }
+
+    // 新 UI (2025〜): PR 本文コメントは id="pullrequest-*"
+    // id プロパティは空文字の場合があるため安全にチェック
+    if (typeof container.id === 'string' && container.id.startsWith('pullrequest-')) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
-   * 重複コメントを除去する
+   * 重複スレッドを除去する
+   * スレッドの先頭コメント（author + body 全文 + filePath）でユニーク判定。
+   * 100文字切り捨てだと、先頭が同じ長文コメントが誤って除去されるため全文を使用する。
    */
-  function _deduplicateComments(comments) {
+  function _deduplicateThreads(threads) {
     const seen = new Set();
-    return comments.filter((c) => {
-      const key = `${c.author}::${c.body.substring(0, 100)}`;
+    return threads.filter((thread) => {
+      if (!thread || thread.length === 0) return false;
+      const c = thread[0];
+      const key = `${c.author}::${c.filePath || ''}::${c.body}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -272,17 +310,18 @@ const GitHubExtractor = (() => {
     const prBodyContainer =
       document.querySelector('[id^="pullrequest-"]') ||
       document.querySelector('.js-issue-body')?.closest('.timeline-comment');
-    const bodyMeta = prBodyContainer ? _parseCommentContainer(prBodyContainer) : {};
+    // _parseCommentContainer は本文が空の場合 null を返すため、null 合体で安全にフォールバック
+    const bodyMeta = (prBodyContainer ? _parseCommentContainer(prBodyContainer) : null) || {};
 
-    const comments = getComments();
+    const threads = getComments();
     return MarkdownBuilder.buildFullMarkdown({
       title,
       body,
-      bodyAuthor: bodyMeta.author,
-      bodyTimestamp: bodyMeta.timestamp,
-      comments,
+      bodyAuthor: bodyMeta.author || '',
+      bodyTimestamp: bodyMeta.timestamp || '',
+      threads,
     });
   }
 
-  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment };
+  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment, isPRBodyComment: _isPRBodyComment };
 })();

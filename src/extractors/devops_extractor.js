@@ -76,10 +76,12 @@ const DevOpsExtractor = (() => {
     const threads = [];
 
     // Activity/Discussion タブのコメント
-    _extractActivityComments(threads);
+    // 処理済み要素の Set を受け取り、Inline 抽出で二重取得を防ぐ
+    const processedEls = _extractActivityComments(threads);
 
     // Files タブのインラインコメント
-    _extractInlineComments(threads);
+    // Activity で既に取得したスレッド DOM 要素を除外して二重取得を防ぐ
+    _extractInlineComments(threads, processedEls);
 
     return _deduplicateThreads(threads);
   }
@@ -87,51 +89,61 @@ const DevOpsExtractor = (() => {
   /**
    * Activity タブのディスカッションコメントをスレッド単位で抽出
    * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
+   * @returns {Set<Element>} 処理済みスレッド要素の集合（二重取得防止用）
    */
   function _extractActivityComments(out) {
+    const processedEls = new Set();
+
     // .repos-discussion-thread を1スレッドとして扱う
     const threadEls = document.querySelectorAll('.repos-discussion-thread');
     if (threadEls.length > 0) {
       threadEls.forEach((threadEl) => {
+        processedEls.add(threadEl);
         const threadComments = [];
         const commentEls = threadEl.querySelectorAll(
           '.repos-discussion-comment, .vc-discussion-thread-comment'
         );
         commentEls.forEach((el) => {
           const comment = _parseDevOpsComment(el);
-          if (comment && comment.body) threadComments.push(comment);
+          if (comment) threadComments.push(comment);
         });
         if (threadComments.length > 0) out.push(threadComments);
       });
-      return;
+      return processedEls;
     }
 
     // フォールバック: discussion-thread / comment-thread を1スレッドとして扱う
     const legacyThreads = document.querySelectorAll('.discussion-thread, .comment-thread');
     legacyThreads.forEach((thread) => {
+      processedEls.add(thread);
       const threadComments = [];
       const commentEls = thread.querySelectorAll('.comment-content');
       if (commentEls.length === 0) {
         const comment = _parseDevOpsComment(thread);
-        if (comment && comment.body) threadComments.push(comment);
+        if (comment) threadComments.push(comment);
       } else {
         commentEls.forEach((el) => {
           const comment = _parseDevOpsComment(el);
-          if (comment && comment.body) threadComments.push(comment);
+          if (comment) threadComments.push(comment);
         });
       }
       if (threadComments.length > 0) out.push(threadComments);
     });
+
+    return processedEls;
   }
 
   /**
    * ファイル差分上のインラインコメントをスレッド単位で抽出
    * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
+   * @param {Set<Element>} processedEls - Activity で処理済みのスレッド要素（二重取得防止用）
    */
-  function _extractInlineComments(out) {
+  function _extractInlineComments(out, processedEls) {
     const inlineThreads = document.querySelectorAll('.repos-discussion-thread');
 
     inlineThreads.forEach((thread) => {
+      // Activity タブで既に処理済みのスレッドはスキップ
+      if (processedEls && processedEls.has(thread)) return;
       // ファイルパスと diff コンテキストを取得
       let filePath = '';
       let diffContext;
@@ -251,9 +263,11 @@ const DevOpsExtractor = (() => {
       const body = prData.description || '';
       const apiThreads = [];
 
-      if (threads && threads.value) {
-        threads.value.forEach((thread) => {
-          if (!thread.comments) return;
+      // threads.value が配列でない場合（API レスポンス異常）を安全にスキップ
+      const threadValues = threads?.value;
+      if (Array.isArray(threadValues)) {
+        threadValues.forEach((thread) => {
+          if (!Array.isArray(thread.comments)) return;
           const tc = thread.threadContext;
           // threadContext から行範囲を生成
           let lineRange = '';
@@ -269,9 +283,12 @@ const DevOpsExtractor = (() => {
           const threadComments = [];
           thread.comments.forEach((c) => {
             if (c.commentType === 'system') return;
+            // c.content が null/undefined の場合（削除済みコメント等）はスキップ
+            const body = c.content ?? '';
+            if (!body) return;
             const comment = {
               author: c.author?.displayName || '',
-              body: c.content || '',
+              body,
               filePath: tc?.filePath || undefined,
               timestamp: c.publishedDate || '',
             };
@@ -294,11 +311,14 @@ const DevOpsExtractor = (() => {
 
   /**
    * DevOps の URL をパースして API ベース URL、リポジトリ名、PR ID を返す。
-   * 貪欲マッチ (.*) を使い、/_git/ の直前までをベースURLとする。
+   * 貪欲マッチ (.*) を使い、最後の /_git/ の直前までをベースURLとする。
+   * 例: /org/collection/project/_git/repo/pullrequest/123
+   *   → baseUrl=/org/collection/project, repo=repo, prId=123
+   * パスに /_git/ が複数含まれる場合でも最後のものを使用するため意図通り動作する。
    */
   function _parseDevOpsUrl() {
     const path = location.pathname;
-    // 貪欲マッチで /_git/ の直前まで取得する
+    // 貪欲マッチで最後の /_git/ の直前まで取得する
     const match = path.match(/^(.*)\/_git\/([^/]+)\/pullrequest\/(\d+)/);
     if (!match) return null;
 
@@ -310,9 +330,16 @@ const DevOpsExtractor = (() => {
   }
 
   async function _fetchJson(url) {
+    // セキュリティ: credentials:'include' を同一オリジンのみに制限し、
+    // 認証情報の意図しない外部送信を防止する
+    const parsed = new URL(url, location.origin);
+    if (parsed.origin !== location.origin) {
+      throw new Error(`クロスオリジンリクエストは許可されていません: ${parsed.origin}`);
+    }
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    // JSON パース失敗時にも呼び出し元の catch で捕捉できるよう await する
+    return await res.json();
   }
 
   /**
@@ -394,7 +421,9 @@ const DevOpsExtractor = (() => {
   }
 
   /**
-   * 重複スレッドを除去する（先頭コメントのauthor+bodyで判定）
+   * 重複スレッドを除去する
+   * スレッドの先頭コメント（author + body 全文 + filePath）でユニーク判定。
+   * 100文字切り捨てだと、先頭が同じ長文コメントが誤って除去されるため全文を使用する。
    * @param {Array<Array>} threads
    * @returns {Array<Array>}
    */
@@ -403,7 +432,7 @@ const DevOpsExtractor = (() => {
     return threads.filter((thread) => {
       if (!thread || thread.length === 0) return false;
       const first = thread[0];
-      const key = `${first.author}::${(first.body || '').substring(0, 100)}`;
+      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -455,7 +484,8 @@ const DevOpsExtractor = (() => {
     // スレッド内の全コメント要素
     const commentEls = threadContainer.querySelectorAll('.repos-discussion-comment');
     commentEls.forEach((el) => {
-      // spinner（未ロード）はスキップ
+      // spinner（未ロード）はスキップ: ヘッダーがなければ完全に未ロード
+      // ヘッダーがあっても本文が空なら _parseDevOpsComment で body が空になり除外される
       if (el.querySelector('.bolt-spinner') && !el.querySelector('.repos-discussion-comment-header')) return;
       const comment = _parseDevOpsComment(el);
       if (comment && comment.body) {
@@ -469,6 +499,65 @@ const DevOpsExtractor = (() => {
     });
 
     return comments;
+  }
+
+  /**
+   * API スレッドに DOM の diffContext（差分コード）を補完する
+   *
+   * API レスポンスには差分コードが含まれないため（lineRange のみ）、
+   * DOM から取得した diffContext で補完する。
+   * 同一ファイルに複数スレッドがある場合を考慮し、
+   * filePath + lineRange の複合キーで対応する DOM スレッドを特定する。
+   *
+   * @param {Array<Array>} apiThreads - API から取得したスレッド配列
+   */
+  function _enrichWithDomContext(apiThreads) {
+    const domThreadEls = document.querySelectorAll('.repos-discussion-thread');
+    if (domThreadEls.length === 0) return;
+
+    // DOM スレッドから複合キー(filePath + lineRange) → diffContext のマップを構築
+    const compositeMap = new Map();  // "filePath\0lineRange" → diffContext
+    const fileOnlyMap = new Map();   // filePath → diffContext（フォールバック用）
+    domThreadEls.forEach((threadEl) => {
+      const prevSibling = threadEl.previousElementSibling;
+      if (!prevSibling || !prevSibling.classList.contains('comment-file-header')) return;
+
+      const linkEl = prevSibling.querySelector('.comment-file-header-link');
+      const pathEl = prevSibling.querySelector('.secondary-text');
+      const filePath = (linkEl || pathEl)?.textContent.trim();
+      if (!filePath) return;
+
+      const diffContext = _extractDiffContext(prevSibling);
+      if (!diffContext) return;
+
+      // 複合キー: filePath + lineRange で同一ファイル内の複数スレッドを区別
+      const key = `${filePath}\0${diffContext.lineRange || ''}`;
+      if (!compositeMap.has(key)) {
+        compositeMap.set(key, diffContext);
+      }
+      // filePath のみのフォールバック（同一ファイル1スレッドの場合に使用）
+      if (!fileOnlyMap.has(filePath)) {
+        fileOnlyMap.set(filePath, diffContext);
+      }
+    });
+
+    if (compositeMap.size === 0) return;
+
+    // API スレッドの先頭コメントに diffContext を補完
+    apiThreads.forEach((thread) => {
+      if (!thread || thread.length === 0) return;
+      const first = thread[0];
+      // filePath がない（全体コメント）、または既に diffLines がある場合はスキップ
+      if (!first.filePath || first.diffContext?.diffLines?.length > 0) return;
+
+      // API 側の lineRange を使って複合キーで正確にマッチ
+      const apiLineRange = first.diffContext?.lineRange || '';
+      const key = `${first.filePath}\0${apiLineRange}`;
+      const ctx = compositeMap.get(key) || fileOnlyMap.get(first.filePath);
+      if (ctx) {
+        first.diffContext = ctx;
+      }
+    });
   }
 
   /**
@@ -507,7 +596,13 @@ const DevOpsExtractor = (() => {
 
     let title = '';
     if (needApi) {
-      const apiData = await fetchViaApi();
+      // fetchViaApi 内部で catch しているが、予期しないランタイムエラーに備え外側でも保護
+      let apiData = null;
+      try {
+        apiData = await fetchViaApi();
+      } catch (e) {
+        console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', e);
+      }
       if (apiData) {
         // API タイトルを優先（DOM より確実）
         if (apiData.title) title = `${apiData.title} ${getPRNumber()}`;
@@ -515,6 +610,8 @@ const DevOpsExtractor = (() => {
         // API から取得したコメントが DOM より多い場合のみ API を採用
         const apiCommentCount = apiData.threads.reduce((sum, t) => sum + t.length, 0);
         if (apiCommentCount > domCommentCount) {
+          // API スレッドには diffLines が空のため、DOM から差分コードを補完
+          _enrichWithDomContext(apiData.threads);
           threads = apiData.threads;
         }
       }
@@ -522,7 +619,8 @@ const DevOpsExtractor = (() => {
 
     // API タイトルが取れなかった場合は DOM タイトルにフォールバック
     if (!title) {
-      title = domTitle ? `${domTitle} ${getPRNumber()}` : getPRNumber();
+      const prNum = getPRNumber();
+      title = domTitle ? `${domTitle} ${prNum}` : prNum || 'Pull Request';
     }
 
     return MarkdownBuilder.buildFullMarkdown({ title: title.trim(), body, threads });

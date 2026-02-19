@@ -15,14 +15,26 @@ const MarkdownBuilder = (() => {
     return _convertNode(el).replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  /** 再帰の最大深度（深くネストした DOM での Stack Overflow 防止） */
+  const MAX_CONVERT_DEPTH = 80;
+
   /**
    * DOM ノードを再帰的に Markdown に変換する
    * @param {Node} node
+   * @param {number} [depth=0] - 現在の再帰深度
+   * @param {boolean} [insidePre=false] - pre 内ではテキストの空白正規化をスキップ
    * @returns {string}
    */
-  function _convertNode(node) {
+  function _convertNode(node, depth = 0, insidePre = false) {
+    // 再帰深度制限: Stack Overflow を防止し、テキストのみ返す
+    if (depth > MAX_CONVERT_DEPTH) {
+      return node.textContent || '';
+    }
+
     // テキストノード
     if (node.nodeType === Node.TEXT_NODE) {
+      // pre/code ブロック内では空白・改行をそのまま保持する
+      if (insidePre) return node.textContent;
       return node.textContent.replace(/\s+/g, ' ');
     }
 
@@ -40,8 +52,8 @@ const MarkdownBuilder = (() => {
       return '';
     }
 
-    // 子ノードを先に変換
-    const childText = _convertChildren(el);
+    // 子ノードを先に変換（深度・pre 内フラグを伝播）
+    const childText = _convertChildren(el, depth, insidePre);
 
     switch (tag) {
       // ── 見出し ──
@@ -85,24 +97,50 @@ const MarkdownBuilder = (() => {
 
       // ── リンク ──
       case 'a': {
-        const href = el.getAttribute('href') || '';
+        const href = (el.getAttribute('href') || '').trim();
         const text = childText.trim();
         if (!text) return '';
+        // セキュリティ: 危険なスキーム（javascript: 等）はテキストのみ返す
+        if (!href || href === '#' || _isDangerousScheme(href)) return text;
+        // 相対パスを絶対 URL に変換（DOM が baseURI を持つ場合）
+        let resolvedHref = href;
+        try {
+          if (!/^https?:\/\//i.test(href) && el.baseURI) {
+            resolvedHref = new URL(href, el.baseURI).href;
+          }
+        } catch {
+          // URL 解決に失敗した場合はそのまま使用
+        }
         // 同じテキストならリンクだけ返す
-        if (text === href) return href;
-        return `[${text}](${href})`;
+        if (text === resolvedHref) return resolvedHref;
+        // セキュリティ: ] と ) をエスケープして Markdown インジェクションを防止
+        return `[${_sanitizeLinkText(text)}](${_sanitizeLinkUrl(resolvedHref)})`;
       }
 
       // ── 画像 ──
       case 'img': {
         const alt = el.getAttribute('alt') || '';
-        const src = el.getAttribute('src') || '';
+        const src = (el.getAttribute('src') || '').trim();
         // 装飾画像のスキップ: 幅/高さが小さい（バッジ等）、または alt も src もない場合
         const w = parseInt(el.getAttribute('width'), 10);
         const h = parseInt(el.getAttribute('height'), 10);
         if ((w > 0 && w <= 1) || (h > 0 && h <= 1)) return '';
         if (!src) return '';
-        return `![${alt}](${src})`;
+        // セキュリティ: 危険なスキームをブロック（javascript: 等）
+        if (_isDangerousScheme(src)) return alt ? `[画像: ${alt}]` : '[画像]';
+        // data-uri は Markdown に含めると巨大になるためプレースホルダーに置換
+        if (/^data:/i.test(src)) return alt ? `[画像: ${alt}]` : '[画像]';
+        // 相対パスを絶対 URL に変換
+        let resolvedSrc = src;
+        try {
+          if (!/^https?:\/\//i.test(src) && el.baseURI) {
+            resolvedSrc = new URL(src, el.baseURI).href;
+          }
+        } catch {
+          // URL 解決に失敗した場合はそのまま使用
+        }
+        // セキュリティ: ] と ) をエスケープして Markdown インジェクションを防止
+        return `![${_sanitizeLinkText(alt)}](${_sanitizeLinkUrl(resolvedSrc)})`;
       }
 
       // ── リスト ──
@@ -148,11 +186,14 @@ const MarkdownBuilder = (() => {
 
   /**
    * 子ノードを連結する
+   * @param {Element} el
+   * @param {number} [depth=0] - 現在の再帰深度
+   * @param {boolean} [insidePre=false] - pre 内フラグ
    */
-  function _convertChildren(el) {
+  function _convertChildren(el, depth = 0, insidePre = false) {
     let result = '';
     for (const child of el.childNodes) {
-      result += _convertNode(child);
+      result += _convertNode(child, depth + 1, insidePre);
     }
     return result;
   }
@@ -175,26 +216,38 @@ const MarkdownBuilder = (() => {
       // li の直接テキストと子要素を分離
       let itemText = '';
       let subList = '';
+      // li 内の input[type=checkbox] を追跡し重複処理を防ぐ
+      let hasCheckbox = false;
 
       for (const node of child.childNodes) {
         if (node.nodeType === Node.ELEMENT_NODE) {
-          const childTag = /** @type {Element} */ (node).tagName.toLowerCase();
+          const childEl = /** @type {Element} */ (node);
+          const childTag = childEl.tagName.toLowerCase();
           if (childTag === 'ul' || childTag === 'ol') {
             subList += _convertListItems(
-              /** @type {Element} */ (node),
+              childEl,
               childTag === 'ol',
               depth + 1
             );
             continue;
           }
+          // checkbox は li のプレフィックスとして一度だけ処理
+          if (childTag === 'input' && childEl.getAttribute('type') === 'checkbox') {
+            if (!hasCheckbox) {
+              hasCheckbox = true;
+              itemText += childEl.checked ? '[x] ' : '[ ] ';
+            }
+            continue;
+          }
         }
-        itemText += _convertNode(node);
+        itemText += _convertNode(node, depth);
       }
 
       const prefix = ordered ? `${counter}.` : '-';
       const line = `${indent}${prefix} ${itemText.trim()}`;
       lines.push(line);
-      if (subList) lines.push(subList);
+      // ネストリストは余分な空行を除去して連結
+      if (subList) lines.push(subList.replace(/\n{2,}/g, '\n'));
       counter++;
     }
 
@@ -203,22 +256,52 @@ const MarkdownBuilder = (() => {
 
   /**
    * HTML テーブルを Markdown テーブルに変換する
+   * thead/tbody/tfoot を考慮し、直接の子 tr のみ処理する（ネストテーブル混入防止）
    * @param {Element} tableEl
    * @returns {string}
    */
   function _convertTable(tableEl) {
     const rows = [];
-    const trList = tableEl.querySelectorAll('tr');
 
-    trList.forEach((tr) => {
-      const cells = [];
-      tr.querySelectorAll('th, td').forEach((cell) => {
-        cells.push(_convertChildren(cell).trim().replace(/\|/g, '\\|').replace(/\n/g, ' '));
-      });
-      rows.push(cells);
-    });
+    // thead → tbody → tfoot の順に直接の子 tr を収集
+    // querySelectorAll('tr') だとネストしたテーブルの tr も拾ってしまうため、
+    // children を直接走査して1階層のみ処理する
+    const sections = [];
+    for (const child of tableEl.children) {
+      const childTag = child.tagName.toLowerCase();
+      if (childTag === 'thead' || childTag === 'tbody' || childTag === 'tfoot') {
+        sections.push(child);
+      } else if (childTag === 'tr') {
+        // thead/tbody/tfoot を使わない直接の tr もサポート
+        sections.push(child);
+      }
+    }
+
+    for (const section of sections) {
+      const trs = section.tagName.toLowerCase() === 'tr'
+        ? [section]
+        : Array.from(section.children).filter(c => c.tagName.toLowerCase() === 'tr');
+      for (const tr of trs) {
+        const cells = [];
+        for (const cell of tr.children) {
+          const cellTag = cell.tagName.toLowerCase();
+          if (cellTag === 'th' || cellTag === 'td') {
+            cells.push(_convertChildren(cell).trim().replace(/\|/g, '\\|').replace(/\n/g, ' '));
+          }
+        }
+        if (cells.length > 0) rows.push(cells);
+      }
+    }
 
     if (rows.length === 0) return '';
+
+    // 全行で最大のセル数を算出し、不足分を空セルでパディング
+    const maxCols = Math.max(...rows.map(r => r.length));
+    for (const row of rows) {
+      while (row.length < maxCols) {
+        row.push('');
+      }
+    }
 
     const lines = [];
     // ヘッダー行
@@ -233,14 +316,49 @@ const MarkdownBuilder = (() => {
     return lines.join('\n');
   }
 
+  /* ── セキュリティヘルパー ────────────────────── */
+
+  /**
+   * 危険な URI スキームかどうかを判定する
+   * セキュリティ: javascript:/vbscript:/data: スキームによる XSS を防止
+   * 制御文字を除去し大文字小文字を無視して判定する
+   * @param {string} url
+   * @returns {boolean}
+   */
+  function _isDangerousScheme(url) {
+    const normalized = url.replace(/[\x00-\x1f\x7f]/g, '').trim();
+    return /^(javascript|vbscript|data):/i.test(normalized);
+  }
+
+  /**
+   * Markdown リンクテキスト内の ] をエスケープしてインジェクションを防止する
+   * @param {string} text
+   * @returns {string}
+   */
+  function _sanitizeLinkText(text) {
+    return text.replace(/\]/g, '\\]');
+  }
+
+  /**
+   * Markdown リンク URL 内の ) をエンコードしてインジェクションを防止する
+   * @param {string} url
+   * @returns {string}
+   */
+  function _sanitizeLinkUrl(url) {
+    return url.replace(/\)/g, '%29');
+  }
+
+  /** ブロックレベル要素の Set（毎回配列を生成する代わりに事前定義で O(1) 判定） */
+  const _BLOCK_ELEMENTS = new Set([
+    'div', 'section', 'article', 'aside', 'nav', 'main',
+    'header', 'footer', 'figure', 'figcaption', 'details', 'summary',
+  ]);
+
   /**
    * ブロックレベル要素かどうかを判定
    */
   function _isBlockElement(tag) {
-    return [
-      'div', 'section', 'article', 'aside', 'nav', 'main',
-      'header', 'footer', 'figure', 'figcaption', 'details', 'summary',
-    ].includes(tag);
+    return _BLOCK_ELEMENTS.has(tag);
   }
 
   /* ── タイムスタンプ整形 ───────────────────────── */

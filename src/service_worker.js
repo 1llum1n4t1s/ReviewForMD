@@ -80,7 +80,7 @@ async function injectContentScripts(tabId) {
     });
   } catch (e) {
     // パーミッション不足等は想定内（カスタムドメインで未許可の場合）
-    console.debug('[ReviewForMD] Injection skipped:', e.message);
+    console.debug('[ReviewForMD] Injection skipped:', e?.message || e);
   }
 }
 
@@ -99,7 +99,12 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
   if (!isPRPageUrl(details.url)) return;
   if (isKnownDomain(details.url)) {
     // 既知ドメインは静的注入済みなので、再初期化のメッセージだけ送る
-    chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' }).catch(() => {});
+    // コンテンツスクリプト未ロード時の "Could not establish connection" は想定内
+    chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' }).catch((e) => {
+      if (!e?.message?.includes('Could not establish connection')) {
+        console.debug('[ReviewForMD] sendMessage failed:', e?.message || e);
+      }
+    });
   } else {
     // カスタムドメイン → 動的注入
     injectContentScripts(details.tabId);

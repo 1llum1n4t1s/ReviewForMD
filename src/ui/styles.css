@@ -29,6 +29,12 @@
   background: #d8dee4;
 }
 
+/* キーボード操作時のフォーカスリング（アクセシビリティ） */
+.rfmd-btn:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 1px;
+}
+
 /* 全てMDコピー (メイン) ボタン */
 .rfmd-btn.rfmd-btn--primary {
   background: #2da44e;
@@ -106,9 +112,11 @@
 
 /* ── ダークモード対応 ──────────────────────────── */
 
-/* GitHub dark mode */
+/* GitHub dark mode
+   data-color-mode="dark" は明示的ダークモード。
+   data-color-mode="auto" 時はメディアクエリで判定。
+   html.dark は一部の GitHub Enterprise 環境向け。 */
 [data-color-mode="dark"] .rfmd-btn,
-[data-dark-theme] .rfmd-btn,
 html.dark .rfmd-btn {
   background: #21262d;
   color: #c9d1d9;
@@ -116,7 +124,6 @@ html.dark .rfmd-btn {
 }
 
 [data-color-mode="dark"] .rfmd-btn:hover,
-[data-dark-theme] .rfmd-btn:hover,
 html.dark .rfmd-btn:hover {
   background: #30363d;
   border-color: #8b949e;
@@ -137,3 +144,65 @@ body[data-theme="dark"] .rfmd-btn:hover,
 }
 
 /* primary ボタンはダークモードでも緑/青のまま維持 */
+[data-color-mode="dark"] .rfmd-btn.rfmd-btn--primary,
+html.dark .rfmd-btn.rfmd-btn--primary {
+  background: #2da44e;
+  color: #ffffff;
+  border-color: #2da44e;
+}
+
+[data-color-mode="dark"] .rfmd-btn.rfmd-btn--primary:hover,
+html.dark .rfmd-btn.rfmd-btn--primary:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
+.vss-PlatformCore--theme-dark .rfmd-btn.rfmd-btn--primary,
+body[data-theme="dark"] .rfmd-btn.rfmd-btn--primary {
+  background: #0078d4;
+  color: #ffffff;
+  border-color: #0078d4;
+}
+
+.vss-PlatformCore--theme-dark .rfmd-btn.rfmd-btn--primary:hover,
+body[data-theme="dark"] .rfmd-btn.rfmd-btn--primary:hover {
+  background: #106ebe;
+  border-color: #106ebe;
+}
+
+/* ダークモードでのフォーカスリング */
+[data-color-mode="dark"] .rfmd-btn:focus-visible,
+html.dark .rfmd-btn:focus-visible,
+.vss-PlatformCore--theme-dark .rfmd-btn:focus-visible,
+body[data-theme="dark"] .rfmd-btn:focus-visible {
+  outline-color: #58a6ff;
+}
+
+/* GitHub の data-color-mode="auto" 時: OS のダークモード設定に追従 */
+@media (prefers-color-scheme: dark) {
+  [data-color-mode="auto"] .rfmd-btn {
+    background: #21262d;
+    color: #c9d1d9;
+    border-color: #30363d;
+  }
+
+  [data-color-mode="auto"] .rfmd-btn:hover {
+    background: #30363d;
+    border-color: #8b949e;
+  }
+
+  [data-color-mode="auto"] .rfmd-btn.rfmd-btn--primary {
+    background: #2da44e;
+    color: #ffffff;
+    border-color: #2da44e;
+  }
+
+  [data-color-mode="auto"] .rfmd-btn.rfmd-btn--primary:hover {
+    background: #218838;
+    border-color: #218838;
+  }
+
+  [data-color-mode="auto"] .rfmd-btn:focus-visible {
+    outline-color: #58a6ff;
+  }
+}

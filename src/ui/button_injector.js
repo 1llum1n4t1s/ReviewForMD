@@ -17,6 +17,12 @@ const ButtonInjector = (() => {
     if (btn.dataset.rfmdBusy === '1') return;
     btn.dataset.rfmdBusy = '1';
 
+    // 前回のタイマーが残っていればクリアして積み重なりを防止
+    if (btn._rfmdTimer) {
+      clearTimeout(btn._rfmdTimer);
+      btn._rfmdTimer = null;
+    }
+
     const originalHtml = btn.dataset.rfmdOriginal;
     const cls = success ? 'rfmd-btn--success' : 'rfmd-btn--error';
     const label = success ? `${CHECK_ICON_SVG} コピー完了` : `コピー失敗`;
@@ -24,16 +30,17 @@ const ButtonInjector = (() => {
     btn.classList.add(cls);
     btn.innerHTML = label;
 
-    setTimeout(() => {
+    btn._rfmdTimer = setTimeout(() => {
       btn.classList.remove(cls);
       btn.innerHTML = originalHtml;
       btn.dataset.rfmdBusy = '0';
+      btn._rfmdTimer = null;
     }, 1500);
   }
 
   /**
    * ボタン生成ファクトリ
-   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<string> }} opts
+   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<string>|string }} opts
    * @returns {HTMLButtonElement}
    */
   function _createButton({ className, dataRfmd, label, title, extractFn }) {
@@ -52,7 +59,8 @@ const ButtonInjector = (() => {
       e.stopPropagation();
       if (btn.dataset.rfmdBusy === '1') return;
       try {
-        const md = await extractFn();
+        // extractFn が同期値を返す場合にも対応するため Promise.resolve で wrap
+        const md = await Promise.resolve(extractFn());
         const ok = await Clipboard.copy(md);
         _showFeedback(btn, ok);
       } catch (err) {
@@ -108,6 +116,14 @@ const ButtonInjector = (() => {
 
   /* ── GitHub 用ボタン注入 ──────────────────────── */
 
+  /**
+   * PR 本文コメントかどうかを判定する。
+   * ロジックの重複・乖離を防ぐため GitHubExtractor.isPRBodyComment に委譲する。
+   */
+  function _isPRBodyContainer(container) {
+    return GitHubExtractor.isPRBodyComment(container);
+  }
+
   function _injectGitHub() {
     // 「全てMDコピー」ボタンをヘッダーに注入
     // 新 UI: Primer React Components (prc-PageHeader-Actions-*)
@@ -116,6 +132,11 @@ const ButtonInjector = (() => {
       document.querySelector('[class*="PageHeader-Actions"]') ||
       document.querySelector('.gh-header-actions') ||
       document.querySelector('.gh-header-meta');
+
+    if (!headerActions) {
+      // ページ読み込みタイミングにより見つからない場合がある（次回 inject で再試行）
+      console.debug('[ReviewForMD] headerActions が見つかりません。次回の inject で再試行します。');
+    }
 
     if (headerActions && !headerActions.querySelector('[data-rfmd="all"]')) {
       const wrap = document.createElement('div');
@@ -135,21 +156,16 @@ const ButtonInjector = (() => {
     );
 
     timelineContainers.forEach((container) => {
-      // PR 本文はスキップ
-      if (
-        container.querySelector('#issue-body') ||
-        container.querySelector('.js-issue-body') ||
-        container.querySelector('.react-issue-body') ||
-        (container.id && container.id.startsWith('pullrequest-'))
-      ) {
+      // 既に注入済みならスキップ（最も安価なチェックを最初に実行）
+      if (container.querySelector('[data-rfmd="single"]')) return;
+
+      // PR 本文はスキップ（GitHubExtractor.isPRBodyComment に委譲）
+      if (_isPRBodyContainer(container)) {
         return;
       }
 
       // レビュースレッド内のコメントはスキップ（下で別処理）
       if (container.closest('.js-resolvable-timeline-thread-container')) return;
-
-      // 既に注入済みならスキップ
-      if (container.querySelector('[data-rfmd="single"]')) return;
 
       const header =
         container.querySelector('.timeline-comment-header') ||
@@ -191,17 +207,22 @@ const ButtonInjector = (() => {
 
       // ファイルヘッダー（summary 内の flex コンテナ）にボタンを配置
       const summary = thread.querySelector('summary');
-      if (!summary) return;
+      if (!summary) {
+        // summary が存在しないレビュースレッド（展開済み等）はスキップ
+        console.debug('[ReviewForMD] レビュースレッドに summary が見つかりません。スキップします。');
+        return;
+      }
 
+      // flexDiv が見つからない場合は summary 自体にフォールバック
       const flexDiv = summary.querySelector('.d-flex');
-      if (!flexDiv) return;
+      const insertTarget = flexDiv || summary;
 
       const wrap = document.createElement('span');
       wrap.className = 'rfmd-comment-btn-wrap';
       wrap.appendChild(
         _createCommentCopyButton(SiteDetector.SiteType.GITHUB, commentContainer)
       );
-      flexDiv.appendChild(wrap);
+      insertTarget.appendChild(wrap);
     });
   }
 

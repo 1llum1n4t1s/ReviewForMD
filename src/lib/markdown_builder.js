@@ -52,6 +52,11 @@ const MarkdownBuilder = (() => {
       return '';
     }
 
+    // Code Review Agent の重要度バッジ画像をスキップ（例: medium-priority.svg）
+    if (_isCodeReviewAgentBadge(el)) {
+      return '';
+    }
+
     // 子ノードを先に変換（深度・pre 内フラグを伝播）
     const childText = _convertChildren(el, depth, insidePre);
 
@@ -314,6 +319,40 @@ const MarkdownBuilder = (() => {
     }
 
     return lines.join('\n');
+  }
+
+  /* ── コンテンツフィルターヘルパー ─────────────── */
+
+  /** Code Review Agent の重要度バッジ URL パターン */
+  const _CODE_REVIEW_AGENT_BADGE_RE = /gstatic\.com\/codereviewagent\/.+-priority\.svg/;
+
+  /**
+   * Code Review Agent の重要度バッジ要素かどうかを判定する
+   * GitHub のコメントに挿入される重要度画像（medium-priority.svg 等）と、
+   * それを囲むリンクをフィルタリングする
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  function _isCodeReviewAgentBadge(el) {
+    const tag = el.tagName.toLowerCase();
+
+    if (tag === 'img') {
+      const src = el.getAttribute('src') || '';
+      const canonical = el.getAttribute('data-canonical-src') || '';
+      return _CODE_REVIEW_AGENT_BADGE_RE.test(src) || _CODE_REVIEW_AGENT_BADGE_RE.test(canonical);
+    }
+
+    if (tag === 'a') {
+      // リンクの子要素が重要度バッジ画像のみかチェック
+      const img = el.querySelector('img');
+      if (img && el.children.length === 1) {
+        const src = img.getAttribute('src') || '';
+        const canonical = img.getAttribute('data-canonical-src') || '';
+        return _CODE_REVIEW_AGENT_BADGE_RE.test(src) || _CODE_REVIEW_AGENT_BADGE_RE.test(canonical);
+      }
+    }
+
+    return false;
   }
 
   /* ── セキュリティヘルパー ────────────────────── */

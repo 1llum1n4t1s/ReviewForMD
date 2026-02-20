@@ -99,13 +99,35 @@ const DevOpsExtractor = (() => {
     if (threadEls.length > 0) {
       threadEls.forEach((threadEl) => {
         processedEls.add(threadEl);
+
+        // ファイルパスと diff コンテキストを取得（インラインコメントの場合）
+        let filePath = '';
+        let diffContext;
+        const prevSibling = threadEl.previousElementSibling;
+        if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
+          const linkEl = prevSibling.querySelector('.comment-file-header-link');
+          if (linkEl) filePath = linkEl.textContent.trim();
+          if (!filePath) {
+            const pathEl = prevSibling.querySelector('.secondary-text');
+            if (pathEl) filePath = pathEl.textContent.trim();
+          }
+          diffContext = _extractDiffContext(prevSibling);
+        }
+
         const threadComments = [];
         const commentEls = threadEl.querySelectorAll(
           '.repos-discussion-comment, .vc-discussion-thread-comment'
         );
         commentEls.forEach((el) => {
           const comment = _parseDevOpsComment(el);
-          if (comment) threadComments.push(comment);
+          if (comment && comment.body) {
+            // ファイルパスと diff コンテキストは最初のコメントにのみ付与
+            if (threadComments.length === 0) {
+              if (filePath) comment.filePath = filePath;
+              if (diffContext) comment.diffContext = diffContext;
+            }
+            threadComments.push(comment);
+          }
         });
         if (threadComments.length > 0) out.push(threadComments);
       });
@@ -366,9 +388,9 @@ const DevOpsExtractor = (() => {
   /* ── Items API による差分コード補完 ────────────── */
 
   /**
-   * PR のイテレーション一覧を取得し、iterationId → commitId のマップを返す
+   * PR のイテレーション一覧を取得し、iterationId → { sourceCommitId, targetCommitId } のマップを返す
    * @param {{ baseUrl: string, repo: string, prId: string }} urlInfo
-   * @returns {Promise<Map<number, string>>} iterationId → commitId
+   * @returns {Promise<Map<number, { sourceCommitId: string, targetCommitId: string }>>}
    */
   async function _fetchIterations(urlInfo) {
     const data = await _fetchJson(
@@ -378,7 +400,10 @@ const DevOpsExtractor = (() => {
     if (Array.isArray(data?.value)) {
       data.value.forEach((iter) => {
         if (iter.id && iter.sourceRefCommit?.commitId) {
-          map.set(iter.id, iter.sourceRefCommit.commitId);
+          map.set(iter.id, {
+            sourceCommitId: iter.sourceRefCommit.commitId,
+            targetCommitId: iter.targetRefCommit?.commitId || iter.commonRefCommit?.commitId || '',
+          });
         }
       });
     }
@@ -400,7 +425,45 @@ const DevOpsExtractor = (() => {
   }
 
   /**
-   * ファイル内容から対象行の前後を含むコードスニペットを抽出する
+   * FileDiffs API で行レベルの変更ブロック情報を取得する
+   *
+   * POST /_apis/git/repositories/{repo}/FileDiffs で
+   * lineDiffBlocks（changeType + 行番号 + 行数）を取得する。
+   * 行のテキスト内容は含まれないため、Items API と組み合わせて使用する。
+   *
+   * @param {{ baseUrl: string, repo: string }} urlInfo
+   * @param {string} filePath - ファイルパス（/CooKai/... 形式）
+   * @param {string} baseCommitId - ベースコミット SHA（target ブランチ側）
+   * @param {string} targetCommitId - ターゲットコミット SHA（source ブランチ側）
+   * @returns {Promise<Array<{changeType: number, originalLineNumberStart: number, originalLinesCount: number, modifiedLineNumberStart: number, modifiedLinesCount: number}>|null>}
+   */
+  async function _fetchFileDiffs(urlInfo, filePath, baseCommitId, targetCommitId) {
+    const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/FileDiffs?api-version=7.2-preview.1`;
+    const parsed = new URL(url, location.origin);
+    if (parsed.origin !== location.origin) return null;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseVersionCommit: baseCommitId,
+          targetVersionCommit: targetCommitId,
+          fileDiffParams: [{ path: filePath, originalPath: filePath }],
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      // レスポンスは FileDiff の配列（1ファイルのみリクエストしたので [0]）
+      return data?.[0]?.lineDiffBlocks || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * ファイル内容から対象行の前後を含むコードスニペットを抽出する（フォールバック用）
+   * FileDiffs API が使えない場合に使用。全行がコンテキスト行（prefix=' '）になる。
    * @param {string} fileContent - ファイル全文テキスト
    * @param {number} startLine - 開始行番号（1-based）
    * @param {number} endLine - 終了行番号（1-based）
@@ -423,11 +486,123 @@ const DevOpsExtractor = (() => {
   }
 
   /**
-   * Items API を使って API スレッドに差分コード（ファイル内容スニペット）を補完する
+   * FileDiffs の lineDiffBlocks と両側のファイル内容から +/- 付き diff を生成する
+   *
+   * lineDiffBlocks の changeType:
+   *   0 = None（変更なし）, 1 = Add（追加）, 2 = Delete（削除）, 3 = Edit（編集）
+   *
+   * コメント対象行（startLine〜endLine）の前後 contextLines 行を含む範囲で、
+   * 変更ブロックに基づいて +/- prefix を付与する。
+   *
+   * @param {Array} lineDiffBlocks - FileDiffs API の lineDiffBlocks
+   * @param {string} baseContent - ベース（target ブランチ）側のファイル内容
+   * @param {string} modifiedContent - 変更（source ブランチ）側のファイル内容
+   * @param {number} startLine - コメント対象の開始行番号（modified 側, 1-based）
+   * @param {number} endLine - コメント対象の終了行番号（modified 側, 1-based）
+   * @param {number} [contextLines=3] - 前後に含めるコンテキスト行数
+   * @returns {Array<{prefix: string, lineNum: string, code: string}>}
+   */
+  function _buildDiffWithBlocks(lineDiffBlocks, baseContent, modifiedContent, startLine, endLine, contextLines = 3) {
+    const baseLines = baseContent.split('\n');
+    const modLines = modifiedContent.split('\n');
+
+    // modified 側の行番号に対する変更種別マップを構築
+    // modifiedLineMap[lineNum] = 'add' | 'edit-add'
+    // baseLineMap[lineNum] = 'delete' | 'edit-delete'
+    const modifiedLineMap = new Map(); // modified 側行番号(1-based) → 変更種別
+    const baseLineMap = new Map();     // base 側行番号(1-based) → 変更種別
+    // 各 modified 行が base のどの行の後に来るかの対応マップ（挿入位置の追跡用）
+    // deletedBlocks: base 側の削除ブロック情報 [{baseStart, baseCount, afterModifiedLine}]
+    const deletedBlocks = [];
+
+    for (const block of lineDiffBlocks) {
+      const ct = block.changeType;
+      if (ct === 1) {
+        // Add: modified 側にのみ存在する追加行
+        for (let i = 0; i < block.modifiedLinesCount; i++) {
+          modifiedLineMap.set(block.modifiedLineNumberStart + i, 'add');
+        }
+      } else if (ct === 2) {
+        // Delete: base 側にのみ存在する削除行
+        for (let i = 0; i < block.originalLinesCount; i++) {
+          baseLineMap.set(block.originalLineNumberStart + i, 'delete');
+        }
+        // 削除ブロックの位置を記録（modified 側のどこに挿入するか）
+        deletedBlocks.push({
+          baseStart: block.originalLineNumberStart,
+          baseCount: block.originalLinesCount,
+          // modified 側の挿入位置: modifiedLineNumberStart の直前
+          beforeModifiedLine: block.modifiedLineNumberStart,
+        });
+      } else if (ct === 3) {
+        // Edit: base 側の行が削除され、modified 側の行が追加された
+        for (let i = 0; i < block.originalLinesCount; i++) {
+          baseLineMap.set(block.originalLineNumberStart + i, 'edit-delete');
+        }
+        for (let i = 0; i < block.modifiedLinesCount; i++) {
+          modifiedLineMap.set(block.modifiedLineNumberStart + i, 'edit-add');
+        }
+        deletedBlocks.push({
+          baseStart: block.originalLineNumberStart,
+          baseCount: block.originalLinesCount,
+          beforeModifiedLine: block.modifiedLineNumberStart,
+        });
+      }
+    }
+
+    // コメント対象範囲 + コンテキスト行の範囲を計算（modified 側基準）
+    const from = Math.max(1, startLine - contextLines);
+    const to = Math.min(modLines.length, endLine + contextLines);
+
+    const result = [];
+
+    for (let modLine = from; modLine <= to; modLine++) {
+      // この行の直前に挿入すべき削除行があるか確認
+      for (const db of deletedBlocks) {
+        if (db.beforeModifiedLine === modLine && db.baseCount > 0) {
+          // 削除行を出力（コンテキスト範囲内の場合のみ）
+          for (let i = 0; i < db.baseCount; i++) {
+            const baseLine = db.baseStart + i;
+            result.push({
+              prefix: '-',
+              lineNum: String(baseLine),
+              code: baseLines[baseLine - 1] ?? '',
+            });
+          }
+          db.baseCount = 0; // 出力済みマーク
+        }
+      }
+
+      const changeType = modifiedLineMap.get(modLine);
+      if (changeType === 'add' || changeType === 'edit-add') {
+        result.push({
+          prefix: '+',
+          lineNum: String(modLine),
+          code: modLines[modLine - 1] ?? '',
+        });
+      } else {
+        // 変更なしのコンテキスト行
+        result.push({
+          prefix: ' ',
+          lineNum: String(modLine),
+          code: modLines[modLine - 1] ?? '',
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * FileDiffs API + Items API を使って API スレッドに +/- 付き差分コードを補完する
    *
    * _enrichWithDomContext で既に diffLines が設定済みのスレッドはスキップし、
-   * 残りのスレッドについて iterations API → items API でファイル内容を取得する。
-   * ファイルパス+コミットIDで重複排除し、並列フェッチする。
+   * 残りのスレッドについて:
+   *   1. iterations API で sourceCommitId / targetCommitId を取得
+   *   2. FileDiffs API で lineDiffBlocks（行レベル変更情報）を取得
+   *   3. Items API で base / modified 両方のファイル内容を取得
+   *   4. _buildDiffWithBlocks で +/- prefix 付き diff を生成
+   * FileDiffs API が失敗した場合は _extractLinesAroundTarget（全行 prefix=' '）にフォールバック。
    *
    * @param {Array<Array>} apiThreads - 処理済みスレッド配列
    * @param {Array} rawApiThreads - API 生スレッドデータ（threadContext 等を持つ）
@@ -444,8 +619,8 @@ const DevOpsExtractor = (() => {
     }
     if (iterationMap.size === 0) return;
 
-    // 2. フェッチ対象を収集（filePath + commitId で重複排除）
-    const fetchTasks = new Map(); // "filePath\0commitId" → { filePath, commitId, entries: [{idx, rawThread}] }
+    // 2. フェッチ対象を収集（filePath + sourceCommitId + targetCommitId で重複排除）
+    const fetchTasks = new Map(); // "filePath\0sourceCommitId" → { filePath, sourceCommitId, targetCommitId, entries }
 
     apiThreads.forEach((thread, idx) => {
       if (!thread || thread.length === 0) return;
@@ -461,38 +636,58 @@ const DevOpsExtractor = (() => {
       const iterationId = iterCtx?.secondComparingIteration;
       if (!iterationId) return;
 
-      const commitId = iterationMap.get(iterationId);
-      if (!commitId) return;
+      const iterInfo = iterationMap.get(iterationId);
+      if (!iterInfo) return;
 
-      const key = `${first.filePath}\0${commitId}`;
+      // API の threadContext.filePath を使用（DOM の filePath は短縮形の場合がある）
+      const apiFilePath = rawThread.threadContext?.filePath || first.filePath;
+      const key = `${apiFilePath}\0${iterInfo.sourceCommitId}`;
       if (!fetchTasks.has(key)) {
-        fetchTasks.set(key, { filePath: first.filePath, commitId, entries: [] });
+        fetchTasks.set(key, {
+          filePath: apiFilePath,
+          sourceCommitId: iterInfo.sourceCommitId,
+          targetCommitId: iterInfo.targetCommitId,
+          entries: [],
+        });
       }
       fetchTasks.get(key).entries.push({ idx, rawThread });
     });
 
     if (fetchTasks.size === 0) return;
 
-    // 3. ファイル内容を並列取得（同時6件ずつ）
+    // 3. FileDiffs + Items API を並列取得（同時6件ずつ）
     const CONCURRENCY = 6;
     const tasks = Array.from(fetchTasks.values());
-    const fileContents = new Map(); // key → content|null
+    // fetchResult: key → { modifiedContent, baseContent, lineDiffBlocks }
+    const fetchResults = new Map();
 
     for (let i = 0; i < tasks.length; i += CONCURRENCY) {
       const batch = tasks.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
         batch.map(async (task) => {
-          const content = await _fetchFileContent(urlInfo, task.filePath, task.commitId);
-          return { key: `${task.filePath}\0${task.commitId}`, content };
+          const key = `${task.filePath}\0${task.sourceCommitId}`;
+          // modified 側（source ブランチ）のファイル内容を取得
+          const modifiedContent = await _fetchFileContent(urlInfo, task.filePath, task.sourceCommitId);
+          // base 側（target ブランチ）のファイル内容と FileDiffs を並列取得
+          let baseContent = null;
+          let lineDiffBlocks = null;
+          if (modifiedContent && task.targetCommitId) {
+            [baseContent, lineDiffBlocks] = await Promise.all([
+              _fetchFileContent(urlInfo, task.filePath, task.targetCommitId),
+              _fetchFileDiffs(urlInfo, task.filePath, task.targetCommitId, task.sourceCommitId),
+            ]);
+          }
+          return { key, modifiedContent, baseContent, lineDiffBlocks };
         })
       );
-      results.forEach(({ key, content }) => fileContents.set(key, content));
+      results.forEach((r) => fetchResults.set(r.key, r));
     }
 
     // 4. 各スレッドに diffLines を設定
-    for (const [key, task] of fetchTasks) {
-      const content = fileContents.get(key);
-      if (!content) continue; // ファイル削除/移動 → lineRange のみ保持
+    for (const [, task] of fetchTasks) {
+      const key = `${task.filePath}\0${task.sourceCommitId}`;
+      const result = fetchResults.get(key);
+      if (!result?.modifiedContent) continue; // ファイル削除/移動 → lineRange のみ保持
 
       task.entries.forEach(({ idx, rawThread }) => {
         const thread = apiThreads[idx];
@@ -504,7 +699,17 @@ const DevOpsExtractor = (() => {
         const endLine = tc.rightFileEnd?.line || tc.leftFileEnd?.line || startLine;
         if (!startLine) return;
 
-        const diffLines = _extractLinesAroundTarget(content, startLine, endLine);
+        // FileDiffs + base 側が取得できていれば +/- 付き diff を生成
+        let diffLines;
+        if (result.lineDiffBlocks && result.baseContent) {
+          diffLines = _buildDiffWithBlocks(
+            result.lineDiffBlocks, result.baseContent, result.modifiedContent,
+            startLine, endLine
+          );
+        } else {
+          // フォールバック: 全行コンテキスト（prefix=' '）
+          diffLines = _extractLinesAroundTarget(result.modifiedContent, startLine, endLine);
+        }
         if (diffLines.length === 0) return;
 
         if (!first.diffContext) {
@@ -551,9 +756,9 @@ const DevOpsExtractor = (() => {
 
     rows.forEach((row) => {
       const spans = row.children;
-      if (spans.length < 3) return;
+      if (spans.length < 2) return;
 
-      // SPAN[0] の .screen-reader-only から旧行番号（最初の数値トークン）を取得
+      // 行番号: 最初の SPAN 内の .screen-reader-only テキストから数値を取得
       // latest diff時: "Commented 15 16" / "12 13" → 最初の数値 = 旧行番号
       // original diff時: "Commented 15" / "13" → 最初の数値 = 旧行番号
       const srEl = spans[0].querySelector('.screen-reader-only');
@@ -561,8 +766,14 @@ const DevOpsExtractor = (() => {
       const numTokens = srText.match(/\d+/g) || [];
       const lineNum = numTokens[0] || '';
 
-      // コード内容（SPAN[2] = .repos-line-content、screen-reader-only 除外）
-      const contentSpan = spans[2];
+      // コード内容: .repos-line-content を持つ SPAN を探す（2 SPAN / 3 SPAN 両対応）
+      let contentSpan = null;
+      for (let i = spans.length - 1; i >= 1; i--) {
+        const cls = typeof spans[i].className === 'string' ? spans[i].className : '';
+        if (cls.includes('repos-line-content')) { contentSpan = spans[i]; break; }
+      }
+      if (!contentSpan) contentSpan = spans[spans.length - 1]; // フォールバック: 最後の SPAN
+
       const contentCls = typeof contentSpan.className === 'string' ? contentSpan.className : '';
       const isAdded = contentCls.includes('added');
       const isRemoved = contentCls.includes('removed');
@@ -761,6 +972,89 @@ const DevOpsExtractor = (() => {
   }
 
   /**
+   * DOM スレッドの中に diffLines が欠落しているインラインコメントがあるか判定
+   * @param {Array<Array>} threads
+   * @returns {boolean}
+   */
+  function _hasMissingDiffLines(threads) {
+    return threads.some((thread) => {
+      if (!thread || thread.length === 0) return false;
+      const first = thread[0];
+      // filePath があるのに diffLines が無い → diff が欠落している
+      return first.filePath && !(first.diffContext?.diffLines?.length > 0);
+    });
+  }
+
+  /**
+   * DOM スレッドに対して API 生データとマッチさせ、Items API で diffLines を補完する
+   *
+   * DOM パスで取得したスレッドの中に diffLines が欠落しているものがある場合、
+   * API から rawApiThreads を取得し、filePath でマッチして Items API 経由で補完する。
+   *
+   * @param {Array<Array>} domThreads - DOM から取得したスレッド配列
+   */
+  async function _enrichDomThreadsViaItemsApi(domThreads) {
+    // API データを取得
+    let apiData = null;
+    try {
+      apiData = await fetchViaApi();
+    } catch (e) {
+      console.warn('[ReviewForMD] DOM補完用 API 取得失敗:', e);
+      return;
+    }
+    if (!apiData || !apiData.rawApiThreads || !apiData.urlInfo) return;
+
+    // DOM スレッドと API rawThread をマッチさせる
+    // filePath + 先頭コメントの author で対応付け
+    // マッチした DOM スレッドを仮の apiThreads 配列に入れ、対応する rawApiThreads と合わせて
+    // _enrichWithItemsApi に渡す
+    const matchedThreads = [];    // _enrichWithItemsApi に渡す apiThreads 相当
+    const matchedRawThreads = []; // 対応する rawApiThreads
+
+    // API rawThreads を配列で保持（DOM filePath がフルパスでない場合があるため endsWith で比較）
+    const rawEntries = []; // { filePath, author, raw, used }
+    apiData.rawApiThreads.forEach((raw) => {
+      const tc = raw.threadContext;
+      if (!tc?.filePath) return;
+      const firstComment = raw.comments?.find((c) => c.commentType !== 'system' && c.content);
+      if (!firstComment) return;
+      const author = firstComment.author?.displayName || '';
+      rawEntries.push({ filePath: tc.filePath, author, raw, used: false });
+    });
+
+    domThreads.forEach((thread) => {
+      if (!thread || thread.length === 0) return;
+      const first = thread[0];
+      // filePath があるのに diffLines が無いスレッドのみ対象
+      if (!first.filePath || first.diffContext?.diffLines?.length > 0) return;
+
+      // DOM の filePath は短縮形（ファイル名のみ）の場合がある
+      // API の filePath はフルパス（/CooKai/Models/Foo.cs）
+      // endsWith で比較し、author も一致するものを探す
+      const domPath = first.filePath || '';
+      const domAuthor = first.author || '';
+      const match = rawEntries.find((e) =>
+        !e.used &&
+        e.author === domAuthor &&
+        (e.filePath === domPath || e.filePath.endsWith('/' + domPath))
+      );
+      if (!match) return;
+
+      match.used = true;
+      matchedThreads.push(thread);
+      matchedRawThreads.push(match.raw);
+    });
+
+    if (matchedThreads.length === 0) return;
+
+    try {
+      await _enrichWithItemsApi(matchedThreads, matchedRawThreads, apiData.urlInfo);
+    } catch (e) {
+      console.warn('[ReviewForMD] DOM スレッド Items API 補完で予期しないエラー:', e);
+    }
+  }
+
+  /**
    * 全データを取得して Markdown を生成する
    * DOM に未ロードコメントがある場合は API を優先使用する
    * @returns {Promise<string>}
@@ -775,6 +1069,7 @@ const DevOpsExtractor = (() => {
     const needApi = domCommentCount === 0 || _hasUnloadedComments();
 
     let title = '';
+    let itemsApiDone = false; // Items API 補完が既に実行済みかどうか
     if (needApi) {
       // fetchViaApi 内部で catch しているが、予期しないランタイムエラーに備え外側でも保護
       let apiData = null;
@@ -798,8 +1093,20 @@ const DevOpsExtractor = (() => {
           } catch (e) {
             console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
           }
+          itemsApiDone = true;
           threads = apiData.threads;
         }
+      }
+    }
+
+    // DOM パスで取得したスレッドに diffLines が欠落しているものがあれば Items API で補完
+    // （diff コンテナが未ロード（スピナー表示中）のケースをカバー）
+    // API パスで既に Items API 補完済みの場合は重複呼び出しを回避
+    if (!itemsApiDone && _hasMissingDiffLines(threads)) {
+      try {
+        await _enrichDomThreadsViaItemsApi(threads);
+      } catch (e) {
+        console.warn('[ReviewForMD] DOM diffLines 補完で予期しないエラー:', e);
       }
     }
 

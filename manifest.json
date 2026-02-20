@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "プルリクMDコピー",
-  "version": "1.0.12",
+  "version": "1.0.16",
   "description": "プルリクエストのタイトル・本文・レビューコメントをMarkdown形式でコピーするChrome拡張機能",
   "permissions": ["activeTab", "scripting", "webNavigation"],
   "host_permissions": [

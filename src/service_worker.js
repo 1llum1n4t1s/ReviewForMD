@@ -94,20 +94,21 @@ const NAV_URL_FILTERS = {
   ],
 };
 
-chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
   if (details.frameId !== 0) return; // メインフレームのみ
   if (!isPRPageUrl(details.url)) return;
   if (isKnownDomain(details.url)) {
-    // 既知ドメインは静的注入済みなので、再初期化のメッセージだけ送る
-    // コンテンツスクリプト未ロード時の "Could not establish connection" は想定内
-    chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' }).catch((e) => {
-      if (!e?.message?.includes('Could not establish connection')) {
-        console.debug('[ReviewForMD] sendMessage failed:', e?.message || e);
-      }
-    });
+    // 既知ドメインは静的注入済みのはずなので、再初期化メッセージを送る。
+    // コンテンツスクリプト未ロード時（PR 一覧→PR 詳細への SPA 遷移等）は
+    // メッセージ送信が失敗するため、動的注入にフォールバックする。
+    try {
+      await chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' });
+    } catch {
+      await injectContentScripts(details.tabId);
+    }
   } else {
     // カスタムドメイン → 動的注入
-    injectContentScripts(details.tabId);
+    await injectContentScripts(details.tabId);
   }
 }, NAV_URL_FILTERS);
 

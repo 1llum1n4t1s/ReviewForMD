@@ -29,12 +29,37 @@
   let _observer = null;
 
   /**
+   * SPA 遷移で PR ページから離れた際のクリーンアップ。
+   * 古い MutationObserver が非 PR ページでボタンを再注入するのを防ぐ。
+   */
+  function _cleanup() {
+    if (_observer) {
+      _observer.disconnect();
+      _observer = null;
+    }
+    if (_debounceTimer) {
+      clearTimeout(_debounceTimer);
+      _debounceTimer = null;
+    }
+    // 前のページから残ったボタンを除去
+    document
+      .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap')
+      .forEach((el) => el.remove());
+    _currentSiteType = null;
+  }
+
+  /**
    * メイン初期化処理
    */
   function init() {
     const siteType = SiteDetector.detect();
 
     if (siteType === SiteDetector.SiteType.UNKNOWN) {
+      // 以前 PR ページとして検出されていた場合、クリーンアップ
+      // （SPA 遷移で PR ページから離れたケース）
+      if (_currentSiteType !== null) {
+        _cleanup();
+      }
       if (_retries < MAX_RETRIES) {
         _retries++;
         setTimeout(init, RETRY_INTERVAL);

@@ -40,7 +40,7 @@ const SiteDetector = (() => {
    * URL パスが DevOps PR パターンに一致するかどうか
    */
   function _isDevOpsPRPath() {
-    return /\/_git\/[^/]+\/pullrequest\/\d+/.test(location.pathname);
+    return /\/_git\/[^/]+\/pullrequest\/\d+/i.test(location.pathname);
   }
 
   /**

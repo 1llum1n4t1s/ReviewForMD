@@ -1,7 +1,7 @@
 /**
  * GitHub プルリクエスト データ抽出モジュール
  */
-const GitHubExtractor = (() => {
+var GitHubExtractor = GitHubExtractor || (() => {
   /**
    * PR タイトルを取得する
    * @returns {string}

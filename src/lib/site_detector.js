@@ -4,7 +4,7 @@
  * DevOps は企業独自ドメインで運用されることが多いため、
  * URL だけでなく DOM 構造も併用して判定する。
  */
-const SiteDetector = (() => {
+var SiteDetector = SiteDetector || (() => {
   /** @enum {string} */
   const SiteType = {
     GITHUB: 'github',

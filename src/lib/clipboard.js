@@ -1,7 +1,7 @@
 /**
  * クリップボードコピーモジュール
  */
-const Clipboard = (() => {
+var Clipboard = Clipboard || (() => {
   /**
    * テキストをクリップボードにコピーする
    * @param {string} text

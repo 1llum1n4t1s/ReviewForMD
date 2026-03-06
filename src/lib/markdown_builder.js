@@ -2,7 +2,7 @@
  * Markdown 組み立てモジュール
  * 抽出したPRデータを Markdown テキストに変換する。
  */
-const MarkdownBuilder = (() => {
+var MarkdownBuilder = MarkdownBuilder || (() => {
   /* ── HTML → Markdown 変換 ─────────────────────── */
 
   /**

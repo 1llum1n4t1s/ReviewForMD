@@ -4,7 +4,7 @@
  * DevOps は SPA で DOM が動的にレンダリングされるため、
  * DOM ベースの抽出に加えて REST API をフォールバックとして利用する。
  */
-const DevOpsExtractor = (() => {
+var DevOpsExtractor = DevOpsExtractor || (() => {
   /**
    * PR タイトルを取得する
    * @returns {string}

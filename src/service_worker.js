@@ -9,7 +9,7 @@
 /** PR ページの URL パターン（パス部分のみ） */
 const PR_PATH_PATTERNS = [
   /\/pull\/\d+/,                           // GitHub
-  /\/_git\/[^/]+\/pullrequest\/\d+/,       // Azure DevOps
+  /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps
 ];
 
 /**
@@ -90,7 +90,7 @@ async function injectContentScripts(tabId) {
 const NAV_URL_FILTERS = {
   url: [
     { urlMatches: '.*/pull/\\d+.*' },                  // GitHub
-    { urlMatches: '.*/_git/[^/]+/pullrequest/\\d+.*' }, // Azure DevOps
+    { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps
   ],
 };
 

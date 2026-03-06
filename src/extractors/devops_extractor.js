@@ -100,19 +100,7 @@ const DevOpsExtractor = (() => {
       threadEls.forEach((threadEl) => {
         processedEls.add(threadEl);
 
-        // ファイルパスと diff コンテキストを取得（インラインコメントの場合）
-        let filePath = '';
-        let diffContext;
-        const prevSibling = threadEl.previousElementSibling;
-        if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
-          const linkEl = prevSibling.querySelector('.comment-file-header-link');
-          if (linkEl) filePath = linkEl.textContent.trim();
-          if (!filePath) {
-            const pathEl = prevSibling.querySelector('.secondary-text');
-            if (pathEl) filePath = pathEl.textContent.trim();
-          }
-          diffContext = _extractDiffContext(prevSibling);
-        }
+        const { filePath, diffContext } = _extractFileHeaderContext(threadEl);
 
         const threadComments = [];
         const commentEls = threadEl.querySelectorAll(
@@ -166,19 +154,7 @@ const DevOpsExtractor = (() => {
     inlineThreads.forEach((thread) => {
       // Activity タブで既に処理済みのスレッドはスキップ
       if (processedEls && processedEls.has(thread)) return;
-      // ファイルパスと diff コンテキストを取得
-      let filePath = '';
-      let diffContext;
-      const prevSibling = thread.previousElementSibling;
-      if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
-        const linkEl = prevSibling.querySelector('.comment-file-header-link');
-        if (linkEl) filePath = linkEl.textContent.trim();
-        if (!filePath) {
-          const pathEl = prevSibling.querySelector('.secondary-text');
-          if (pathEl) filePath = pathEl.textContent.trim();
-        }
-        diffContext = _extractDiffContext(prevSibling);
-      }
+      let { filePath, diffContext } = _extractFileHeaderContext(thread);
       // フォールバック: 従来のセレクタ
       if (!filePath) {
         const fileContainer = thread.closest('.repos-summary-item, .file-container');
@@ -261,6 +237,39 @@ const DevOpsExtractor = (() => {
     return { author, body, timestamp };
   }
 
+  /**
+   * スレッド要素の前の兄弟要素 .comment-file-header からファイルパスと diff コンテキストを取得する
+   * @param {Element} el - スレッド要素
+   * @returns {{ filePath: string, diffContext: object|undefined }}
+   */
+  function _extractFileHeaderContext(el) {
+    let filePath = '';
+    let diffContext;
+    const prevSibling = el.previousElementSibling;
+    if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
+      const linkEl = prevSibling.querySelector('.comment-file-header-link');
+      if (linkEl) filePath = linkEl.textContent.trim();
+      if (!filePath) {
+        const pathEl = prevSibling.querySelector('.secondary-text');
+        if (pathEl) filePath = pathEl.textContent.trim();
+      }
+      diffContext = _extractDiffContext(prevSibling);
+    }
+    return { filePath, diffContext };
+  }
+
+  /**
+   * 行範囲テキスト（「行 X-Y」or「行 X」）を生成する
+   * @param {number|string} start
+   * @param {number|string} end
+   * @returns {string}
+   */
+  function _formatLineRange(start, end) {
+    if (start && end && start !== end) return `行 ${start}-${end}`;
+    if (start) return `行 ${start}`;
+    return '';
+  }
+
   /* ── REST API フォールバック ───────────────────── */
 
   /**
@@ -297,11 +306,7 @@ const DevOpsExtractor = (() => {
           if (tc) {
             const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
             const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
-            if (start && end && start !== end) {
-              lineRange = `行 ${start}-${end}`;
-            } else if (start) {
-              lineRange = `行 ${start}`;
-            }
+            lineRange = _formatLineRange(start, end);
           }
           const threadComments = [];
           thread.comments.forEach((c) => {
@@ -510,9 +515,7 @@ const DevOpsExtractor = (() => {
     // modifiedLineMap[lineNum] = 'add' | 'edit-add'
     // baseLineMap[lineNum] = 'delete' | 'edit-delete'
     const modifiedLineMap = new Map(); // modified 側行番号(1-based) → 変更種別
-    const baseLineMap = new Map();     // base 側行番号(1-based) → 変更種別
-    // 各 modified 行が base のどの行の後に来るかの対応マップ（挿入位置の追跡用）
-    // deletedBlocks: base 側の削除ブロック情報 [{baseStart, baseCount, afterModifiedLine}]
+    // deletedBlocks: base 側の削除ブロック情報 [{baseStart, baseCount, beforeModifiedLine}]
     const deletedBlocks = [];
 
     for (const block of lineDiffBlocks) {
@@ -524,10 +527,6 @@ const DevOpsExtractor = (() => {
         }
       } else if (ct === 2) {
         // Delete: base 側にのみ存在する削除行
-        for (let i = 0; i < block.originalLinesCount; i++) {
-          baseLineMap.set(block.originalLineNumberStart + i, 'delete');
-        }
-        // 削除ブロックの位置を記録（modified 側のどこに挿入するか）
         deletedBlocks.push({
           baseStart: block.originalLineNumberStart,
           baseCount: block.originalLinesCount,
@@ -536,9 +535,6 @@ const DevOpsExtractor = (() => {
         });
       } else if (ct === 3) {
         // Edit: base 側の行が削除され、modified 側の行が追加された
-        for (let i = 0; i < block.originalLinesCount; i++) {
-          baseLineMap.set(block.originalLineNumberStart + i, 'edit-delete');
-        }
         for (let i = 0; i < block.modifiedLinesCount; i++) {
           modifiedLineMap.set(block.modifiedLineNumberStart + i, 'edit-add');
         }
@@ -666,17 +662,17 @@ const DevOpsExtractor = (() => {
       const results = await Promise.all(
         batch.map(async (task) => {
           const key = `${task.filePath}\0${task.sourceCommitId}`;
-          // modified 側（source ブランチ）のファイル内容を取得
-          const modifiedContent = await _fetchFileContent(urlInfo, task.filePath, task.sourceCommitId);
-          // base 側（target ブランチ）のファイル内容と FileDiffs を並列取得
-          let baseContent = null;
-          let lineDiffBlocks = null;
-          if (modifiedContent && task.targetCommitId) {
-            [baseContent, lineDiffBlocks] = await Promise.all([
+          // modified / base / FileDiffs を全て並列取得
+          const fetches = [
+            _fetchFileContent(urlInfo, task.filePath, task.sourceCommitId),
+          ];
+          if (task.targetCommitId) {
+            fetches.push(
               _fetchFileContent(urlInfo, task.filePath, task.targetCommitId),
               _fetchFileDiffs(urlInfo, task.filePath, task.targetCommitId, task.sourceCommitId),
-            ]);
+            );
           }
+          const [modifiedContent, baseContent = null, lineDiffBlocks = null] = await Promise.all(fetches);
           return { key, modifiedContent, baseContent, lineDiffBlocks };
         })
       );
@@ -713,13 +709,7 @@ const DevOpsExtractor = (() => {
         if (diffLines.length === 0) return;
 
         if (!first.diffContext) {
-          let lineRange = '';
-          if (startLine && endLine && startLine !== endLine) {
-            lineRange = `行 ${startLine}-${endLine}`;
-          } else if (startLine) {
-            lineRange = `行 ${startLine}`;
-          }
-          first.diffContext = { lineRange, diffLines };
+          first.diffContext = { lineRange: _formatLineRange(startLine, endLine), diffLines };
         } else {
           first.diffContext.diffLines = diffLines;
         }
@@ -800,15 +790,7 @@ const DevOpsExtractor = (() => {
 
     if (diffLines.length === 0) return undefined;
 
-    // 行範囲テキストを生成
-    let lineRange = '';
-    if (firstLineNum && lastLineNum && firstLineNum !== lastLineNum) {
-      lineRange = `行 ${firstLineNum}-${lastLineNum}`;
-    } else if (firstLineNum) {
-      lineRange = `行 ${firstLineNum}`;
-    }
-
-    return { lineRange, diffLines };
+    return { lineRange: _formatLineRange(firstLineNum, lastLineNum), diffLines };
   }
 
   /**
@@ -848,22 +830,8 @@ const DevOpsExtractor = (() => {
     const comments = [];
 
     // ファイルパスと diff コンテキストを取得
-    // 1) スレッドの前の兄弟要素 .comment-file-header からファイル名リンクを取得
-    let filePath = '';
-    let diffContext;
-    const prevSibling = threadContainer.previousElementSibling;
-    if (prevSibling && prevSibling.classList.contains('comment-file-header')) {
-      const linkEl = prevSibling.querySelector('.comment-file-header-link');
-      if (linkEl) filePath = linkEl.textContent.trim();
-      // フォールバック: セカンダリテキスト（フルパス）
-      if (!filePath) {
-        const pathEl = prevSibling.querySelector('.secondary-text');
-        if (pathEl) filePath = pathEl.textContent.trim();
-      }
-      // diff コンテキストを抽出
-      diffContext = _extractDiffContext(prevSibling);
-    }
-    // 2) フォールバック: 従来のセレクタ
+    let { filePath, diffContext } = _extractFileHeaderContext(threadContainer);
+    // フォールバック: 従来のセレクタ
     if (!filePath) {
       const fileContainer = threadContainer.closest('.repos-summary-item, .file-container');
       const filePathEl = fileContainer?.querySelector(
@@ -992,15 +960,18 @@ const DevOpsExtractor = (() => {
    * API から rawApiThreads を取得し、filePath でマッチして Items API 経由で補完する。
    *
    * @param {Array<Array>} domThreads - DOM から取得したスレッド配列
+   * @param {object} [existingApiData] - 既に取得済みの fetchViaApi() 結果（省略時は内部で取得）
    */
-  async function _enrichDomThreadsViaItemsApi(domThreads) {
-    // API データを取得
-    let apiData = null;
-    try {
-      apiData = await fetchViaApi();
-    } catch (e) {
-      console.warn('[ReviewForMD] DOM補完用 API 取得失敗:', e);
-      return;
+  async function _enrichDomThreadsViaItemsApi(domThreads, existingApiData) {
+    // API データを取得（既存データがあればそれを使用し、重複 API コールを回避）
+    let apiData = existingApiData || null;
+    if (!apiData) {
+      try {
+        apiData = await fetchViaApi();
+      } catch (e) {
+        console.warn('[ReviewForMD] DOM補完用 API 取得失敗:', e);
+        return;
+      }
     }
     if (!apiData || !apiData.rawApiThreads || !apiData.urlInfo) return;
 
@@ -1070,9 +1041,9 @@ const DevOpsExtractor = (() => {
 
     let title = '';
     let itemsApiDone = false; // Items API 補完が既に実行済みかどうか
+    let apiData = null; // _enrichDomThreadsViaItemsApi に渡すため extractAll スコープで保持
     if (needApi) {
       // fetchViaApi 内部で catch しているが、予期しないランタイムエラーに備え外側でも保護
-      let apiData = null;
       try {
         apiData = await fetchViaApi();
       } catch (e) {
@@ -1104,7 +1075,7 @@ const DevOpsExtractor = (() => {
     // API パスで既に Items API 補完済みの場合は重複呼び出しを回避
     if (!itemsApiDone && _hasMissingDiffLines(threads)) {
       try {
-        await _enrichDomThreadsViaItemsApi(threads);
+        await _enrichDomThreadsViaItemsApi(threads, apiData);
       } catch (e) {
         console.warn('[ReviewForMD] DOM diffLines 補完で予期しないエラー:', e);
       }

@@ -61,7 +61,7 @@ var ButtonInjector = ButtonInjector || (() => {
       try {
         // extractFn が同期値を返す場合にも対応するため Promise.resolve で wrap
         const md = await Promise.resolve(extractFn());
-        const ok = await Clipboard.copy(md);
+        const ok = await RfmdClipboard.copy(md);
         _showFeedback(btn, ok);
       } catch (err) {
         console.error('[ReviewForMD]', err);

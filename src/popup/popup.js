@@ -8,7 +8,7 @@
 const RE_GITHUB_HOST = /^https?:\/\/(www\.)?github\.com\//;
 const RE_GITHUB_PR = /\/pull\/\d+/;
 const RE_DEVOPS_HOST = /^https?:\/\/(dev\.azure\.com|[^/]+\.visualstudio\.com)\//;
-const RE_DEVOPS_PR = /\/_git\/[^/]+\/pullrequest\/\d+/;
+const RE_DEVOPS_PR = /\/_git\/[^/]+\/pullrequest\/\d+/i;
 
 document.addEventListener('DOMContentLoaded', async () => {
   const statusEl = document.getElementById('status');

@@ -37,7 +37,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    */
   function getPRNumber() {
     // URL から取得
-    const match = location.pathname.match(/\/pullrequest\/(\d+)/);
+    const match = location.pathname.match(/\/pullrequest\/(\d+)/i);
     if (match) return `#${match[1]}`;
 
     // data 属性から取得
@@ -350,7 +350,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   function _parseDevOpsUrl() {
     const path = location.pathname;
     // 貪欲マッチで最後の /_git/ の直前まで取得する
-    const match = path.match(/^(.*)\/_git\/([^/]+)\/pullrequest\/(\d+)/);
+    const match = path.match(/^(.*)\/_git\/([^/]+)\/pullrequest\/(\d+)/i);
     if (!match) return null;
 
     return {

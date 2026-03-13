@@ -44,10 +44,12 @@ var ButtonInjector = ButtonInjector || (() => {
 
   /**
    * ボタン生成ファクトリ
-   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<string>|string }} opts
+   * @param {{ className: string, dataRfmd: string, label: string, title: string, action?: 'copy'|'download', extractFn: Function }} opts
+   *   action='copy'（デフォルト）: extractFn は Markdown 文字列を返す → クリップボードへコピー
+   *   action='download': extractFn は {title, markdown} を返す → ファイルとしてダウンロード
    * @returns {HTMLButtonElement}
    */
-  function _createButton({ className, dataRfmd, label, title, extractFn }) {
+  function _createButton({ className, dataRfmd, label, title, action = 'copy', extractFn }) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = className;
@@ -56,6 +58,7 @@ var ButtonInjector = ButtonInjector || (() => {
     btn.innerHTML = label;
     btn.dataset.rfmdOriginal = label;
     btn.dataset.rfmdBusy = '0';
+    if (action === 'download') btn.dataset.rfmdAction = 'download';
     btn.title = title;
 
     btn.addEventListener('click', async (e) => {
@@ -63,9 +66,14 @@ var ButtonInjector = ButtonInjector || (() => {
       e.stopPropagation();
       if (btn.dataset.rfmdBusy === '1') return;
       try {
-        // extractFn が同期値を返す場合にも対応するため Promise.resolve で wrap
-        const md = await Promise.resolve(extractFn());
-        const ok = await RfmdClipboard.copy(md);
+        const result = await Promise.resolve(extractFn());
+        let ok;
+        if (action === 'download') {
+          const filename = _sanitizeFilename(result.title) + '.md';
+          ok = RfmdClipboard.download(result.markdown, filename);
+        } else {
+          ok = await RfmdClipboard.copy(result);
+        }
         _showFeedback(btn, ok);
       } catch (err) {
         console.error('[ReviewForMD]', err);
@@ -89,45 +97,11 @@ var ButtonInjector = ButtonInjector || (() => {
     return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'pullrequest';
   }
 
-  /**
-   * ダウンロードボタン生成ファクトリ
-   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<{title: string, markdown: string}>|{title: string, markdown: string} }} opts
-   * @returns {HTMLButtonElement}
-   */
-  function _createDownloadButton({ className, dataRfmd, label, title, extractFn }) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = className;
-    btn.setAttribute('data-rfmd', dataRfmd);
-    btn.setAttribute('aria-label', title);
-    btn.innerHTML = label;
-    btn.dataset.rfmdOriginal = label;
-    btn.dataset.rfmdBusy = '0';
-    btn.dataset.rfmdAction = 'download';
-    btn.title = title;
-
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (btn.dataset.rfmdBusy === '1') return;
-      try {
-        const result = await Promise.resolve(extractFn());
-        const filename = _sanitizeFilename(result.title) + '.md';
-        const ok = RfmdClipboard.download(result.markdown, filename);
-        _showFeedback(btn, ok);
-      } catch (err) {
-        console.error('[ReviewForMD]', err);
-        _showFeedback(btn, false);
-      }
-    });
-
-    return btn;
-  }
-
   function _createAllDownloadButton(siteType) {
-    return _createDownloadButton({
+    return _createButton({
       className: 'rfmd-btn rfmd-btn--primary',
       dataRfmd: 'all',
+      action: 'download',
       label: DOWNLOAD_LABEL,
       title: 'PR タイトル・本文・全レビューコメントを Markdown ファイルでダウンロード',
       extractFn: async () => {
@@ -353,9 +327,10 @@ var ButtonInjector = ButtonInjector || (() => {
       const prUrl = link.href;
       if (!prUrl || !/\/pull\/\d+/.test(prUrl)) return;
 
-      const btn = _createDownloadButton({
+      const btn = _createButton({
         className: 'rfmd-btn rfmd-btn--sm',
         dataRfmd: 'list-dl',
+        action: 'download',
         label: DOWNLOAD_LABEL,
         title: 'この PR を Markdown ファイルでダウンロード',
         extractFn: () => GitHubExtractor.extractByPrUrl(prUrl),
@@ -386,9 +361,10 @@ var ButtonInjector = ButtonInjector || (() => {
       // 既に注入済みならスキップ
       if (row.querySelector('[data-rfmd="list-dl"]')) return;
 
-      const btn = _createDownloadButton({
+      const btn = _createButton({
         className: 'rfmd-btn rfmd-btn--sm',
         dataRfmd: 'list-dl',
+        action: 'download',
         label: DOWNLOAD_LABEL,
         title: 'この PR を Markdown ファイルでダウンロード',
         extractFn: () => DevOpsExtractor.extractByPrUrl(prUrl),

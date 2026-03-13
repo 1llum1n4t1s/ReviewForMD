@@ -11,6 +11,11 @@
   if (window.__rfmd_initialized) return;
   window.__rfmd_initialized = true;
 
+  /** Extension が更新されてコンテキストが無効化されたエラーかどうか */
+  function _isExtCtxError(e) {
+    return e?.message?.includes('Extension context invalidated');
+  }
+
   /** 初期化試行間隔 (ms) */
   const RETRY_INTERVAL = 1500;
   /** 最大リトライ回数 */
@@ -93,7 +98,7 @@
         ButtonInjector.inject(siteType);
       }
     } catch (e) {
-      if (!e?.message?.includes('Extension context invalidated')) {
+      if (!_isExtCtxError(e)) {
         console.warn('[ReviewForMD] ButtonInjector.inject error:', e);
       }
     }
@@ -145,7 +150,7 @@
             ButtonInjector.inject(siteType);
           }
         } catch (e) {
-          if (!e?.message?.includes('Extension context invalidated')) {
+          if (!_isExtCtxError(e)) {
             console.warn('[ReviewForMD] ButtonInjector.inject (observer) error:', e);
           }
         }
@@ -197,13 +202,13 @@
             return; // sendResponse を同期的に呼んでいるので true 不要
           }
         } catch (innerErr) {
-          if (!innerErr?.message?.includes('Extension context invalidated')) {
+          if (!_isExtCtxError(innerErr)) {
             console.warn('[ReviewForMD] onMessage handler error:', innerErr);
           }
         }
       });
     } catch (e) {
-      if (!e?.message?.includes('Extension context invalidated')) {
+      if (!_isExtCtxError(e)) {
         console.warn('[ReviewForMD] onMessage listener error:', e);
       }
     }
@@ -232,7 +237,7 @@
       script.onload = () => script.remove();
       (document.head || document.documentElement).appendChild(script);
     } catch (e) {
-      if (!e?.message?.includes('Extension context invalidated')) {
+      if (!_isExtCtxError(e)) {
         console.warn('[ReviewForMD] Navigation hook injection error:', e);
       }
     }

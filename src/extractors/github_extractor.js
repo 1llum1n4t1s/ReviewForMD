@@ -6,45 +6,44 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * PR タイトルを取得する
    * @returns {string}
    */
-  function getTitle() {
-    // Primer React UI (2025〜): h1 > span.markdown-title
-    const prcTitle = document.querySelector(
-      'h1[class*="PageHeader-Title"] span.markdown-title'
-    );
-    if (prcTitle) return prcTitle.textContent.trim();
+  /**
+   * PR タイトルを取得する
+   * @param {Document|Element} [root=document] - 検索対象のルート要素
+   * @returns {string}
+   */
+  function getTitle(root) {
+    const r = root || document;
 
-    // React ベースの新 UI（PR 専用 testid → issue 汎用 testid の順でフォールバック）
-    const reactTitle =
-      document.querySelector('[data-testid="pull-request-title"]') ||
-      document.querySelector('[data-testid="issue-title"]');
-    if (reactTitle) return reactTitle.textContent.trim();
-
-    // bdi.markdown-title (新 UI のフォールバック)
-    const bdiTitle = document.querySelector('h1 bdi.markdown-title');
-    if (bdiTitle) return bdiTitle.textContent.trim();
-
-    // レガシー UI
-    const legacyTitle = document.querySelector('.gh-header-title .js-issue-title');
-    if (legacyTitle) return legacyTitle.textContent.trim();
+    // セレクタ候補を順に試行
+    const selectors = [
+      'h1[class*="PageHeader-Title"] span.markdown-title',
+      '[data-testid="pull-request-title"]',
+      '[data-testid="issue-title"]',
+      'h1 bdi.markdown-title',
+      '.gh-header-title .js-issue-title',
+    ];
+    for (const sel of selectors) {
+      const el = r.querySelector(sel);
+      if (el) return el.textContent.trim();
+    }
 
     // 最終フォールバック: h1 からタイトルテキストだけを取得
-    const h1 = document.querySelector('.gh-header-title');
+    const h1 = r.querySelector('.gh-header-title');
     if (h1) {
-      // #番号 部分を除いたテキスト
       const text = h1.textContent.trim();
       const cleaned = text.replace(/\s*#\d+\s*$/, '').trim();
       if (cleaned) return cleaned;
     }
 
-    // document.title から取得
-    // 形式: "タイトル by 著者 · Pull Request #123 · owner/repo"
-    // または "タイトル · Pull Request #123 · owner/repo"
-    const pageTitle = document.title;
-    const ptMatch = pageTitle.match(/^(.+?)\s+by\s+/) ||
-                    pageTitle.match(/^(.+?)\s*·/);
-    if (ptMatch) {
-      const extracted = ptMatch[1].trim();
-      if (extracted) return extracted;
+    // document.title から取得（ライブ DOM のみ）
+    if (!root || root === document) {
+      const pageTitle = document.title;
+      const ptMatch = pageTitle.match(/^(.+?)\s+by\s+/) ||
+                      pageTitle.match(/^(.+?)\s*·/);
+      if (ptMatch) {
+        const extracted = ptMatch[1].trim();
+        if (extracted) return extracted;
+      }
     }
 
     return '';
@@ -61,18 +60,20 @@ var GitHubExtractor = GitHubExtractor || (() => {
 
   /**
    * PR 本文を取得する
+   * @param {Document|Element} [root=document] - 検索対象のルート要素
    * @returns {string}
    */
-  function getBody() {
+  function getBody(root) {
+    const r = root || document;
     // 旧 UI: 専用の PR 本文コンテナ
     const legacyBodyEl =
-      document.querySelector('.js-issue-body .markdown-body') ||
-      document.querySelector('.react-issue-body .markdown-body') ||
-      document.querySelector('[data-testid="issue-body"] .markdown-body');
+      r.querySelector('.js-issue-body .markdown-body') ||
+      r.querySelector('.react-issue-body .markdown-body') ||
+      r.querySelector('[data-testid="issue-body"] .markdown-body');
     if (legacyBodyEl) return MarkdownBuilder.htmlToMarkdown(legacyBodyEl);
 
     // 新 UI (2025〜): PR 本文は id="pullrequest-*" のコメント内にある
-    const prBodyComment = document.querySelector('[id^="pullrequest-"]');
+    const prBodyComment = r.querySelector('[id^="pullrequest-"]');
     if (prBodyComment) {
       const mdBody =
         prBodyComment.querySelector('.js-comment-body .markdown-body') ||
@@ -101,7 +102,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
     _extractReviewThreadsGrouped(threads);
 
     // 重複除去（スレッド単位）
-    return _deduplicateThreads(threads);
+    return MarkdownBuilder.deduplicateThreads(threads);
   }
 
   /**
@@ -285,23 +286,6 @@ var GitHubExtractor = GitHubExtractor || (() => {
   }
 
   /**
-   * 重複スレッドを除去する
-   * スレッドの先頭コメント（author + body 全文 + filePath）でユニーク判定。
-   * 100文字切り捨てだと、先頭が同じ長文コメントが誤って除去されるため全文を使用する。
-   */
-  function _deduplicateThreads(threads) {
-    const seen = new Set();
-    return threads.filter((thread) => {
-      if (!thread || thread.length === 0) return false;
-      const c = thread[0];
-      const key = `${c.author}::${c.filePath || ''}::${c.body}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-
-  /**
    * 指定コメントコンテナから単一コメントデータを取得
    * @param {Element} container
    * @returns {{ author: string, body: string, filePath?: string, timestamp?: string }}
@@ -349,30 +333,12 @@ var GitHubExtractor = GitHubExtractor || (() => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
 
-    // タイトル抽出（DOM セレクタを流用、document → doc に差し替え）
-    const title = _extractTitleFromDoc(doc);
+    // タイトル抽出（getTitle に DOMParser 生成 doc を渡して共通処理）
+    const title = getTitle(doc) || 'Pull Request';
     const prNum = (prUrl.match(/\/pull\/(\d+)/) || [])[1] || '';
 
-    // 本文抽出
-    const bodyEl =
-      doc.querySelector('.js-issue-body .markdown-body') ||
-      doc.querySelector('.react-issue-body .markdown-body') ||
-      doc.querySelector('[data-testid="issue-body"] .markdown-body');
-    let body = '';
-    if (bodyEl) {
-      // DOMParser で取得した要素のリンク href は相対パスのまま残るが、
-      // MarkdownBuilder.htmlToMarkdown はベース URL 無しで変換するため問題ない
-      body = MarkdownBuilder.htmlToMarkdown(bodyEl);
-    } else {
-      const prBodyComment = doc.querySelector('[id^="pullrequest-"]');
-      if (prBodyComment) {
-        const mdBody =
-          prBodyComment.querySelector('.js-comment-body .markdown-body') ||
-          prBodyComment.querySelector('.comment-body .markdown-body') ||
-          prBodyComment.querySelector('.markdown-body');
-        if (mdBody) body = MarkdownBuilder.htmlToMarkdown(mdBody);
-      }
-    }
+    // 本文抽出（getBody に DOMParser 生成 doc を渡して共通処理）
+    const body = getBody(doc);
 
     // コメント抽出（パース済みドキュメントから）
     const threads = _extractCommentsFromDoc(doc);
@@ -385,24 +351,6 @@ var GitHubExtractor = GitHubExtractor || (() => {
     });
 
     return { title, markdown };
-  }
-
-  /** パース済み Document からタイトルを取得 */
-  function _extractTitleFromDoc(doc) {
-    const selectors = [
-      'h1[class*="PageHeader-Title"] span.markdown-title',
-      '[data-testid="pull-request-title"]',
-      '[data-testid="issue-title"]',
-      'h1 bdi.markdown-title',
-      '.gh-header-title .js-issue-title',
-    ];
-    for (const sel of selectors) {
-      const el = doc.querySelector(sel);
-      if (el) return el.textContent.trim();
-    }
-    const h1 = doc.querySelector('.gh-header-title');
-    if (h1) return h1.textContent.trim().replace(/\s*#\d+\s*$/, '').trim();
-    return 'Pull Request';
   }
 
   /** パース済み Document からコメントスレッドを抽出 */
@@ -446,7 +394,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
       if (threadComments.length > 0) threads.push(threadComments);
     });
 
-    return _deduplicateThreads(threads);
+    return MarkdownBuilder.deduplicateThreads(threads);
   }
 
   return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment, isPRBodyComment: _isPRBodyComment, extractByPrUrl };

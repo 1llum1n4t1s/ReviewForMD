@@ -59,9 +59,11 @@ var SiteDetector = SiteDetector || (() => {
    * カスタムドメインでも URL パスと DOM シグナルの組み合わせで判定する。
    */
   function _isDevOpsPRByDom() {
+    const hasPRPath = _isDevOpsPRPath();
+
     // 既知ドメインでは URL が PR ページパターンに一致しない場合、
     // DOM 判定は不要（PR 一覧ページなどでの誤検出を防止）
-    if (_isDevOpsKnownHost() && !_isDevOpsPRPath()) {
+    if (_isDevOpsKnownHost() && !hasPRPath) {
       return false;
     }
 
@@ -73,7 +75,7 @@ var SiteDetector = SiteDetector || (() => {
     // PR 詳細ページ固有コンテナ（最も信頼性が高い・軽量）
     if (document.querySelector('.repos-pr-details-page')) count++;
     // URL パスパターン（DOM アクセスなし・最軽量）
-    if (_isDevOpsPRPath()) count++;
+    if (hasPRPath) count++;
     if (count >= THRESHOLD) return true;
     // bolt UI フレームワークのヘッダー
     if (document.querySelector('[class*="bolt-header"]')) count++;

@@ -100,7 +100,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     // Activity で既に取得したスレッド DOM 要素を除外して二重取得を防ぐ
     _extractInlineComments(threads, processedEls);
 
-    return _deduplicateThreads(threads);
+    return MarkdownBuilder.deduplicateThreads(threads);
   }
 
   /**
@@ -287,6 +287,52 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     return '';
   }
 
+  /**
+   * API レスポンスのスレッド配列をパースして統一形式に変換する
+   * fetchViaApi / extractByPrUrl の共通処理。
+   * @param {{ value?: Array }} threadsResponse - threads API レスポンス
+   * @returns {{ apiThreads: Array, rawApiThreads: Array }}
+   */
+  function _parseApiThreads(threadsResponse) {
+    const apiThreads = [];
+    const rawApiThreads = [];
+    const threadValues = threadsResponse?.value;
+    if (!Array.isArray(threadValues)) return { apiThreads, rawApiThreads };
+
+    threadValues.forEach((thread) => {
+      if (!Array.isArray(thread.comments)) return;
+      const tc = thread.threadContext;
+      let lineRange = '';
+      if (tc) {
+        const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
+        const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
+        lineRange = _formatLineRange(start, end);
+      }
+      const threadComments = [];
+      thread.comments.forEach((c) => {
+        if (c.commentType === 'system') return;
+        const body = c.content ?? '';
+        if (!body) return;
+        const comment = {
+          author: c.author?.displayName || '',
+          body,
+          filePath: tc?.filePath || undefined,
+          timestamp: c.publishedDate || '',
+        };
+        // 行範囲はスレッドの最初のユーザーコメントにのみ付与
+        if (threadComments.length === 0 && lineRange) {
+          comment.diffContext = { lineRange, diffLines: [] };
+        }
+        threadComments.push(comment);
+      });
+      if (threadComments.length > 0) {
+        apiThreads.push(threadComments);
+        rawApiThreads.push(thread);
+      }
+    });
+    return { apiThreads, rawApiThreads };
+  }
+
   /* ── REST API フォールバック ───────────────────── */
 
   /**
@@ -309,46 +355,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
       const title = prData.title || '';
       const body = prData.description || '';
-      const apiThreads = [];
-      const rawApiThreads = []; // Items API 補完用に生スレッドデータを保持
-
-      // threads.value が配列でない場合（API レスポンス異常）を安全にスキップ
-      const threadValues = threads?.value;
-      if (Array.isArray(threadValues)) {
-        threadValues.forEach((thread) => {
-          if (!Array.isArray(thread.comments)) return;
-          const tc = thread.threadContext;
-          // threadContext から行範囲を生成
-          let lineRange = '';
-          if (tc) {
-            const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
-            const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
-            lineRange = _formatLineRange(start, end);
-          }
-          const threadComments = [];
-          thread.comments.forEach((c) => {
-            if (c.commentType === 'system') return;
-            // c.content が null/undefined の場合（削除済みコメント等）はスキップ
-            const body = c.content ?? '';
-            if (!body) return;
-            const comment = {
-              author: c.author?.displayName || '',
-              body,
-              filePath: tc?.filePath || undefined,
-              timestamp: c.publishedDate || '',
-            };
-            // 行範囲はスレッドの最初のユーザーコメントにのみ付与
-            if (threadComments.length === 0 && lineRange) {
-              comment.diffContext = { lineRange, diffLines: [] };
-            }
-            threadComments.push(comment);
-          });
-          if (threadComments.length > 0) {
-            apiThreads.push(threadComments);
-            rawApiThreads.push(thread); // apiThreads と同期
-          }
-        });
-      }
+      const { apiThreads, rawApiThreads } = _parseApiThreads(threads);
 
       return { title, body, threads: apiThreads, rawApiThreads, urlInfo };
     } catch (e) {
@@ -391,12 +398,20 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     };
   }
 
-  async function _fetchJson(url) {
-    // セキュリティ: credentials:'include' を同一オリジンのみに制限し、
-    // 認証情報の意図しない外部送信を防止する
+  /**
+   * セキュリティ: credentials:'include' を同一オリジンのみに制限し、
+   * 認証情報の意図しない外部送信を防止する
+   * @param {string} url
+   * @returns {boolean} 同一オリジンなら true
+   */
+  function _isSameOrigin(url) {
     const parsed = new URL(url, location.origin);
-    if (parsed.origin !== location.origin) {
-      throw new Error(`クロスオリジンリクエストは許可されていません: ${parsed.origin}`);
+    return parsed.origin === location.origin;
+  }
+
+  async function _fetchJson(url) {
+    if (!_isSameOrigin(url)) {
+      throw new Error(`クロスオリジンリクエストは許可されていません: ${new URL(url, location.origin).origin}`);
     }
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -410,8 +425,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @returns {Promise<string|null>} テキスト内容。失敗時は null
    */
   async function _fetchText(url) {
-    const parsed = new URL(url, location.origin);
-    if (parsed.origin !== location.origin) return null;
+    if (!_isSameOrigin(url)) return null;
     try {
       const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) return null;
@@ -475,8 +489,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    */
   async function _fetchFileDiffs(urlInfo, filePath, baseCommitId, targetCommitId) {
     const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/FileDiffs?api-version=7.2-preview.1`;
-    const parsed = new URL(url, location.origin);
-    if (parsed.origin !== location.origin) return null;
+    if (!_isSameOrigin(url)) return null;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -825,25 +838,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   }
 
   /**
-   * 重複スレッドを除去する
-   * スレッドの先頭コメント（author + body 全文 + filePath）でユニーク判定。
-   * 100文字切り捨てだと、先頭が同じ長文コメントが誤って除去されるため全文を使用する。
-   * @param {Array<Array>} threads
-   * @returns {Array<Array>}
-   */
-  function _deduplicateThreads(threads) {
-    const seen = new Set();
-    return threads.filter((thread) => {
-      if (!thread || thread.length === 0) return false;
-      const first = thread[0];
-      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-
-  /**
    * 指定コメントコンテナから単一コメントデータを取得
    * @param {Element} container
    * @returns {{ author: string, body: string, filePath?: string, timestamp?: string }}
@@ -1142,42 +1136,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
     const title = prData.title || 'Pull Request';
     const body = prData.description || '';
-    const apiThreads = [];
-    const rawApiThreads = [];
-
-    const threadValues = threadsData?.value;
-    if (Array.isArray(threadValues)) {
-      threadValues.forEach((thread) => {
-        if (!Array.isArray(thread.comments)) return;
-        const tc = thread.threadContext;
-        let lineRange = '';
-        if (tc) {
-          const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
-          const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
-          lineRange = _formatLineRange(start, end);
-        }
-        const threadComments = [];
-        thread.comments.forEach((c) => {
-          if (c.commentType === 'system') return;
-          const content = c.content ?? '';
-          if (!content) return;
-          const comment = {
-            author: c.author?.displayName || '',
-            body: content,
-            filePath: tc?.filePath || undefined,
-            timestamp: c.publishedDate || '',
-          };
-          if (threadComments.length === 0 && lineRange) {
-            comment.diffContext = { lineRange, diffLines: [] };
-          }
-          threadComments.push(comment);
-        });
-        if (threadComments.length > 0) {
-          apiThreads.push(threadComments);
-          rawApiThreads.push(thread);
-        }
-      });
-    }
+    const { apiThreads, rawApiThreads } = _parseApiThreads(threadsData);
 
     // Items API で差分コードを補完
     try {

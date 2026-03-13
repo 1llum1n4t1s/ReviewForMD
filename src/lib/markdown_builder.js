@@ -491,6 +491,22 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
    * @param {number} index - コメント番号（1始まり）
    * @returns {string}
    */
+  /**
+   * スレッドの返信部分（2件目以降）を Markdown 行配列に追加する
+   * @param {Array} replies - thread.slice(1) の配列
+   * @param {string[]} lines - 追記先の行配列
+   */
+  function _formatReplies(replies, lines) {
+    replies.forEach((c, i) => {
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+      lines.push(`**↩ 返信 ${i + 1}**`);
+      lines.push('');
+      lines.push(formatSingleComment(c));
+    });
+  }
+
   function formatThreadAsComment(thread, index) {
     if (!thread || thread.length === 0) return '';
 
@@ -504,14 +520,7 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     lines.push(formatSingleComment(thread[0]));
 
     // 返信（2件目以降）
-    thread.slice(1).forEach((c, i) => {
-      lines.push('');
-      lines.push('---');
-      lines.push('');
-      lines.push(`**↩ 返信 ${i + 1}**`);
-      lines.push('');
-      lines.push(formatSingleComment(c));
-    });
+    _formatReplies(thread.slice(1), lines);
 
     return lines.join('\n');
   }
@@ -581,17 +590,28 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     lines.push(formatSingleComment(comments[0]));
 
     // 返信（2件目以降）
-    comments.slice(1).forEach((c, i) => {
-      lines.push('');
-      lines.push(`---`);
-      lines.push('');
-      lines.push(`**↩ 返信 ${i + 1}**`);
-      lines.push('');
-      lines.push(formatSingleComment(c));
-    });
+    _formatReplies(comments.slice(1), lines);
 
     return lines.join('\n');
   }
 
-  return { buildFullMarkdown, formatSingleComment, formatThreadComments, htmlToMarkdown, formatTimestamp };
+  /**
+   * スレッド配列から重複スレッドを除去する
+   * 最初のコメントの author + filePath + body をキーとして判定する。
+   * @param {Array<Array>} threads
+   * @returns {Array<Array>}
+   */
+  function deduplicateThreads(threads) {
+    const seen = new Set();
+    return threads.filter((thread) => {
+      if (!thread || thread.length === 0) return false;
+      const first = thread[0];
+      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  return { buildFullMarkdown, formatSingleComment, formatThreadComments, htmlToMarkdown, formatTimestamp, deduplicateThreads };
 })();

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1280px; height: 800px;
+    background: linear-gradient(135deg, #1B5E20 0%, #2E7D32 40%, #43A047 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+  .bg-circle {
+    position: absolute; border-radius: 50%; opacity: 0.08;
+    background: white;
+  }
+  .bg-circle.c1 { width: 600px; height: 600px; top: -200px; right: -100px; }
+  .bg-circle.c2 { width: 400px; height: 400px; bottom: -150px; left: -80px; }
+  .container {
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 36px;
+    z-index: 1;
+  }
+  .icon-wrap {
+    width: 180px; height: 180px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 40px;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px);
+    border: 2px solid rgba(255,255,255,0.2);
+  }
+  .title {
+    font-size: 64px; font-weight: 900; color: white;
+    letter-spacing: 3px;
+    text-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .tagline {
+    font-size: 30px; font-weight: 500; color: rgba(255,255,255,0.9);
+    letter-spacing: 1px;
+  }
+  .badge {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 50px;
+    padding: 14px 40px;
+    font-size: 22px; font-weight: 600; color: white;
+    backdrop-filter: blur(4px);
+  }
+</style>
+</head>
+<body>
+  <div class="bg-circle c1"></div>
+  <div class="bg-circle c2"></div>
+  <div class="container">
+    <div class="icon-wrap">
+      <svg width="120" height="120" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <rect x="120" y="104" width="272" height="320" rx="20" fill="none" stroke="#fff" stroke-width="14" stroke-opacity="0.95"/>
+        <rect x="192" y="76" width="128" height="54" rx="12" fill="#fff" fill-opacity="0.95"/>
+        <rect x="222" y="64" width="68" height="24" rx="12" fill="#1a7f37"/>
+        <text x="163" y="198" font-family="'Courier New',monospace" font-size="28" font-weight="bold" fill="#fff" opacity="0.95">#</text>
+        <rect x="193" y="180" width="148" height="18" rx="4" fill="#fff" opacity="0.75"/>
+        <rect x="163" y="220" width="192" height="10" rx="3" fill="#fff" opacity="0.4"/>
+        <rect x="163" y="240" width="156" height="10" rx="3" fill="#fff" opacity="0.35"/>
+        <rect x="163" y="272" width="5" height="42" rx="2.5" fill="#fff" opacity="0.85"/>
+        <rect x="180" y="274" width="168" height="10" rx="3" fill="#fff" opacity="0.5"/>
+        <rect x="180" y="294" width="128" height="10" rx="3" fill="#fff" opacity="0.45"/>
+        <rect x="340" y="86" width="66" height="34" rx="8" fill="#fff" fill-opacity="0.95"/>
+        <text x="373" y="110" font-family="Arial,sans-serif" font-size="21" font-weight="bold" fill="#116329" text-anchor="middle">MD</text>
+      </svg>
+    </div>
+    <div class="title">プルリクMDコピー</div>
+    <div class="tagline">PRの全情報をMarkdownで保存。レビュー記録を手軽に残せます。</div>
+    <div class="badge">Chrome拡張機能 ・ 無料 ・ GitHub & Azure DevOps対応</div>
+  </div>
+</body>
+</html>

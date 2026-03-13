@@ -35,7 +35,7 @@
   outline-offset: 1px;
 }
 
-/* 全てMDコピー (メイン) ボタン */
+/* MDでダウンロード (メイン) ボタン */
 .rfmd-btn.rfmd-btn--primary {
   background: #2da44e;
   color: #ffffff;
@@ -102,6 +102,22 @@
   margin-left: 12px;
 }
 
+/* DevOps 一覧ページの小ボタンも DevOps 青テーマに */
+.bolt-table-row .rfmd-btn.rfmd-btn--sm,
+.bolt-list-row .rfmd-btn.rfmd-btn--sm {
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  border-radius: 2px;
+  background: #0078d4;
+  color: #ffffff;
+  border-color: #0078d4;
+}
+
+.bolt-table-row .rfmd-btn.rfmd-btn--sm:hover,
+.bolt-list-row .rfmd-btn.rfmd-btn--sm:hover {
+  background: #106ebe;
+  border-color: #106ebe;
+}
+
 /* ── 各コメントの MDコピー ボタン位置 ──────────── */
 
 .rfmd-comment-btn-wrap {
@@ -109,6 +125,29 @@
   margin-left: 8px;
   flex-shrink: 0;
 }
+
+/* ── PR 一覧ページ用 ────────────────────────────── */
+
+.rfmd-list-btn-wrap {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+  margin-left: 10px;
+}
+
+/* 一覧ページ用の小さいボタン */
+.rfmd-btn.rfmd-btn--sm {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.rfmd-btn.rfmd-btn--sm .rfmd-btn-icon {
+  width: 12px;
+  height: 12px;
+}
+
 
 /* ── ダークモード対応 ──────────────────────────── */
 

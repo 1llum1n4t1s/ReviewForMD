@@ -49,5 +49,33 @@ var RfmdClipboard = RfmdClipboard || (() => {
     }
   }
 
-  return { copy };
+  /**
+   * テキストを MD ファイルとしてダウンロードする
+   * @param {string} text - ダウンロードする Markdown テキスト
+   * @param {string} filename - ファイル名（.md 拡張子付き）
+   * @returns {boolean}
+   */
+  function download(text, filename) {
+    if (typeof text !== 'string' || text === '') return false;
+    try {
+      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'pullrequest.md';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      // クリーンアップ
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.parentNode?.removeChild(a);
+      }, 100);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return { copy, download };
 })();

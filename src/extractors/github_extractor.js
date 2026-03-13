@@ -32,7 +32,19 @@ var GitHubExtractor = GitHubExtractor || (() => {
     if (h1) {
       // #番号 部分を除いたテキスト
       const text = h1.textContent.trim();
-      return text.replace(/\s*#\d+\s*$/, '').trim();
+      const cleaned = text.replace(/\s*#\d+\s*$/, '').trim();
+      if (cleaned) return cleaned;
+    }
+
+    // document.title から取得
+    // 形式: "タイトル by 著者 · Pull Request #123 · owner/repo"
+    // または "タイトル · Pull Request #123 · owner/repo"
+    const pageTitle = document.title;
+    const ptMatch = pageTitle.match(/^(.+?)\s+by\s+/) ||
+                    pageTitle.match(/^(.+?)\s*·/);
+    if (ptMatch) {
+      const extracted = ptMatch[1].trim();
+      if (extracted) return extracted;
     }
 
     return '';
@@ -323,5 +335,119 @@ var GitHubExtractor = GitHubExtractor || (() => {
     });
   }
 
-  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment, isPRBodyComment: _isPRBodyComment };
+  /**
+   * 任意の PR URL から HTML を取得し、DOMParser でパースして Markdown を返す。
+   * PR 一覧ページから個別 PR をダウンロードする際に使用。
+   * @param {string} prUrl - PR 詳細ページの URL
+   * @returns {Promise<{title: string, markdown: string}>}
+   */
+  async function extractByPrUrl(prUrl) {
+    const res = await fetch(prUrl, { credentials: 'include' });
+    if (!res.ok) throw new Error(`GitHub PR fetch failed: HTTP ${res.status}`);
+    const html = await res.text();
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // タイトル抽出（DOM セレクタを流用、document → doc に差し替え）
+    const title = _extractTitleFromDoc(doc);
+    const prNum = (prUrl.match(/\/pull\/(\d+)/) || [])[1] || '';
+
+    // 本文抽出
+    const bodyEl =
+      doc.querySelector('.js-issue-body .markdown-body') ||
+      doc.querySelector('.react-issue-body .markdown-body') ||
+      doc.querySelector('[data-testid="issue-body"] .markdown-body');
+    let body = '';
+    if (bodyEl) {
+      // DOMParser で取得した要素のリンク href は相対パスのまま残るが、
+      // MarkdownBuilder.htmlToMarkdown はベース URL 無しで変換するため問題ない
+      body = MarkdownBuilder.htmlToMarkdown(bodyEl);
+    } else {
+      const prBodyComment = doc.querySelector('[id^="pullrequest-"]');
+      if (prBodyComment) {
+        const mdBody =
+          prBodyComment.querySelector('.js-comment-body .markdown-body') ||
+          prBodyComment.querySelector('.comment-body .markdown-body') ||
+          prBodyComment.querySelector('.markdown-body');
+        if (mdBody) body = MarkdownBuilder.htmlToMarkdown(mdBody);
+      }
+    }
+
+    // コメント抽出（パース済みドキュメントから）
+    const threads = _extractCommentsFromDoc(doc);
+
+    const fullTitle = prNum ? `${title} #${prNum}` : title;
+    const markdown = MarkdownBuilder.buildFullMarkdown({
+      title: fullTitle.trim(),
+      body,
+      threads,
+    });
+
+    return { title, markdown };
+  }
+
+  /** パース済み Document からタイトルを取得 */
+  function _extractTitleFromDoc(doc) {
+    const selectors = [
+      'h1[class*="PageHeader-Title"] span.markdown-title',
+      '[data-testid="pull-request-title"]',
+      '[data-testid="issue-title"]',
+      'h1 bdi.markdown-title',
+      '.gh-header-title .js-issue-title',
+    ];
+    for (const sel of selectors) {
+      const el = doc.querySelector(sel);
+      if (el) return el.textContent.trim();
+    }
+    const h1 = doc.querySelector('.gh-header-title');
+    if (h1) return h1.textContent.trim().replace(/\s*#\d+\s*$/, '').trim();
+    return 'Pull Request';
+  }
+
+  /** パース済み Document からコメントスレッドを抽出 */
+  function _extractCommentsFromDoc(doc) {
+    const threads = [];
+
+    // タイムラインコメント
+    const containers = doc.querySelectorAll(
+      '.timeline-comment, .react-issue-comment'
+    );
+    containers.forEach((container) => {
+      if (_isPRBodyComment(container)) return;
+      const comment = _parseCommentContainer(container);
+      if (comment && comment.body) {
+        threads.push([comment]);
+      }
+    });
+
+    // レビュースレッド
+    const threadEls = doc.querySelectorAll(
+      '.js-resolvable-timeline-thread-container'
+    );
+    threadEls.forEach((threadEl) => {
+      const filePathEl =
+        threadEl.querySelector('.file-header [data-path]') ||
+        threadEl.querySelector('.file-header .file-info a');
+      const filePath = filePathEl
+        ? filePathEl.getAttribute('data-path') || filePathEl.textContent.trim()
+        : '';
+      const threadComments = [];
+      const commentEls = threadEl.querySelectorAll(
+        '.review-comment, .timeline-comment'
+      );
+      commentEls.forEach((el) => {
+        const comment = _parseCommentContainer(el);
+        if (comment) {
+          if (!comment.filePath && filePath) comment.filePath = filePath;
+          threadComments.push(comment);
+        }
+      });
+      if (threadComments.length > 0) threads.push(threadComments);
+    });
+
+    return _deduplicateThreads(threads);
+  }
+
+  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment, isPRBodyComment: _isPRBodyComment, extractByPrUrl };
 })();

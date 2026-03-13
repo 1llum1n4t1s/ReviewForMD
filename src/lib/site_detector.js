@@ -111,5 +111,33 @@ var SiteDetector = SiteDetector || (() => {
     return SiteType.UNKNOWN;
   }
 
-  return { detect, SiteType };
+  /* ── PR 一覧ページ判定 ───────────────────────── */
+
+  /**
+   * 現在のページが PR 一覧ページかどうかを判定する
+   * @returns {string} SiteType（一覧ページでなければ UNKNOWN）
+   */
+  function detectList() {
+    // GitHub: /pulls または /owner/repo/pulls
+    if (_isGitHubByHost() && /\/pulls\b/.test(location.pathname)) {
+      return SiteType.GITHUB;
+    }
+
+    // Azure DevOps: /_git/repo/pullrequests（一覧ページ）
+    if (_isDevOpsKnownHost() && /\/_git\/[^/]+\/pullrequests/i.test(location.pathname)) {
+      return SiteType.AZURE_DEVOPS;
+    }
+
+    // カスタムドメイン DevOps: URL パス + DOM シグナル
+    if (/\/_git\/[^/]+\/pullrequests/i.test(location.pathname)) {
+      if (document.querySelector('.repos-pr-list') ||
+          document.querySelector('[class*="bolt-header"]')) {
+        return SiteType.AZURE_DEVOPS;
+      }
+    }
+
+    return SiteType.UNKNOWN;
+  }
+
+  return { detect, detectList, SiteType };
 })();

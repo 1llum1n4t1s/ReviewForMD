@@ -10,23 +10,40 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @returns {string}
    */
   function getTitle() {
-    // bolt ヘッダータイトルエリア内のテキスト
-    const headerTitle = document.querySelector('.bolt-header-title-area .body-l');
-    if (headerTitle) return headerTitle.textContent.trim();
-
-    // フォールバック: ページタイトルからパースする
-    // 例: "Pull Request 123 - タイトル - Repos"
+    // ページタイトルから取得（最も確実）
+    // 例: "Pull request 12567: タイトル - Repos"
+    //     "Pull Request 123 - タイトル - Repos"
     const titleMatch = document.title.match(
-      /Pull Request \d+\s*[-–]\s*(.+?)(?:\s*[-–]\s*Repos)?$/i
+      /Pull Request \d+\s*[-–:]\s*(.+?)(?:\s*[-–]\s*Repos)?$/i
     );
     if (titleMatch) return titleMatch[1].trim();
+
+    // bolt ヘッダーのタイトルテキスト（PR 番号の横に表示される）
+    // .bolt-header-title-area 直下の .body-l のみ対象（Description 等を拾わないよう限定）
+    const headerTitle = document.querySelector(
+      '.bolt-header-title-area > .flex-row .body-l, ' +
+      '.bolt-header-title-area > .body-l'
+    );
+    if (headerTitle) {
+      const text = headerTitle.textContent.trim();
+      if (text && text !== 'Description') return text;
+    }
 
     // さらにフォールバック: bolt-header 内の大きめテキスト
     const anyTitle = document.querySelector('.bolt-header-title-area');
     if (anyTitle) {
       const text = anyTitle.textContent.trim();
-      return text.replace(/^\d+\s*[-–:]\s*/, '').trim();
+      const cleaned = text.replace(/^\d+\s*[-–:]\s*/, '').trim();
+      if (cleaned && cleaned !== 'Description') return cleaned;
     }
+
+    // 最終フォールバック: document.title をクリーンアップして使用
+    // 形式が Pull Request パターンに一致しなかった場合でも
+    // " - Repos" サフィックスを除去して使う
+    const rawPageTitle = document.title
+      .replace(/\s*[-–]\s*Repos\s*$/i, '')
+      .trim();
+    if (rawPageTitle && rawPageTitle !== document.title.trim()) return rawPageTitle;
 
     return '';
   }
@@ -346,15 +363,29 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * 例: /org/collection/project/_git/repo/pullrequest/123
    *   → baseUrl=/org/collection/project, repo=repo, prId=123
    * パスに /_git/ が複数含まれる場合でも最後のものを使用するため意図通り動作する。
+   *
+   * @param {string} [url] - パース対象の URL（省略時は現在のページ URL）
    */
-  function _parseDevOpsUrl() {
-    const path = location.pathname;
+  function _parseDevOpsUrl(url) {
+    let origin, path;
+    if (url) {
+      try {
+        const u = new URL(url, location.origin);
+        origin = u.origin;
+        path = u.pathname;
+      } catch {
+        return null;
+      }
+    } else {
+      origin = location.origin;
+      path = location.pathname;
+    }
     // 貪欲マッチで最後の /_git/ の直前まで取得する
     const match = path.match(/^(.*)\/_git\/([^/]+)\/pullrequest\/(\d+)/i);
     if (!match) return null;
 
     return {
-      baseUrl: `${location.origin}${match[1]}`,
+      baseUrl: `${origin}${match[1]}`,
       repo: match[2],
       prId: match[3],
     };
@@ -1090,6 +1121,82 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     return MarkdownBuilder.buildFullMarkdown({ title: title.trim(), body, threads });
   }
 
+  /**
+   * 任意の PR URL から API 経由でデータを取得し Markdown を返す。
+   * PR 一覧ページから個別 PR をダウンロードする際に使用。
+   * @param {string} prUrl - PR 詳細ページの URL
+   * @returns {Promise<{title: string, markdown: string}>}
+   */
+  async function extractByPrUrl(prUrl) {
+    const urlInfo = _parseDevOpsUrl(prUrl);
+    if (!urlInfo) throw new Error('DevOps PR URL を解析できません: ' + prUrl);
+
+    const [prData, threadsData] = await Promise.all([
+      _fetchJson(
+        `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/pullRequests/${urlInfo.prId}?api-version=7.1`
+      ),
+      _fetchJson(
+        `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/pullRequests/${urlInfo.prId}/threads?api-version=7.1`
+      ),
+    ]);
+
+    const title = prData.title || 'Pull Request';
+    const body = prData.description || '';
+    const apiThreads = [];
+    const rawApiThreads = [];
+
+    const threadValues = threadsData?.value;
+    if (Array.isArray(threadValues)) {
+      threadValues.forEach((thread) => {
+        if (!Array.isArray(thread.comments)) return;
+        const tc = thread.threadContext;
+        let lineRange = '';
+        if (tc) {
+          const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
+          const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
+          lineRange = _formatLineRange(start, end);
+        }
+        const threadComments = [];
+        thread.comments.forEach((c) => {
+          if (c.commentType === 'system') return;
+          const content = c.content ?? '';
+          if (!content) return;
+          const comment = {
+            author: c.author?.displayName || '',
+            body: content,
+            filePath: tc?.filePath || undefined,
+            timestamp: c.publishedDate || '',
+          };
+          if (threadComments.length === 0 && lineRange) {
+            comment.diffContext = { lineRange, diffLines: [] };
+          }
+          threadComments.push(comment);
+        });
+        if (threadComments.length > 0) {
+          apiThreads.push(threadComments);
+          rawApiThreads.push(thread);
+        }
+      });
+    }
+
+    // Items API で差分コードを補完
+    try {
+      await _enrichWithItemsApi(apiThreads, rawApiThreads, urlInfo);
+    } catch (e) {
+      console.warn('[ReviewForMD] extractByPrUrl: Items API 補完エラー:', e);
+    }
+
+    const prNum = urlInfo.prId;
+    const fullTitle = `${title} #${prNum}`;
+    const markdown = MarkdownBuilder.buildFullMarkdown({
+      title: fullTitle.trim(),
+      body,
+      threads: apiThreads,
+    });
+
+    return { title, markdown };
+  }
+
   return {
     getTitle,
     getPRNumber,
@@ -1099,5 +1206,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     extractSingleComment,
     extractThreadComments,
     fetchViaApi,
+    extractByPrUrl,
   };
 })();

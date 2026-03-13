@@ -24,6 +24,8 @@
 
   let _retries = 0;
   let _currentSiteType = null;
+  /** @type {'detail'|'list'|null} */
+  let _currentPageType = null;
   let _debounceTimer = null;
   /** @type {MutationObserver|null} */
   let _observer = null;
@@ -43,16 +45,25 @@
     }
     // 前のページから残ったボタンを除去
     document
-      .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap')
+      .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap, .rfmd-list-btn-wrap')
       .forEach((el) => el.remove());
     _currentSiteType = null;
+    _currentPageType = null;
   }
 
   /**
    * メイン初期化処理
    */
   function init() {
-    const siteType = SiteDetector.detect();
+    // PR 詳細ページを検出
+    let siteType = SiteDetector.detect();
+    let pageType = 'detail';
+
+    // PR 詳細が見つからない場合、一覧ページを検出
+    if (siteType === SiteDetector.SiteType.UNKNOWN) {
+      siteType = SiteDetector.detectList();
+      pageType = 'list';
+    }
 
     if (siteType === SiteDetector.SiteType.UNKNOWN) {
       // 以前 PR ページとして検出されていた場合、クリーンアップ
@@ -70,12 +81,17 @@
     }
 
     _currentSiteType = siteType;
+    _currentPageType = pageType;
     _retries = 0;
-    console.debug(`[ReviewForMD] Detected: ${siteType}`);
+    console.debug(`[ReviewForMD] Detected: ${siteType} (${pageType})`);
 
     // ボタンを注入（拡張コンテキスト無効化時のエラーを安全に無視）
     try {
-      ButtonInjector.inject(siteType);
+      if (pageType === 'list') {
+        ButtonInjector.injectList(siteType);
+      } else {
+        ButtonInjector.inject(siteType);
+      }
     } catch (e) {
       if (!e?.message?.includes('Extension context invalidated')) {
         console.warn('[ReviewForMD] ButtonInjector.inject error:', e);
@@ -123,7 +139,11 @@
       _debounceTimer = setTimeout(() => {
         // デバウンスコールバック内でも拡張コンテキスト無効化に備える
         try {
-          ButtonInjector.inject(siteType);
+          if (_currentPageType === 'list') {
+            ButtonInjector.injectList(siteType);
+          } else {
+            ButtonInjector.inject(siteType);
+          }
         } catch (e) {
           if (!e?.message?.includes('Extension context invalidated')) {
             console.warn('[ReviewForMD] ButtonInjector.inject (observer) error:', e);

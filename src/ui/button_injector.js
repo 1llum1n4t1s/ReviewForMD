@@ -5,8 +5,9 @@
 var ButtonInjector = ButtonInjector || (() => {
   const COPY_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>`;
   const CHECK_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
+  const DOWNLOAD_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z"/></svg>`;
 
-  const ALL_COPY_LABEL = `${COPY_ICON_SVG} 全てMDコピー`;
+  const DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} MDでダウンロード`;
   const SINGLE_COPY_LABEL = `${COPY_ICON_SVG} MDコピー`;
 
   /**
@@ -24,8 +25,11 @@ var ButtonInjector = ButtonInjector || (() => {
     }
 
     const originalHtml = btn.dataset.rfmdOriginal;
+    const isDownload = btn.dataset.rfmdAction === 'download';
     const cls = success ? 'rfmd-btn--success' : 'rfmd-btn--error';
-    const label = success ? `${CHECK_ICON_SVG} コピー完了` : `コピー失敗`;
+    const label = success
+      ? `${CHECK_ICON_SVG} ${isDownload ? 'ダウンロード完了' : 'コピー完了'}`
+      : `${isDownload ? 'ダウンロード失敗' : 'コピー失敗'}`;
 
     btn.classList.add(cls);
     btn.innerHTML = label;
@@ -78,13 +82,62 @@ var ButtonInjector = ButtonInjector || (() => {
     [SiteDetector.SiteType.AZURE_DEVOPS]: DevOpsExtractor,
   };
 
-  function _createAllCopyButton(siteType) {
-    return _createButton({
+  /**
+   * ファイル名として使えない文字を除去する
+   */
+  function _sanitizeFilename(name) {
+    return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'pullrequest';
+  }
+
+  /**
+   * ダウンロードボタン生成ファクトリ
+   * @param {{ className: string, dataRfmd: string, label: string, title: string, extractFn: () => Promise<{title: string, markdown: string}>|{title: string, markdown: string} }} opts
+   * @returns {HTMLButtonElement}
+   */
+  function _createDownloadButton({ className, dataRfmd, label, title, extractFn }) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.setAttribute('data-rfmd', dataRfmd);
+    btn.setAttribute('aria-label', title);
+    btn.innerHTML = label;
+    btn.dataset.rfmdOriginal = label;
+    btn.dataset.rfmdBusy = '0';
+    btn.dataset.rfmdAction = 'download';
+    btn.title = title;
+
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.dataset.rfmdBusy === '1') return;
+      try {
+        const result = await Promise.resolve(extractFn());
+        const filename = _sanitizeFilename(result.title) + '.md';
+        const ok = RfmdClipboard.download(result.markdown, filename);
+        _showFeedback(btn, ok);
+      } catch (err) {
+        console.error('[ReviewForMD]', err);
+        _showFeedback(btn, false);
+      }
+    });
+
+    return btn;
+  }
+
+  function _createAllDownloadButton(siteType) {
+    return _createDownloadButton({
       className: 'rfmd-btn rfmd-btn--primary',
       dataRfmd: 'all',
-      label: ALL_COPY_LABEL,
-      title: 'PR タイトル・本文・全レビューコメントを Markdown 形式でコピー',
-      extractFn: () => _EXTRACTORS[siteType].extractAll(),
+      label: DOWNLOAD_LABEL,
+      title: 'PR タイトル・本文・全レビューコメントを Markdown ファイルでダウンロード',
+      extractFn: async () => {
+        const extractor = _EXTRACTORS[siteType];
+        // タイトルは extractAll() の前に取得する
+        // （API フォールバック中に DOM 状態が変わる可能性があるため）
+        const title = extractor.getTitle();
+        const markdown = await extractor.extractAll();
+        return { title, markdown };
+      },
     });
   }
 
@@ -141,7 +194,7 @@ var ButtonInjector = ButtonInjector || (() => {
     if (headerActions && !headerActions.querySelector('[data-rfmd="all"]')) {
       const wrap = document.createElement('div');
       wrap.className = 'rfmd-all-copy-container';
-      wrap.appendChild(_createAllCopyButton(SiteDetector.SiteType.GITHUB));
+      wrap.appendChild(_createAllDownloadButton(SiteDetector.SiteType.GITHUB));
 
       if (headerActions.classList.contains('gh-header-actions')) {
         headerActions.prepend(wrap);
@@ -240,7 +293,7 @@ var ButtonInjector = ButtonInjector || (() => {
     if (insertTarget && !document.querySelector('[data-rfmd="all"]')) {
       const wrap = document.createElement('div');
       wrap.className = 'rfmd-all-copy-container';
-      wrap.appendChild(_createAllCopyButton(SiteDetector.SiteType.AZURE_DEVOPS));
+      wrap.appendChild(_createAllDownloadButton(SiteDetector.SiteType.AZURE_DEVOPS));
 
       if (voteButton) {
         // Approve ボタンの直前に挿入
@@ -282,10 +335,90 @@ var ButtonInjector = ButtonInjector || (() => {
     });
   }
 
+  /* ── PR 一覧ページ用ボタン注入 ─────────────────── */
+
+  function _injectGitHubList() {
+    // GitHub PR 一覧: 各 PR 行に「MDでダウンロード」ボタンを注入
+    const prRows = document.querySelectorAll('.js-issue-row, [data-testid="list-view-item"]');
+
+    prRows.forEach((row) => {
+      if (row.querySelector('[data-rfmd="list-dl"]')) return;
+
+      // PR リンクを取得
+      const link =
+        row.querySelector('a[data-hovercard-type="pull_request"]') ||
+        row.querySelector('a[id^="issue_"]') ||
+        row.querySelector('a[href*="/pull/"]');
+      if (!link) return;
+      const prUrl = link.href;
+      if (!prUrl || !/\/pull\/\d+/.test(prUrl)) return;
+
+      const btn = _createDownloadButton({
+        className: 'rfmd-btn rfmd-btn--sm',
+        dataRfmd: 'list-dl',
+        label: DOWNLOAD_LABEL,
+        title: 'この PR を Markdown ファイルでダウンロード',
+        extractFn: () => GitHubExtractor.extractByPrUrl(prUrl),
+      });
+
+      const wrap = document.createElement('span');
+      wrap.className = 'rfmd-list-btn-wrap';
+      wrap.appendChild(btn);
+
+      // コンテンツエリア（タイトル・説明の親）の3行目として追加
+      const contentArea = row.querySelector('.flex-auto.min-width-0') ||
+        row.querySelector('.d-flex.mt-1') || row;
+      contentArea.appendChild(wrap);
+    });
+  }
+
+  function _injectDevOpsList() {
+    // DevOps PR 一覧: 各 PR 行に「MDでダウンロード」ボタンを注入
+    // DevOps では行自体が <a class="bolt-table-row"> で PR 詳細へのリンクになっている
+    const prRows = document.querySelectorAll(
+      'a.bolt-table-row, a.bolt-list-row'
+    );
+
+    prRows.forEach((row) => {
+      const prUrl = row.href;
+      if (!prUrl || !/\/pullrequest\/\d+/i.test(prUrl)) return;
+
+      // 既に注入済みならスキップ
+      if (row.querySelector('[data-rfmd="list-dl"]')) return;
+
+      const btn = _createDownloadButton({
+        className: 'rfmd-btn rfmd-btn--sm',
+        dataRfmd: 'list-dl',
+        label: DOWNLOAD_LABEL,
+        title: 'この PR を Markdown ファイルでダウンロード',
+        extractFn: () => DevOpsExtractor.extractByPrUrl(prUrl),
+      });
+
+      const wrap = document.createElement('span');
+      wrap.className = 'rfmd-list-btn-wrap';
+      wrap.appendChild(btn);
+
+      // bolt-table-cell-content（flex-column）の3行目として追加
+      const cellContent = row.querySelector('.bolt-table-cell-content.flex-column') ||
+        row.querySelector('.bolt-table-two-line-cell .bolt-table-cell-content');
+      if (cellContent) {
+        cellContent.appendChild(wrap);
+      } else {
+        const titleCell = row.querySelector('.bolt-table-two-line-cell') ||
+          row.querySelector('td:nth-child(3)');
+        if (titleCell) {
+          titleCell.appendChild(wrap);
+        } else {
+          row.appendChild(wrap);
+        }
+      }
+    });
+  }
+
   /* ── 公開 API ─────────────────────────────────── */
 
   /**
-   * 検出されたサイトタイプに応じてボタンを注入する
+   * 検出されたサイトタイプに応じてボタンを注入する（PR 詳細ページ用）
    * @param {string} siteType
    */
   function inject(siteType) {
@@ -296,5 +429,17 @@ var ButtonInjector = ButtonInjector || (() => {
     }
   }
 
-  return { inject };
+  /**
+   * PR 一覧ページにダウンロードボタンを注入する
+   * @param {string} siteType
+   */
+  function injectList(siteType) {
+    if (siteType === SiteDetector.SiteType.GITHUB) {
+      _injectGitHubList();
+    } else if (siteType === SiteDetector.SiteType.AZURE_DEVOPS) {
+      _injectDevOpsList();
+    }
+  }
+
+  return { inject, injectList };
 })();

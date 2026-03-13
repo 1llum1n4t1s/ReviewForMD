@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "プルリクMDコピー",
-  "version": "1.0.32",
+  "version": "1.0.36",
   "description": "プルリクエストのタイトル・本文・レビューコメントをMarkdown形式でコピーするChrome拡張機能",
   "permissions": ["activeTab", "scripting", "webNavigation"],
   "host_permissions": [
@@ -24,11 +24,19 @@
     {
       "matches": [
         "https://github.com/*/pull/*",
+        "https://github.com/*/pulls",
+        "https://github.com/*/pulls?*",
         "https://*.github.com/*/pull/*",
+        "https://*.github.com/*/pulls",
+        "https://*.github.com/*/pulls?*",
         "https://dev.azure.com/*/_git/*/pullrequest/*",
         "https://dev.azure.com/*/_git/*/pullRequest/*",
+        "https://dev.azure.com/*/_git/*/pullrequests",
+        "https://dev.azure.com/*/_git/*/pullrequests?*",
         "https://*.visualstudio.com/*/_git/*/pullrequest/*",
-        "https://*.visualstudio.com/*/_git/*/pullRequest/*"
+        "https://*.visualstudio.com/*/_git/*/pullRequest/*",
+        "https://*.visualstudio.com/*/_git/*/pullrequests",
+        "https://*.visualstudio.com/*/_git/*/pullrequests?*"
       ],
       "js": [
         "src/lib/site_detector.js",

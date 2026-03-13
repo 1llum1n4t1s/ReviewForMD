@@ -8,8 +8,10 @@
 
 /** PR ページの URL パターン（パス部分のみ） */
 const PR_PATH_PATTERNS = [
-  /\/pull\/\d+/,                           // GitHub
-  /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps
+  /\/pull\/\d+/,                           // GitHub PR 詳細
+  /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps PR 詳細
+  /\/pulls\b/,                             // GitHub PR 一覧
+  /\/_git\/[^/]+\/pullrequests\b/i,         // Azure DevOps PR 一覧
 ];
 
 /**
@@ -89,8 +91,10 @@ async function injectContentScripts(tabId) {
 /** URL フィルタ: PR ページに該当するパスパターンのみ Service Worker を起動 */
 const NAV_URL_FILTERS = {
   url: [
-    { urlMatches: '.*/pull/\\d+.*' },                  // GitHub
-    { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps
+    { urlMatches: '.*/pull/\\d+.*' },                  // GitHub PR 詳細
+    { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps PR 詳細
+    { urlMatches: '.*/pulls(\\?.*)?$' },                // GitHub PR 一覧
+    { urlMatches: '.*/_git/[^/]+/pullrequests(\\?.*)?$' }, // Azure DevOps PR 一覧
   ],
 };
 

@@ -4,10 +4,6 @@
 var GitHubExtractor = GitHubExtractor || (() => {
   /**
    * PR タイトルを取得する
-   * @returns {string}
-   */
-  /**
-   * PR タイトルを取得する
    * @param {Document|Element} [root=document] - 検索対象のルート要素
    * @returns {string}
    */
@@ -107,10 +103,12 @@ var GitHubExtractor = GitHubExtractor || (() => {
 
   /**
    * タイムラインコメント（一般コメント）を抽出
+   * @param {Array} out - コメントの出力先配列
+   * @param {Document|Element} [root=document] - 検索対象のルート要素
    */
-  function _extractTimelineComments(out) {
-    // PR 本文以外のタイムラインコメントを取得
-    const containers = document.querySelectorAll(
+  function _extractTimelineComments(out, root) {
+    const r = root || document;
+    const containers = r.querySelectorAll(
       '.timeline-comment, .react-issue-comment'
     );
 
@@ -129,9 +127,11 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * レビュースレッド（コード上のインラインコメント）をスレッド単位で抽出
    * 各 DOM スレッドコンテナ内のコメントを1つの配列にまとめ、out に追加する
    * @param {Array<Array>} out - スレッドの配列（各要素はコメントの配列）
+   * @param {Document|Element} [root=document] - 検索対象のルート要素
    */
-  function _extractReviewThreadsGrouped(out) {
-    const threadEls = document.querySelectorAll(
+  function _extractReviewThreadsGrouped(out, root) {
+    const r = root || document;
+    const threadEls = r.querySelectorAll(
       '.js-resolvable-timeline-thread-container'
     );
 
@@ -295,10 +295,62 @@ var GitHubExtractor = GitHubExtractor || (() => {
   }
 
   /**
-   * 全データを取得して Markdown を生成する
-   * @returns {string}
+   * GitHub PR ページの「N hidden items / Load more…」ボタンをクリックして
+   * 折りたたまれた会話を展開する（ライブ DOM 専用）
+   * @returns {Promise<void>}
    */
-  function extractAll() {
+  async function _loadHiddenConversations() {
+    const MAX_ROUNDS = 20; // 無限ループ防止
+    const WAIT_MS = 1500;  // 各クリック後の待機時間
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      // GitHub の hidden items ボタンを検索
+      // 旧 UI: ajax-pagination-btn、新 UI: turbo-frame 内ボタン
+      const buttons = document.querySelectorAll([
+        // Progressive disclosure (hidden conversations)
+        '.ajax-pagination-btn',
+        '.js-timeline-progressive-disclosure-waterfall button[type="submit"]',
+        // Turbo frame 内の Load more ボタン
+        'turbo-frame button[type="submit"]',
+        // 汎用的な「Load more」ボタン（PR タイムライン内のみ）
+        '.js-discussion button[data-disable-with]',
+      ].join(', '));
+
+      // クリック対象のボタンをフィルタリング（hidden items / Load more テキストを含むもののみ）
+      const targets = Array.from(buttons).filter((btn) => {
+        const text = btn.textContent.toLowerCase();
+        return text.includes('hidden') || text.includes('load more');
+      });
+
+      if (targets.length === 0) break;
+
+      console.log(`[ReviewForMD] ${targets.length} 個の "Load more" ボタンをクリックします (round ${round + 1})`);
+
+      for (const btn of targets) {
+        try {
+          btn.click();
+        } catch {
+          // クリック失敗は無視（DOM 変更で要素が消える場合がある）
+        }
+      }
+
+      // コンテンツが読み込まれるまで待機
+      await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
+    }
+  }
+
+  /**
+   * 全データを取得して Markdown を生成する
+   *
+   * GitHub の PR ページでは、レビュースレッドの展開/折りたたみ状態がページロードごとに異なり、
+   * ライブ DOM だけでは全てのインラインレビューコメントを取得できない場合がある。
+   * そのため、DOM 抽出後に PR ページの HTML を fetch して DOMParser で再パースし、
+   * 不足しているスレッドを補完する（DevOps の API フォールバックと同様のアプローチ）。
+   * @returns {Promise<string>}
+   */
+  async function extractAll() {
+    // 折りたたまれた会話を展開してから抽出
+    await _loadHiddenConversations();
     const title = `${getTitle()} ${getPRNumber()}`;
     const body = getBody();
 
@@ -309,7 +361,23 @@ var GitHubExtractor = GitHubExtractor || (() => {
     // _parseCommentContainer は本文が空の場合 null を返すため、null 合体で安全にフォールバック
     const bodyMeta = (prBodyContainer ? _parseCommentContainer(prBodyContainer) : null) || {};
 
-    const threads = getComments();
+    const domThreads = getComments();
+
+    // HTML fetch で DOM に表示されていないレビュースレッドを補完
+    const fetchedThreads = await _fetchAndExtractComments();
+
+    // DOM スレッドを優先し、fetch で追加取得したスレッドをマージして重複除去
+    const threads = fetchedThreads.length > 0
+      ? MarkdownBuilder.deduplicateThreads([...domThreads, ...fetchedThreads])
+      : domThreads;
+
+    if (fetchedThreads.length > 0) {
+      const added = threads.length - domThreads.length;
+      if (added > 0) {
+        console.log(`[ReviewForMD] HTML fetch により ${added} 件のスレッドを補完しました`);
+      }
+    }
+
     return MarkdownBuilder.buildFullMarkdown({
       title,
       body,
@@ -317,6 +385,33 @@ var GitHubExtractor = GitHubExtractor || (() => {
       bodyTimestamp: bodyMeta.timestamp || '',
       threads,
     });
+  }
+
+  /**
+   * 現在の PR ページを fetch して DOMParser でパースし、コメントスレッドを抽出する。
+   * ライブ DOM で取得できなかったレビュースレッド（折りたたみ・未ロード状態）を補完するために使用。
+   * DevOps の fetchViaApi() に相当する HTML ベースのフォールバック。
+   * @returns {Promise<Array<Array>>} スレッド配列（失敗時は空配列）
+   */
+  async function _fetchAndExtractComments() {
+    try {
+      const prUrl = location.origin + location.pathname;
+      const res = await fetch(prUrl, { credentials: 'include' });
+      if (!res.ok) {
+        console.warn(`[ReviewForMD] HTML fetch 失敗: HTTP ${res.status}`);
+        return [];
+      }
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      // hidden conversations（turbo-frame）の追加読み込み
+      await _fetchHiddenConversations(doc, prUrl);
+
+      return _extractCommentsFromDoc(doc);
+    } catch (e) {
+      console.warn('[ReviewForMD] HTML fetch による補完取得に失敗:', e);
+      return [];
+    }
   }
 
   /**
@@ -332,6 +427,9 @@ var GitHubExtractor = GitHubExtractor || (() => {
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
+
+    // hidden conversations（turbo-frame）の追加読み込み
+    await _fetchHiddenConversations(doc, prUrl);
 
     // タイトル抽出（getTitle に DOMParser 生成 doc を渡して共通処理）
     const title = getTitle(doc) || 'Pull Request';
@@ -353,47 +451,81 @@ var GitHubExtractor = GitHubExtractor || (() => {
     return { title, markdown };
   }
 
-  /** パース済み Document からコメントスレッドを抽出 */
+  /**
+   * DOMParser でパースした doc 内の turbo-frame / pagination リンクを
+   * 追加 fetch して hidden conversations を doc に挿入する
+   * @param {Document} doc - パース済みドキュメント
+   * @param {string} baseUrl - 元の PR URL（相対 URL 解決用）
+   */
+  async function _fetchHiddenConversations(doc, baseUrl) {
+    const MAX_ROUNDS = 20;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      // turbo-frame の src 属性、または pagination form の action 属性から URL を収集
+      const frameSrcs = [];
+
+      // turbo-frame[src] — GitHub がまだ読み込んでいない hidden items
+      doc.querySelectorAll('turbo-frame[src]').forEach((frame) => {
+        const src = frame.getAttribute('src');
+        if (src) frameSrcs.push({ url: src, el: frame });
+      });
+
+      // ajax-pagination-btn の form の action
+      // ※ el は form 自体を指す（親要素にすると兄弟のスレッドコンテナまで削除してしまう）
+      doc.querySelectorAll('.ajax-pagination-btn').forEach((btn) => {
+        const form = btn.closest('form');
+        const action = form ? form.getAttribute('action') : null;
+        if (action) frameSrcs.push({ url: action, el: form });
+      });
+
+      if (frameSrcs.length === 0) break;
+
+      console.log(`[ReviewForMD] fetch: ${frameSrcs.length} 個の hidden conversations を取得 (round ${round + 1})`);
+
+      // 各 frame/pagination を並列 fetch して高速化
+      const results = await Promise.all(
+        frameSrcs.map(async ({ url, el }) => {
+          try {
+            const absUrl = new URL(url, baseUrl).href;
+            const resp = await fetch(absUrl, { credentials: 'include' });
+            if (!resp.ok) return null;
+            const fragmentHtml = await resp.text();
+            return { el, fragmentHtml };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      // 取得した HTML フラグメントを元の doc に挿入
+      for (const r of results) {
+        if (!r) continue;
+        const fragmentDoc = new DOMParser().parseFromString(r.fragmentHtml, 'text/html');
+        const content = fragmentDoc.body;
+        if (content) {
+          while (content.firstChild) {
+            r.el.parentNode.insertBefore(
+              doc.importNode(content.firstChild, true),
+              r.el
+            );
+            content.removeChild(content.firstChild);
+          }
+          r.el.remove();
+        }
+      }
+    }
+  }
+
+  /**
+   * パース済み Document からコメントスレッドを抽出
+   * _extractTimelineComments / _extractReviewThreadsGrouped を root パラメータで共通化
+   */
   function _extractCommentsFromDoc(doc) {
     const threads = [];
-
-    // タイムラインコメント
-    const containers = doc.querySelectorAll(
-      '.timeline-comment, .react-issue-comment'
-    );
-    containers.forEach((container) => {
-      if (_isPRBodyComment(container)) return;
-      const comment = _parseCommentContainer(container);
-      if (comment && comment.body) {
-        threads.push([comment]);
-      }
-    });
-
-    // レビュースレッド
-    const threadEls = doc.querySelectorAll(
-      '.js-resolvable-timeline-thread-container'
-    );
-    threadEls.forEach((threadEl) => {
-      const filePathEl =
-        threadEl.querySelector('.file-header [data-path]') ||
-        threadEl.querySelector('.file-header .file-info a');
-      const filePath = filePathEl
-        ? filePathEl.getAttribute('data-path') || filePathEl.textContent.trim()
-        : '';
-      const threadComments = [];
-      const commentEls = threadEl.querySelectorAll(
-        '.review-comment, .timeline-comment'
-      );
-      commentEls.forEach((el) => {
-        const comment = _parseCommentContainer(el);
-        if (comment) {
-          if (!comment.filePath && filePath) comment.filePath = filePath;
-          threadComments.push(comment);
-        }
-      });
-      if (threadComments.length > 0) threads.push(threadComments);
-    });
-
+    const timelineComments = [];
+    _extractTimelineComments(timelineComments, doc);
+    timelineComments.forEach((c) => threads.push([c]));
+    _extractReviewThreadsGrouped(threads, doc);
     return MarkdownBuilder.deduplicateThreads(threads);
   }
 

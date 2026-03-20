@@ -52,11 +52,6 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
       return '';
     }
 
-    // Code Review Agent の重要度バッジ画像をスキップ（例: medium-priority.svg）
-    if (_isCodeReviewAgentBadge(el)) {
-      return '';
-    }
-
     // 子ノードを先に変換（深度・pre 内フラグを伝播）
     const childText = _convertChildren(el, depth, insidePre);
 
@@ -102,6 +97,8 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
       // ── リンク ──
       case 'a': {
+        // バッジ画像のみを含むリンクはスキップ（img/a 以外では呼ばない）
+        if (_isCodeReviewAgentBadge(el)) return '';
         const href = (el.getAttribute('href') || '').trim();
         const text = childText.trim();
         if (!text) return '';
@@ -124,6 +121,8 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
       // ── 画像 ──
       case 'img': {
+        // バッジ画像はスキップ（img/a 以外では呼ばない）
+        if (_isCodeReviewAgentBadge(el)) return '';
         const alt = el.getAttribute('alt') || '';
         const src = (el.getAttribute('src') || '').trim();
         // 装飾画像のスキップ: 幅/高さが小さい（バッジ等）、または alt も src もない場合
@@ -323,13 +322,46 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
   /* ── コンテンツフィルターヘルパー ─────────────── */
 
-  /** Code Review Agent の重要度バッジ URL パターン */
-  const _CODE_REVIEW_AGENT_BADGE_RE = /gstatic\.com\/codereviewagent\/.+-priority\.svg/;
+  /**
+   * バッジ画像 URL パターン（src / data-canonical-src で判定）
+   * - Code Review Agent: gstatic.com/codereviewagent/ 配下の全画像
+   * - shields.io: img.shields.io/badge/ 配下のバッジ
+   */
+  const _BADGE_URL_PATTERNS = [
+    /gstatic\.com\/codereviewagent\//,
+    /img\.shields\.io\/badge\//,
+  ];
 
   /**
-   * Code Review Agent の重要度バッジ要素かどうかを判定する
-   * GitHub のコメントに挿入される重要度画像（medium-priority.svg 等）と、
-   * それを囲むリンクをフィルタリングする
+   * URL がバッジ画像パターンに一致するかを判定する
+   * camo.githubusercontent.com プロキシの場合、パス末尾の hex エンコード部分もデコードして判定
+   * @param {string} url
+   * @returns {boolean}
+   */
+  function _matchesBadgeUrl(url) {
+    if (!url) return false;
+    // 直接一致チェック
+    if (_BADGE_URL_PATTERNS.some((re) => re.test(url))) return true;
+
+    // camo プロキシ経由: URL パスの hex 部分をデコードして元 URL を復元
+    const camoMatch = url.match(/camo\.githubusercontent\.com\/[^/]+\/([0-9a-f]{20,})/i);
+    if (camoMatch) {
+      try {
+        const decoded = camoMatch[1].replace(/([0-9a-f]{2})/gi, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16))
+        );
+        if (_BADGE_URL_PATTERNS.some((re) => re.test(decoded))) return true;
+      } catch {
+        // デコード失敗は無視
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * バッジ画像要素（img / a で囲まれたバッジ）かどうかを判定する
+   * Code Review Agent バッジ、shields.io バッジ、camo プロキシ経由バッジに対応
    * @param {Element} el
    * @returns {boolean}
    */
@@ -339,16 +371,16 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     if (tag === 'img') {
       const src = el.getAttribute('src') || '';
       const canonical = el.getAttribute('data-canonical-src') || '';
-      return _CODE_REVIEW_AGENT_BADGE_RE.test(src) || _CODE_REVIEW_AGENT_BADGE_RE.test(canonical);
+      return _matchesBadgeUrl(src) || _matchesBadgeUrl(canonical);
     }
 
     if (tag === 'a') {
-      // リンクの子要素が重要度バッジ画像のみかチェック
+      // リンクの子要素がバッジ画像のみかチェック
       const img = el.querySelector('img');
       if (img && el.children.length === 1) {
         const src = img.getAttribute('src') || '';
         const canonical = img.getAttribute('data-canonical-src') || '';
-        return _CODE_REVIEW_AGENT_BADGE_RE.test(src) || _CODE_REVIEW_AGENT_BADGE_RE.test(canonical);
+        return _matchesBadgeUrl(src) || _matchesBadgeUrl(canonical);
       }
     }
 
@@ -402,6 +434,9 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
   /* ── タイムスタンプ整形 ───────────────────────── */
 
+  // タイムゾーンはセッション中不変のため、モジュールロード時に一度だけ取得してキャッシュ
+  const _LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
   /**
    * ISO 8601 タイムスタンプを読みやすい形式に変換する
    * @param {string} raw
@@ -418,7 +453,7 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: _LOCAL_TIMEZONE,
       });
     } catch {
       return raw;
@@ -485,13 +520,6 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
   }
 
   /**
-   * スレッド（親コメント＋返信）を「コメント N」見出し付きで Markdown にフォーマットする
-   * buildFullMarkdown 内で使用する（全体コピー用）
-   * @param {Array<{author:string, body:string, filePath?:string, timestamp?:string, diffContext?:any}>} thread
-   * @param {number} index - コメント番号（1始まり）
-   * @returns {string}
-   */
-  /**
    * スレッドの返信部分（2件目以降）を Markdown 行配列に追加する
    * @param {Array} replies - thread.slice(1) の配列
    * @param {string[]} lines - 追記先の行配列
@@ -507,6 +535,13 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     });
   }
 
+  /**
+   * スレッド（親コメント＋返信）を「コメント N」見出し付きで Markdown にフォーマットする
+   * buildFullMarkdown 内で使用する（全体コピー用）
+   * @param {Array<{author:string, body:string, filePath?:string, timestamp?:string, diffContext?:any}>} thread
+   * @param {number} index - コメント番号（1始まり）
+   * @returns {string}
+   */
   function formatThreadAsComment(thread, index) {
     if (!thread || thread.length === 0) return '';
 
@@ -597,7 +632,9 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
   /**
    * スレッド配列から重複スレッドを除去する
-   * 最初のコメントの author + filePath + body をキーとして判定する。
+   * 最初のコメントの author + filePath + body + timestamp + lineRange をキーとして判定する。
+   * timestamp と lineRange を含めることで、同一レビュアーが同一ファイルに
+   * 同文コメント（例: "nit"）を複数残した場合の誤除去を防ぐ。
    * @param {Array<Array>} threads
    * @returns {Array<Array>}
    */
@@ -606,7 +643,8 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     return threads.filter((thread) => {
       if (!thread || thread.length === 0) return false;
       const first = thread[0];
-      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}`;
+      const lineRange = first.diffContext?.lineRange || '';
+      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}::${first.timestamp || ''}::${lineRange}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

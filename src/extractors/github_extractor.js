@@ -491,7 +491,8 @@ var GitHubExtractor = GitHubExtractor || (() => {
             if (!resp.ok) return null;
             const fragmentHtml = await resp.text();
             return { el, fragmentHtml };
-          } catch {
+          } catch (e) {
+            console.warn(`[ReviewForMD] hidden conversation の取得に失敗: ${url}`, e);
             return null;
           }
         })
@@ -501,7 +502,28 @@ var GitHubExtractor = GitHubExtractor || (() => {
       for (const r of results) {
         if (!r) continue;
         const fragmentDoc = new DOMParser().parseFromString(r.fragmentHtml, 'text/html');
-        const content = fragmentDoc.body;
+
+        // turbo-frame レスポンスがフル HTML ドキュメントの場合、
+        // body 全体をインポートすると PR ページ全体の重複コピーが入り込む。
+        // マッチする turbo-frame ID の中身だけを取り出す（fail-closed: 見つからなければスキップ）
+        let content = null;
+        const frameId = r.el.getAttribute('id');
+        if (frameId) {
+          const matchingFrame = fragmentDoc.querySelector(`turbo-frame#${CSS.escape(frameId)}`);
+          if (matchingFrame) {
+            content = matchingFrame;
+          }
+        }
+        // turbo-frame 以外（pagination form 等）、またはフレーム ID なしの場合は body をそのまま使用
+        if (!content) {
+          // フルHTMLドキュメント判定: <head> にコンテンツがあればフルページとみなしスキップ
+          if (fragmentDoc.head && fragmentDoc.head.children.length > 0) {
+            console.warn('[ReviewForMD] turbo-frame レスポンスがフルHTMLのためスキップ');
+            continue;
+          }
+          content = fragmentDoc.body;
+        }
+
         if (content) {
           while (content.firstChild) {
             r.el.parentNode.insertBefore(

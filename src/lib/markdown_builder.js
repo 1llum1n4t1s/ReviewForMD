@@ -325,11 +325,11 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
   /**
    * バッジ画像 URL パターン（src / data-canonical-src で判定）
    * - Code Review Agent: gstatic.com/codereviewagent/ 配下の全画像
-   * - shields.io: img.shields.io/badge/ 配下のバッジ
+   * ※ shields.io バッジはユーザーが意図的に配置した CI/カバレッジバッジ等を
+   *   含むため、フィルタ対象にしない
    */
   const _BADGE_URL_PATTERNS = [
     /gstatic\.com\/codereviewagent\//,
-    /img\.shields\.io\/badge\//,
   ];
 
   /**
@@ -361,7 +361,7 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
   /**
    * バッジ画像要素（img / a で囲まれたバッジ）かどうかを判定する
-   * Code Review Agent バッジ、shields.io バッジ、camo プロキシ経由バッジに対応
+   * Code Review Agent バッジ、camo プロキシ経由バッジに対応
    * @param {Element} el
    * @returns {boolean}
    */

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Overview
 
@@ -59,28 +59,6 @@ Monitors `webNavigation.onHistoryStateUpdated` and `onCompleted` for PR page URL
 
 `extractAll()` orchestrates: tries DOM first, falls back to API if comments are missing, then enriches any remaining threads lacking `diffLines` via Items API.
 
-### GitHub extraction strategy (2 tiers)
-
-`github_extractor.js` uses a dual-source approach to ensure complete comment extraction:
-
-1. **DOM extraction** — parses live page comments after expanding hidden conversations (`_loadHiddenConversations`)
-2. **HTML fetch fallback** (`_fetchAndExtractComments`) — fetches the same PR page via HTTP, parses with DOMParser, and loads hidden conversations (`_fetchHiddenConversations`). Captures review threads that are collapsed or not rendered in the live DOM due to GitHub's lazy-loading/fold state. Results are merged with DOM threads and deduplicated.
-
-`extractAll()` orchestrates: expands hidden conversations in live DOM, extracts comments, then supplements with HTML fetch results.
-
-Two extraction entry points exist:
-- `extractAll()` — PR 詳細ページ用。ライブ DOM + HTML fetch の2ソースを統合
-- `extractByPrUrl(url)` — PR 一覧ページ用。HTML fetch のみ（ライブ DOM なし）。`_fetchHiddenConversations` で pagination を処理
-
-### GitHub hidden conversations loading
-
-`_fetchHiddenConversations(doc, baseUrl)` は DOMParser 生成の doc 内の未読み込みコンテンツを fetch して挿入する。2種類のソースを処理:
-
-1. **turbo-frame[src]** — GitHub がまだレンダリングしていない hidden items
-2. **`.ajax-pagination-btn`** — "Load more" ボタン（form の action 属性から URL 取得）
-
-**⚠️ 重要な設計制約**: pagination btn の `el` は `form` 自体を指す必要がある（`form.parentElement` ではない）。GitHub の PR ページでは、pagination form の親 DIV 内に既存のレビュースレッド（turbo-frame）が兄弟要素として共存しているため、親 DIV を `el.remove()` すると既存スレッドも巻き添えで削除される。
-
 ### Site detection
 
 `site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc.).
@@ -88,16 +66,6 @@ Two extraction entry points exist:
 ### Button injection
 
 `button_injector.js`: PR 詳細ページでは「MDでダウンロード」ボタン（全体）と「MDコピー」ボタン（個別コメント）を注入。PR 一覧ページでは各行にダウンロードボタンを追加（PR を開かずに取得可能）。`_createButton` factory でクリックハンドラを構成、フィードバックアニメーション（1.5s）と二重クリック防止（`data-rfmd-busy`）付き。
-
-### Thread deduplication
-
-`MarkdownBuilder.deduplicateThreads(threads)` はスレッド配列の先頭コメントから複合キーを生成して重複を除去する:
-
-```
-key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
-```
-
-5要素すべてが必要な理由: bot（Codex, Gemini）が同一ファイルに同じテンプレート文のレビューを複数回投稿するため、`author::filePath::body` だけでは異なるレビューラウンドのコメントが誤って除去される。`timestamp` と `lineRange`（diffContext 由来）で区別する。
 
 ### HTML → Markdown conversion
 
@@ -121,5 +89,3 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 - Markdown output uses Japanese labels: `本文`, `レビューコメント`, `コメント N`, `投稿者`, `日時`, `ファイル`, `対象行`, `↩ 返信`
 - グローバル変数名は `Rfmd` プレフィックス（例: `RfmdClipboard`）でブラウザ組み込みオブジェクトとの名前衝突を回避
 - PR タイトルの取得: DOM 要素 → `document.title` フォールバック（両プラットフォーム共通）
-- GitHub REST API (`api.github.com`) は CORS 制約でCookie認証不可（`Access-Control-Allow-Origin: *` が `credentials: 'include'` をブロック）。代わりに同一オリジンの HTML fetch + DOMParser を使用
-- `_fetchHiddenConversations` の DOM 操作では、挿入先要素 (`el`) のスコープに注意 — `el.remove()` は `el` 自体とその子孫のみ削除されるが、`el` が意図より広い範囲を指すと既存コンテンツが失われる

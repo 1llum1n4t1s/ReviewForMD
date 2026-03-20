@@ -126,11 +126,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
         commentEls.forEach((el) => {
           const comment = _parseDevOpsComment(el);
           if (comment && comment.body) {
-            // ファイルパスと diff コンテキストは最初のコメントにのみ付与
-            if (threadComments.length === 0) {
-              if (filePath) comment.filePath = filePath;
-              if (diffContext) comment.diffContext = diffContext;
-            }
+            _decorateFirstComment(comment, threadComments.length === 0, filePath, diffContext);
             threadComments.push(comment);
           }
         });
@@ -170,16 +166,8 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
     inlineThreads.forEach((thread) => {
       // Activity タブで既に処理済みのスレッドはスキップ
-      if (processedEls && processedEls.has(thread)) return;
-      let { filePath, diffContext } = _extractFileHeaderContext(thread);
-      // フォールバック: 従来のセレクタ
-      if (!filePath) {
-        const fileContainer = thread.closest('.repos-summary-item, .file-container');
-        const filePathEl = fileContainer?.querySelector(
-          '.repos-summary-header .file-name-link, .repos-summary-header-path'
-        );
-        if (filePathEl) filePath = filePathEl.textContent.trim();
-      }
+      if (processedEls.has(thread)) return;
+      const { filePath, diffContext } = _extractFileHeaderContext(thread);
 
       const threadComments = [];
       const commentEls = thread.querySelectorAll(
@@ -188,11 +176,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       commentEls.forEach((el) => {
         const comment = _parseDevOpsComment(el);
         if (comment && comment.body) {
-          // ファイルパスと diff コンテキストは最初のコメントにのみ付与
-          if (threadComments.length === 0) {
-            if (filePath) comment.filePath = filePath;
-            if (diffContext) comment.diffContext = diffContext;
-          }
+          _decorateFirstComment(comment, threadComments.length === 0, filePath, diffContext);
           threadComments.push(comment);
         }
       });
@@ -255,7 +239,8 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   }
 
   /**
-   * スレッド要素の前の兄弟要素 .comment-file-header からファイルパスと diff コンテキストを取得する
+   * スレッド要素の前の兄弟要素 .comment-file-header からファイルパスと diff コンテキストを取得する。
+   * comment-file-header から取得できない場合は、従来のセレクタでフォールバックする。
    * @param {Element} el - スレッド要素
    * @returns {{ filePath: string, diffContext: object|undefined }}
    */
@@ -272,7 +257,29 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       }
       diffContext = _extractDiffContext(prevSibling);
     }
+    // フォールバック: 従来のセレクタ（ファイルコンテナ内のヘッダーから取得）
+    if (!filePath) {
+      const fileContainer = el.closest('.repos-summary-item, .file-container');
+      const filePathEl = fileContainer?.querySelector(
+        '.repos-summary-header .file-name-link, .repos-summary-header-path'
+      );
+      if (filePathEl) filePath = filePathEl.textContent.trim();
+    }
     return { filePath, diffContext };
+  }
+
+  /**
+   * スレッドの先頭コメントにファイルパスと diff コンテキストを付与するヘルパー
+   * 3箇所の重複ロジックを統合
+   * @param {object} comment - コメントオブジェクト
+   * @param {boolean} isFirst - スレッド内の最初のコメントかどうか
+   * @param {string} filePath
+   * @param {object|undefined} diffContext
+   */
+  function _decorateFirstComment(comment, isFirst, filePath, diffContext) {
+    if (!isFirst) return;
+    if (filePath) comment.filePath = filePath;
+    if (diffContext) comment.diffContext = diffContext;
   }
 
   /**
@@ -594,22 +601,35 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     const from = Math.max(1, startLine - contextLines);
     const to = Math.min(modLines.length, endLine + contextLines);
 
+    // deletedBlocks を beforeModifiedLine でグループ化し O(1) ルックアップに改善
+    // 旧: 毎行で全 deletedBlocks を線形走査 → O(modLines × deletedBlocks)
+    // 新: Map ルックアップ → O(modLines)
+    const deletedBlockMap = new Map();
+    for (const db of deletedBlocks) {
+      if (!deletedBlockMap.has(db.beforeModifiedLine)) {
+        deletedBlockMap.set(db.beforeModifiedLine, []);
+      }
+      deletedBlockMap.get(db.beforeModifiedLine).push(db);
+    }
+
     const result = [];
 
     for (let modLine = from; modLine <= to; modLine++) {
-      // この行の直前に挿入すべき削除行があるか確認
-      for (const db of deletedBlocks) {
-        if (db.beforeModifiedLine === modLine && db.baseCount > 0) {
-          // 削除行を出力（コンテキスト範囲内の場合のみ）
-          for (let i = 0; i < db.baseCount; i++) {
-            const baseLine = db.baseStart + i;
-            result.push({
-              prefix: '-',
-              lineNum: String(baseLine),
-              code: baseLines[baseLine - 1] ?? '',
-            });
+      // この行の直前に挿入すべき削除行があるか確認（Map で O(1) ルックアップ）
+      const dbs = deletedBlockMap.get(modLine);
+      if (dbs) {
+        for (const db of dbs) {
+          if (db.baseCount > 0) {
+            for (let i = 0; i < db.baseCount; i++) {
+              const baseLine = db.baseStart + i;
+              result.push({
+                prefix: '-',
+                lineNum: String(baseLine),
+                code: baseLines[baseLine - 1] ?? '',
+              });
+            }
+            db.baseCount = 0; // 出力済みマーク
           }
-          db.baseCount = 0; // 出力済みマーク
         }
       }
 
@@ -854,30 +874,21 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   function extractThreadComments(threadContainer) {
     const comments = [];
 
-    // ファイルパスと diff コンテキストを取得
-    let { filePath, diffContext } = _extractFileHeaderContext(threadContainer);
-    // フォールバック: 従来のセレクタ
-    if (!filePath) {
-      const fileContainer = threadContainer.closest('.repos-summary-item, .file-container');
-      const filePathEl = fileContainer?.querySelector(
-        '.repos-summary-header .file-name-link, .repos-summary-header-path'
-      );
-      if (filePathEl) filePath = filePathEl.textContent.trim();
-    }
+    // ファイルパスと diff コンテキストを取得（フォールバック含む）
+    const { filePath, diffContext } = _extractFileHeaderContext(threadContainer);
 
     // スレッド内の全コメント要素
-    const commentEls = threadContainer.querySelectorAll('.repos-discussion-comment');
+    // 全体抽出（_extractActivityComments / _extractInlineComments）と同じセレクタを使用
+    const commentEls = threadContainer.querySelectorAll(
+      '.repos-discussion-comment, .vc-discussion-thread-comment'
+    );
     commentEls.forEach((el) => {
       // spinner（未ロード）はスキップ: ヘッダーがなければ完全に未ロード
       // ヘッダーがあっても本文が空なら _parseDevOpsComment で body が空になり除外される
       if (el.querySelector('.bolt-spinner') && !el.querySelector('.repos-discussion-comment-header')) return;
       const comment = _parseDevOpsComment(el);
       if (comment && comment.body) {
-        // ファイルパスと diff コンテキストは親コメント（最初の1件）にのみ付与
-        if (comments.length === 0) {
-          if (filePath) comment.filePath = filePath;
-          if (diffContext) comment.diffContext = diffContext;
-        }
+        _decorateFirstComment(comment, comments.length === 0, filePath, diffContext);
         comments.push(comment);
       }
     });
@@ -1001,21 +1012,24 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     if (!apiData || !apiData.rawApiThreads || !apiData.urlInfo) return;
 
     // DOM スレッドと API rawThread をマッチさせる
-    // filePath + 先頭コメントの author で対応付け
-    // マッチした DOM スレッドを仮の apiThreads 配列に入れ、対応する rawApiThreads と合わせて
-    // _enrichWithItemsApi に渡す
+    // filePath + author + lineRange（行範囲）で対応付け
+    // 同一レビュアーが同一ファイルに複数コメントした場合の誤対応を防ぐ
     const matchedThreads = [];    // _enrichWithItemsApi に渡す apiThreads 相当
     const matchedRawThreads = []; // 対応する rawApiThreads
 
     // API rawThreads を配列で保持（DOM filePath がフルパスでない場合があるため endsWith で比較）
-    const rawEntries = []; // { filePath, author, raw, used }
+    const rawEntries = []; // { filePath, author, lineRange, raw, used }
     apiData.rawApiThreads.forEach((raw) => {
       const tc = raw.threadContext;
       if (!tc?.filePath) return;
       const firstComment = raw.comments?.find((c) => c.commentType !== 'system' && c.content);
       if (!firstComment) return;
       const author = firstComment.author?.displayName || '';
-      rawEntries.push({ filePath: tc.filePath, author, raw, used: false });
+      // API の threadContext から行範囲を算出（マッチング精度向上用）
+      const start = tc.rightFileStart?.line || tc.leftFileStart?.line;
+      const end = tc.rightFileEnd?.line || tc.leftFileEnd?.line;
+      const lineRange = _formatLineRange(start, end);
+      rawEntries.push({ filePath: tc.filePath, author, lineRange, raw, used: false });
     });
 
     domThreads.forEach((thread) => {
@@ -1026,13 +1040,16 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
       // DOM の filePath は短縮形（ファイル名のみ）の場合がある
       // API の filePath はフルパス（/CooKai/Models/Foo.cs）
-      // endsWith で比較し、author も一致するものを探す
+      // endsWith で比較し、author + lineRange も一致するものを探す
       const domPath = first.filePath || '';
       const domAuthor = first.author || '';
+      const domLineRange = first.diffContext?.lineRange || '';
       const match = rawEntries.find((e) =>
         !e.used &&
         e.author === domAuthor &&
-        (e.filePath === domPath || e.filePath.endsWith('/' + domPath))
+        (e.filePath === domPath || e.filePath.endsWith('/' + domPath)) &&
+        // lineRange が両方空でない場合のみ比較（DOM 側に lineRange がないケースを許容）
+        (!domLineRange || !e.lineRange || e.lineRange === domLineRange)
       );
       if (!match) return;
 

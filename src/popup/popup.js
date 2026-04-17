@@ -17,10 +17,17 @@
 /** PR パス判定用の正規表現 */
 const RE_GITHUB_HOST = /^https?:\/\/(www\.)?github\.com\//;
 const RE_GITHUB_PR = /\/pull\/\d+/;
+const RE_GITHUB_PR_LIST = /\/pulls(\?|$|#)/;
 const RE_DEVOPS_HOST = /^https?:\/\/(dev\.azure\.com|[^/]+\.visualstudio\.com)\//;
 const RE_DEVOPS_PR = /\/_git\/[^/]+\/pullrequest\/\d+/i;
+const RE_DEVOPS_PR_LIST = /\/_git\/[^/]+\/pullrequests/i;
 const RE_SHAREPOINT_HOST = /^https?:\/\/[^/]+\.sharepoint\.com\//;
 const RE_SHAREPOINT_STREAM = /\/stream\.aspx/i;
+
+/** DevOps PR ページ（詳細 or 一覧）を判定 */
+function isDevOpsPRPath(url) {
+  return RE_DEVOPS_PR.test(url) || RE_DEVOPS_PR_LIST.test(url);
+}
 
 /**
  * 現在のタブのオリジンに対して host_permissions が付与されているか
@@ -94,11 +101,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const url = tab.url;
 
     // 既知ドメイン（manifest 静的注入対象）→ そのまま動作
-    if (RE_GITHUB_HOST.test(url) && RE_GITHUB_PR.test(url)) {
+    if (RE_GITHUB_HOST.test(url) && (RE_GITHUB_PR.test(url) || RE_GITHUB_PR_LIST.test(url))) {
       _setActive('GitHub PR ページを検出しました');
       return;
     }
-    if (RE_DEVOPS_HOST.test(url) && RE_DEVOPS_PR.test(url)) {
+    if (RE_DEVOPS_HOST.test(url) && isDevOpsPRPath(url)) {
       _setActive('Azure DevOps PR ページを検出しました');
       return;
     }
@@ -108,7 +115,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // カスタムドメイン Azure DevOps の可能性をチェック（URL パスベース）
-    if (RE_DEVOPS_PR.test(url)) {
+    // PR 詳細 (/_git/.../pullrequest/<id>) と PR 一覧 (/_git/.../pullrequests) の両方に対応。
+    // 一覧ページからもダウンロードできるように、両方で許可フローを動かす。
+    if (isDevOpsPRPath(url)) {
       // 既にコンテンツスクリプトが動いているか確認
       try {
         const response = await chrome.tabs.sendMessage(tab.id, { type: 'rfmd:ping' });

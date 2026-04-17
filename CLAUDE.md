@@ -14,6 +14,8 @@ Vanilla JS、ビルドステップなし。日本語 UI/コメント。
 
 **Package:** `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成
 
+**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、Chrome Web Store API 経由で自動アップロード＆公開される。必要な GitHub Secrets: `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`。
+
 No npm, no tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 
 ## Architecture

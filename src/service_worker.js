@@ -68,6 +68,41 @@ async function hasOriginPermission(url) {
 }
 
 /**
+ * 指定タブが本物の Azure DevOps か検証する。
+ * 過去に許可済みのオリジン（一度 DevOps として許可された後、同オリジン上で
+ * 偽装 PR URL を持つ非 DevOps ページが作られたケース）への注入を防ぐため、
+ * カスタムドメインの自動注入前にも検証する。
+ * @param {number} tabId
+ * @returns {Promise<boolean>}
+ */
+async function verifyAzureDevOpsInTab(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        try {
+          if (typeof VSS !== 'undefined' || typeof TfsContext !== 'undefined') return true;
+        } catch {}
+        if (document.querySelector('.repos-pr-details-page')) return true;
+        if (document.querySelector('[class*="bolt-header"]')) return true;
+        if (document.querySelector('[class*="repos-pr-"]')) return true;
+        const scripts = document.querySelectorAll('script[src]');
+        for (const s of scripts) {
+          const src = s.getAttribute('src') || '';
+          if (/VSS\.SDK|ms\.vss-tfs-web|_static\/tfs/.test(src)) return true;
+        }
+        const html = document.documentElement?.outerHTML || '';
+        return /VSS\.SDK|TfsContext|ms\.vss-tfs-web/.test(html);
+      },
+    });
+    return results?.[0]?.result === true;
+  } catch (e) {
+    console.debug('[ReviewForMD] DevOps verification failed:', e?.message || e);
+    return false;
+  }
+}
+
+/**
  * 「権限が必要」をユーザーに知らせるバッジをアイコンに表示
  * @param {number} tabId
  */
@@ -111,8 +146,17 @@ async function injectContentScripts(tabId, url) {
   // optional_host_permissions: ["https://*/*"] と既知ホスト範囲が重なるため、
   // chrome.permissions.contains() が false を返すケースがあり、
   // sendMessage 失敗時の動的注入リカバリ経路が no-op 化してしまうのを防ぐ。
-  if (url && !isKnownDomain(url) && !(await hasOriginPermission(url))) {
+  const isCustomDomain = url && !isKnownDomain(url);
+  if (isCustomDomain && !(await hasOriginPermission(url))) {
     await showNeedPermissionBadge(tabId);
+    return;
+  }
+
+  // セキュリティ: カスタムドメインで権限はあっても、必ず DevOps シグナル検証してから注入する。
+  // 過去に正規 DevOps として許可した後、同オリジン上で偽装 /_git/.../pullrequest 形式 URL を
+  // 持つ非 DevOps ページが作られた場合の注入バイパス攻撃を防止。
+  if (isCustomDomain && !(await verifyAzureDevOpsInTab(tabId))) {
+    console.debug('[ReviewForMD] Skip injection: not a verified Azure DevOps page');
     return;
   }
 

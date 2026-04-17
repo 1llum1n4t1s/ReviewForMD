@@ -131,7 +131,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const granted = await hasOriginPermission(url);
       if (granted) {
-        // 権限はあるが content script が注入されてない → 直接注入
+        // セキュリティ: 過去に許可済みのオリジンでも、DevOps シグナル検証してから注入する。
+        // 一度正規の DevOps として許可した後、同オリジン上で偽装的な /_git/.../pullrequest 形式
+        // URL を持つ非 DevOps ページが作られた場合にも、コンテンツスクリプト注入を防ぐ。
+        _setInactive('Azure DevOps を検証中...');
+        const isDevOps = await verifyAzureDevOpsInTab(tab.id);
+        if (!isDevOps) {
+          _setInactive('Azure DevOps として検証できませんでした');
+          return;
+        }
+        // 権限あり + 検証 OK → 注入
         _setInactive('コンテンツスクリプトを注入中...');
         const ok = await injectContentScriptsInTab(tab.id);
         if (ok) {

@@ -11,6 +11,9 @@
     "https://*.visualstudio.com/*",
     "https://*.sharepoint.com/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "icons": {
     "48": "icons/icon.png"
   },

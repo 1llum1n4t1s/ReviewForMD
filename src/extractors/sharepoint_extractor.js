@@ -201,6 +201,18 @@ var SharePointExtractor = SharePointExtractor || (() => {
    *   ダウンロードに使う VTT 本文と推奨ファイル名を返す
    */
   async function downloadTranscript() {
+    // URL が変わっていたら captured ID は古い動画のものなのでクリアして取り直す。
+    // _injectSharePoint() の URL 検出と二重防御。動画切替後に古い ID で
+    // 別動画の VTT が落ちてくる事故を防ぐ。
+    if (_availabilityCacheUrl !== location.href) {
+      _capturedDriveId = '';
+      _capturedFileId = '';
+      _availabilityCache = null;
+      _availabilityCacheUrl = '';
+      // 新しい URL のメタデータを取得（fetch フックも仕込まれる）
+      await checkAvailability();
+    }
+
     const { driveId, fileId } = _getIds();
     if (!driveId || !fileId) {
       throw new Error('Drive ID / File ID が見つかりません');
@@ -226,13 +238,20 @@ var SharePointExtractor = SharePointExtractor || (() => {
   }
 
   /**
-   * ページ遷移時に呼び出してキャッシュ・捕捉済み ID をリセットする
+   * ページ遷移時に呼び出してキャッシュ・捕捉済み ID をリセットする。
+   * main world の fetch フックの closure 変数もクリアするため `rfmd:sp-reset` を発火。
+   * （isolated world の reset だけでは main world の古い ID が残る singleton バグ対策）
    */
   function reset() {
     _capturedDriveId = '';
     _capturedFileId = '';
     _availabilityCache = null;
     _availabilityCacheUrl = '';
+    try {
+      window.dispatchEvent(new CustomEvent('rfmd:sp-reset'));
+    } catch {
+      // イベント発火失敗時は黙殺（拡張コンテキスト無効化時など）
+    }
   }
 
   return { checkAvailability, downloadTranscript, reset };

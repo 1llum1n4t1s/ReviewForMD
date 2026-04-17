@@ -8,6 +8,14 @@
  * content script (isolated world) のページの fetch には介入できないため、
  * このスクリプトは <script src="..."> として main world に注入される。
  *
+ * ---
+ * 動画切替対応（singleton バグ対策）:
+ *   このフックは `window.__rfmd_sp_hooked__` で多重注入を防いでいるが、
+ *   動画切替（stream.aspx?id=A → ?id=B）でも同じフックが再利用される。
+ *   そのため:
+ *   1. 値が変わった時だけ更新する（「初回のみ代入」ロジックだと古い ID に固着する）
+ *   2. content script から `rfmd:sp-reset` イベントを受け取ったら closure 変数をクリア
+ *
  * 参考: 既存拡張機能 "Teams Transcript Downloader" の content.js のロジック
  */
 (() => {
@@ -31,6 +39,13 @@
     }
   }
 
+  // content script からのリセット要求を受信
+  // URL 変化時（動画切替）に呼ばれて closure 変数をクリア
+  window.addEventListener('rfmd:sp-reset', () => {
+    driveId = '';
+    fileId = '';
+  });
+
   window.fetch = function (...args) {
     try {
       const url = args[0]?.toString() || '';
@@ -43,8 +58,10 @@
         const m = url.match(/drives\/([^/]+)/);
         const p = url.match(/items\/([^/?]+)/);
         let updated = false;
-        if (m && !driveId) { driveId = m[1]; updated = true; }
-        if (p && !fileId) { fileId = p[1]; updated = true; }
+        // 「初回のみ代入」ではなく「値が変わった時だけ更新」にする。
+        // 動画切替後に新しい ID が fetch に来ても反映されるようにする。
+        if (m && m[1] !== driveId) { driveId = m[1]; updated = true; }
+        if (p && p[1] !== fileId) { fileId = p[1]; updated = true; }
         if (updated) _emit();
       }
     } catch {

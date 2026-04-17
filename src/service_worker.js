@@ -54,10 +54,62 @@ function isKnownDomain(url) {
 }
 
 /**
- * コンテンツスクリプトを動的に注入する（カスタムドメイン DevOps 対応）
+ * 指定 URL のオリジンに対して host_permissions が付与されているか確認
+ * @param {string} url
+ * @returns {Promise<boolean>}
+ */
+async function hasOriginPermission(url) {
+  try {
+    const origin = new URL(url).origin + '/*';
+    return await chrome.permissions.contains({ origins: [origin] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 「権限が必要」をユーザーに知らせるバッジをアイコンに表示
  * @param {number} tabId
  */
-async function injectContentScripts(tabId) {
+async function showNeedPermissionBadge(tabId) {
+  try {
+    await chrome.action.setBadgeText({ tabId, text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: '#cf222e' });
+    await chrome.action.setTitle({
+      tabId,
+      title: 'ReviewForMD: このサイトでの動作を許可するには拡張機能アイコンをクリック',
+    });
+  } catch {
+    // タブが閉じた等
+  }
+}
+
+/**
+ * バッジをクリア（注入成功時）
+ * @param {number} tabId
+ */
+async function clearBadge(tabId) {
+  try {
+    await chrome.action.setBadgeText({ tabId, text: '' });
+    await chrome.action.setTitle({ tabId, title: '' });
+  } catch {
+    // タブが閉じた等
+  }
+}
+
+/**
+ * コンテンツスクリプトを動的に注入する（カスタムドメイン DevOps 対応）
+ * @param {number} tabId
+ * @param {string} url - パーミッション確認用
+ */
+async function injectContentScripts(tabId, url) {
+  // カスタムドメインで host_permissions が無い場合、注入は失敗する。
+  // ユーザーに分かるようバッジで通知し、popup 経由で許可を要求する。
+  if (url && !(await hasOriginPermission(url))) {
+    await showNeedPermissionBadge(tabId);
+    return;
+  }
+
   try {
     // 既に注入済みか確認
     const results = await chrome.scripting.executeScript({
@@ -65,7 +117,10 @@ async function injectContentScripts(tabId) {
       func: () => typeof SiteDetector !== 'undefined',
     });
 
-    if (results?.[0]?.result === true) return; // 既に注入済み
+    if (results?.[0]?.result === true) {
+      await clearBadge(tabId);
+      return; // 既に注入済み
+    }
 
     // CSS 注入
     await chrome.scripting.insertCSS({
@@ -87,9 +142,12 @@ async function injectContentScripts(tabId) {
         'src/content_script.js',
       ],
     });
+    await clearBadge(tabId);
   } catch (e) {
-    // パーミッション不足等は想定内（カスタムドメインで未許可の場合）
-    console.debug('[ReviewForMD] Injection skipped:', e?.message || e);
+    // 想定外のエラー（パーミッションは事前チェック済みなのでこちらは別の理由）
+    console.debug('[ReviewForMD] Injection failed:', e?.message || e);
+    // 念のためバッジ表示（ユーザーに状況を見せる）
+    await showNeedPermissionBadge(tabId);
   }
 }
 
@@ -116,11 +174,11 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     try {
       await chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' });
     } catch {
-      await injectContentScripts(details.tabId);
+      await injectContentScripts(details.tabId, details.url);
     }
   } else {
     // カスタムドメイン → 動的注入
-    await injectContentScripts(details.tabId);
+    await injectContentScripts(details.tabId, details.url);
   }
 }, NAV_URL_FILTERS);
 
@@ -129,6 +187,21 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   if (!isTargetPageUrl(details.url)) return;
   if (!isKnownDomain(details.url)) {
-    injectContentScripts(details.tabId);
+    injectContentScripts(details.tabId, details.url);
   }
 }, NAV_URL_FILTERS);
+
+// popup / content script から「権限取得後に注入してね」リクエストを受信
+// popup からのメッセージには sender.tab が無いので、msg.tabId を明示的に受ける
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'rfmd:request-injection') {
+    const tabId = msg.tabId ?? sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ ok: false, error: 'no tabId' });
+      return;
+    }
+    const url = msg.url || sender.tab?.url;
+    injectContentScripts(tabId, url).then(() => sendResponse({ ok: true }));
+    return true; // 非同期 sendResponse
+  }
+});

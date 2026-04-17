@@ -1,0 +1,12 @@
+{
+  "name": "review-for-md",
+  "version": "1.0.42",
+  "private": true,
+  "description": "プルリクのタイトル・本文・レビューコメントをMarkdownでダウンロードするChrome拡張",
+  "scripts": {
+    "zip:win": "powershell -ExecutionPolicy Bypass -File zip.ps1",
+    "zip:nix": "bash zip.sh",
+    "zip": "npm run zip:nix"
+  },
+  "license": "MIT"
+}

@@ -105,7 +105,13 @@ async function clearBadge(tabId) {
 async function injectContentScripts(tabId, url) {
   // カスタムドメインで host_permissions が無い場合、注入は失敗する。
   // ユーザーに分かるようバッジで通知し、popup 経由で許可を要求する。
-  if (url && !(await hasOriginPermission(url))) {
+  //
+  // 例外: known domain (manifest host_permissions で静的許可済みのホスト) は
+  // permission チェックをスキップする。
+  // optional_host_permissions: ["https://*/*"] と既知ホスト範囲が重なるため、
+  // chrome.permissions.contains() が false を返すケースがあり、
+  // sendMessage 失敗時の動的注入リカバリ経路が no-op 化してしまうのを防ぐ。
+  if (url && !isKnownDomain(url) && !(await hasOriginPermission(url))) {
     await showNeedPermissionBadge(tabId);
     return;
   }
@@ -191,16 +197,18 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   }
 }, NAV_URL_FILTERS);
 
-// popup / content script から「権限取得後に注入してね」リクエストを受信
-// popup からのメッセージには sender.tab が無いので、msg.tabId を明示的に受ける
+// popup / content script から「権限取得後に注入してね」リクエストを受信。
+// セキュリティ: sender.tab がある場合は信頼できる送信元として優先使用。
+// 悪意ある content script が他タブの tabId を指定して注入を試みる攻撃を防ぐ。
+// popup からのメッセージには sender.tab が無いので、その場合のみ msg.tabId を採用。
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'rfmd:request-injection') {
-    const tabId = msg.tabId ?? sender.tab?.id;
+    const tabId = sender.tab?.id ?? msg.tabId;
     if (!tabId) {
       sendResponse({ ok: false, error: 'no tabId' });
       return;
     }
-    const url = msg.url || sender.tab?.url;
+    const url = sender.tab?.url ?? msg.url;
     injectContentScripts(tabId, url).then(() => sendResponse({ ok: true }));
     return true; // 非同期 sendResponse
   }

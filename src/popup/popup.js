@@ -169,14 +169,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
           }
 
-          // 検証OK → content script 注入
-          _setInactive('コンテンツスクリプトを注入中...');
-          const injected = await injectContentScriptsInTab(tab.id);
-          if (!injected) {
-            _setInactive('注入に失敗しました');
-            return;
-          }
-          // タブ自体をリロードしてフルに content script 起動 (確実な反映)
+          // 検証OK → タブをリロードして service_worker 経由で正規ルートで注入させる。
+          // ここで手動 inject すると reload で破棄されて二度手間になるため省略。
           await chrome.tabs.reload(tab.id);
           window.close();
         } catch (e) {

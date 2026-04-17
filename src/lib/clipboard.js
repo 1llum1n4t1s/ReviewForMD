@@ -50,19 +50,20 @@ var RfmdClipboard = RfmdClipboard || (() => {
   }
 
   /**
-   * テキストを MD ファイルとしてダウンロードする
-   * @param {string} text - ダウンロードする Markdown テキスト
-   * @param {string} filename - ファイル名（.md 拡張子付き）
+   * テキストをファイルとしてダウンロードする
+   * @param {string} text - ダウンロードするテキスト
+   * @param {string} filename - ファイル名（拡張子付き）
+   * @param {string} [mimeType='text/markdown;charset=utf-8'] - MIME タイプ
    * @returns {boolean}
    */
-  function download(text, filename) {
+  function download(text, filename, mimeType = 'text/markdown;charset=utf-8') {
     if (typeof text !== 'string' || text === '') return false;
     try {
-      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+      const blob = new Blob([text], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename || 'pullrequest.md';
+      a.download = filename || 'download.txt';
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();

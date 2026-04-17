@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "プルリクMDコピー",
-  "version": "1.0.40",
+  "version": "1.0.41",
   "description": "プルリクエストのタイトル・本文・レビューコメントをMarkdown形式でコピーするChrome拡張機能",
   "permissions": ["activeTab", "scripting", "webNavigation"],
   "host_permissions": [
     "https://github.com/*",
     "https://*.github.com/*",
     "https://dev.azure.com/*",
-    "https://*.visualstudio.com/*"
+    "https://*.visualstudio.com/*",
+    "https://*.sharepoint.com/*"
   ],
   "icons": {
     "48": "icons/icon.png"
@@ -36,7 +37,9 @@
         "https://*.visualstudio.com/*/_git/*/pullrequest/*",
         "https://*.visualstudio.com/*/_git/*/pullRequest/*",
         "https://*.visualstudio.com/*/_git/*/pullrequests",
-        "https://*.visualstudio.com/*/_git/*/pullrequests?*"
+        "https://*.visualstudio.com/*/_git/*/pullrequests?*",
+        "https://*.sharepoint.com/*/stream.aspx*",
+        "https://*.sharepoint.com/*/Stream.aspx*"
       ],
       "js": [
         "src/lib/site_detector.js",
@@ -44,6 +47,7 @@
         "src/lib/clipboard.js",
         "src/extractors/github_extractor.js",
         "src/extractors/devops_extractor.js",
+        "src/extractors/sharepoint_extractor.js",
         "src/ui/button_injector.js",
         "src/content_script.js"
       ],
@@ -59,6 +63,12 @@
         "https://*.github.com/*",
         "https://dev.azure.com/*",
         "https://*.visualstudio.com/*"
+      ]
+    },
+    {
+      "resources": ["src/inject/sharepoint_fetch_hook.js"],
+      "matches": [
+        "https://*.sharepoint.com/*"
       ]
     }
   ]

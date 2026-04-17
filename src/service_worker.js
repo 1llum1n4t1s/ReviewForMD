@@ -2,27 +2,32 @@
  * ReviewForMD - Service Worker
  *
  * カスタムドメインの DevOps を含む SPA ナビゲーションに対応するため、
- * webNavigation API を使って PR ページ遷移を監視し、
+ * webNavigation API を使って対象ページ遷移を監視し、
  * 必要に応じてコンテンツスクリプトを動的注入する。
+ *
+ * 対象:
+ *   - GitHub / Azure DevOps の PR ページ
+ *   - SharePoint Stream (Teams 会議録画) ページ
  */
 
-/** PR ページの URL パターン（パス部分のみ） */
-const PR_PATH_PATTERNS = [
+/** ナビゲーション対象ページの URL パターン（パス部分のみ） */
+const NAV_PATH_PATTERNS = [
   /\/pull\/\d+/,                           // GitHub PR 詳細
   /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps PR 詳細
   /\/pulls\b/,                             // GitHub PR 一覧
   /\/_git\/[^/]+\/pullrequests\b/i,         // Azure DevOps PR 一覧
+  /\/stream\.aspx/i,                        // SharePoint Stream (Teams 会議録画)
 ];
 
 /**
- * URL が PR ページかどうかを判定する
+ * URL が対象ページかどうかを判定する
  * @param {string} url
  * @returns {boolean}
  */
-function isPRPageUrl(url) {
+function isTargetPageUrl(url) {
   try {
     const u = new URL(url);
-    return PR_PATH_PATTERNS.some((re) => re.test(u.pathname));
+    return NAV_PATH_PATTERNS.some((re) => re.test(u.pathname));
   } catch {
     return false;
   }
@@ -40,7 +45,8 @@ function isKnownDomain(url) {
       host === 'github.com' ||
       host.endsWith('.github.com') ||
       host === 'dev.azure.com' ||
-      host.endsWith('.visualstudio.com')
+      host.endsWith('.visualstudio.com') ||
+      host.endsWith('.sharepoint.com')
     );
   } catch {
     return false;
@@ -76,6 +82,7 @@ async function injectContentScripts(tabId) {
         'src/lib/clipboard.js',
         'src/extractors/github_extractor.js',
         'src/extractors/devops_extractor.js',
+        'src/extractors/sharepoint_extractor.js',
         'src/ui/button_injector.js',
         'src/content_script.js',
       ],
@@ -88,19 +95,20 @@ async function injectContentScripts(tabId) {
 
 // ── webNavigation によるSPA遷移検出 ──
 
-/** URL フィルタ: PR ページに該当するパスパターンのみ Service Worker を起動 */
+/** URL フィルタ: 対象ページに該当するパスパターンのみ Service Worker を起動 */
 const NAV_URL_FILTERS = {
   url: [
     { urlMatches: '.*/pull/\\d+.*' },                  // GitHub PR 詳細
     { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps PR 詳細
     { urlMatches: '.*/pulls(\\?.*)?$' },                // GitHub PR 一覧
     { urlMatches: '.*/_git/[^/]+/pullrequests(\\?.*)?$' }, // Azure DevOps PR 一覧
+    { urlMatches: '.*/[Ss]tream\\.aspx.*' },            // SharePoint Stream
   ],
 };
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
   if (details.frameId !== 0) return; // メインフレームのみ
-  if (!isPRPageUrl(details.url)) return;
+  if (!isTargetPageUrl(details.url)) return;
   if (isKnownDomain(details.url)) {
     // 既知ドメインは静的注入済みのはずなので、再初期化メッセージを送る。
     // コンテンツスクリプト未ロード時（PR 一覧→PR 詳細への SPA 遷移等）は
@@ -119,7 +127,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
 // タブ更新時にも検出（フルリロード時）
 chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
-  if (!isPRPageUrl(details.url)) return;
+  if (!isTargetPageUrl(details.url)) return;
   if (!isKnownDomain(details.url)) {
     injectContentScripts(details.tabId);
   }

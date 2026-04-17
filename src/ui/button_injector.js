@@ -9,6 +9,7 @@ var ButtonInjector = ButtonInjector || (() => {
 
   const DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} MDでダウンロード`;
   const SINGLE_COPY_LABEL = `${COPY_ICON_SVG} MDコピー`;
+  const VTT_DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} VTTダウンロード`;
 
   /**
    * ボタンのコピー完了フィードバック（連打防止付き）
@@ -46,7 +47,9 @@ var ButtonInjector = ButtonInjector || (() => {
    * ボタン生成ファクトリ
    * @param {{ className: string, dataRfmd: string, label: string, title: string, action?: 'copy'|'download', extractFn: Function }} opts
    *   action='copy'（デフォルト）: extractFn は Markdown 文字列を返す → クリップボードへコピー
-   *   action='download': extractFn は {title, markdown} を返す → ファイルとしてダウンロード
+   *   action='download': extractFn は次のいずれかを返す:
+   *     - { title, markdown }                       → {title}.md として保存（text/markdown）
+   *     - { text, filename, mimeType? }             → filename そのままで保存
    * @returns {HTMLButtonElement}
    */
   function _createButton({ className, dataRfmd, label, title, action = 'copy', extractFn }) {
@@ -69,8 +72,17 @@ var ButtonInjector = ButtonInjector || (() => {
         const result = await Promise.resolve(extractFn());
         let ok;
         if (action === 'download') {
-          const filename = _sanitizeFilename(result.title) + '.md';
-          ok = RfmdClipboard.download(result.markdown, filename);
+          // 既存の {title, markdown} 形式に加え、{text, filename, mimeType} 形式もサポート
+          if (result && result.text !== undefined && result.filename) {
+            ok = RfmdClipboard.download(
+              result.text,
+              result.filename,
+              result.mimeType || 'text/markdown;charset=utf-8'
+            );
+          } else {
+            const filename = _sanitizeFilename(result.title) + '.md';
+            ok = RfmdClipboard.download(result.markdown, filename);
+          }
         } else {
           ok = await RfmdClipboard.copy(result);
         }
@@ -88,6 +100,7 @@ var ButtonInjector = ButtonInjector || (() => {
   const _EXTRACTORS = {
     [SiteDetector.SiteType.GITHUB]: GitHubExtractor,
     [SiteDetector.SiteType.AZURE_DEVOPS]: DevOpsExtractor,
+    [SiteDetector.SiteType.SHAREPOINT_TEAMS]: SharePointExtractor,
   };
 
   /**
@@ -124,6 +137,25 @@ var ButtonInjector = ButtonInjector || (() => {
       extractFn: () => {
         const comment = _EXTRACTORS[siteType].extractSingleComment(commentContainer);
         return MarkdownBuilder.formatSingleComment(comment);
+      },
+    });
+  }
+
+  /**
+   * SharePoint Stream 用 VTT ダウンロードボタンを生成する。
+   * extractFn は {text, filename, mimeType} 形式を返し、_createButton の
+   * action='download' 経路でファイルとして保存される。
+   */
+  function _createSharePointDownloadButton() {
+    return _createButton({
+      className: 'rfmd-btn rfmd-btn--primary',
+      dataRfmd: 'all',
+      action: 'download',
+      label: VTT_DOWNLOAD_LABEL,
+      title: '会議トランスクリプトを VTT ファイルでダウンロード',
+      extractFn: async () => {
+        const { text, filename } = await SharePointExtractor.downloadTranscript();
+        return { text, filename, mimeType: 'text/vtt;charset=utf-8' };
       },
     });
   }
@@ -309,6 +341,81 @@ var ButtonInjector = ButtonInjector || (() => {
     });
   }
 
+  /* ── SharePoint Stream 用ボタン注入 ─────────────── */
+
+  /**
+   * SharePoint Stream のヘッダー近くにボタンを差し込む候補セレクタ。
+   * SharePoint は内部実装の変化が大きいため、上から優先して最初にヒットしたものを使う。
+   */
+  const _SHAREPOINT_HEADER_SELECTORS = [
+    '[data-automationid="visibleCommands"]',
+    '[data-automationid="commandBarWrapper"]',
+    '[data-automationid="commandBar"]',
+    '[data-automation-id="commandBar"]',
+    '[data-automation-id="topBar"]',
+    '.ms-CommandBar',
+    '.od-TopBar-commandBar',
+    '.od-TopBar',
+  ];
+
+  function _findSharePointHeaderTarget() {
+    for (const sel of _SHAREPOINT_HEADER_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  /**
+   * checkAvailability() の多重実行ガード。
+   * MutationObserver は 400ms デバウンスで何度も _injectSharePoint() を呼ぶが、
+   * 初回 API 応答が返る前に呼ばれるとキャッシュが効かず REST API が多重発射される。
+   */
+  let _spCheckInFlight = false;
+
+  function _injectSharePoint() {
+    // 既に注入済みなら再評価不要
+    if (document.querySelector('[data-rfmd="all"][data-rfmd-site="sharepoint"]')) {
+      return;
+    }
+    // 別の checkAvailability() がフライト中ならスキップ（API 多重発射の防止）
+    if (_spCheckInFlight) return;
+
+    const target = _findSharePointHeaderTarget();
+    if (!target) {
+      // ヘッダーがまだレンダリングされていない可能性。MutationObserver の次回コールで再試行される。
+      console.debug('[ReviewForMD][SP] header target not found yet.');
+      return;
+    }
+
+    // 利用可能性を非同期チェックし、利用可能な場合のみボタンを表示する
+    _spCheckInFlight = true;
+    SharePointExtractor.checkAvailability().then((result) => {
+      if (!result.available) {
+        console.debug('[ReviewForMD][SP] transcript unavailable:', result.reason);
+        return;
+      }
+      // チェック中に二重注入されていないか確認
+      if (document.querySelector('[data-rfmd="all"][data-rfmd-site="sharepoint"]')) {
+        return;
+      }
+      // ヘッダーが SPA で差し替わっている可能性があるので再取得
+      const insertTarget = _findSharePointHeaderTarget();
+      if (!insertTarget) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'rfmd-all-copy-container rfmd-sp-container';
+      const btn = _createSharePointDownloadButton();
+      btn.setAttribute('data-rfmd-site', 'sharepoint');
+      wrap.appendChild(btn);
+      insertTarget.appendChild(wrap);
+    }).catch((e) => {
+      console.debug('[ReviewForMD][SP] availability check error:', e?.message || e);
+    }).finally(() => {
+      _spCheckInFlight = false;
+    });
+  }
+
   /* ── PR 一覧ページ用ボタン注入 ─────────────────── */
 
   function _injectGitHubList() {
@@ -402,6 +509,8 @@ var ButtonInjector = ButtonInjector || (() => {
       _injectGitHub();
     } else if (siteType === SiteDetector.SiteType.AZURE_DEVOPS) {
       _injectDevOps();
+    } else if (siteType === SiteDetector.SiteType.SHAREPOINT_TEAMS) {
+      _injectSharePoint();
     }
   }
 

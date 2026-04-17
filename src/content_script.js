@@ -52,6 +52,13 @@
     document
       .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap, .rfmd-list-btn-wrap')
       .forEach((el) => el.remove());
+    // SharePoint Stream では動画切替（URL クエリ変更）で別コンテンツになるため、
+    // 捕捉済み Drive/File ID・利用可能性キャッシュをリセットする
+    try {
+      if (typeof SharePointExtractor !== 'undefined' && SharePointExtractor.reset) {
+        SharePointExtractor.reset();
+      }
+    } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
     _currentSiteType = null;
     _currentPageType = null;
   }
@@ -229,9 +236,19 @@
   }
 
   /**
-   * main world にナビゲーションフックスクリプトを注入する
+   * main world にナビゲーションフックスクリプトを注入する。
+   * SharePoint Stream は通常 SPA push/replace を行わずクエリパラメータでも
+   * フルロードに近い挙動になるため、navigation_hook は不要。
+   * かつ navigation_hook.js は web_accessible_resources で SharePoint ホストを
+   * 許可していないため、注入すると ERR_BLOCKED_BY_CLIENT が発生してしまう。
+   *
+   * このメソッドは _watchNavigation() の段階（_currentSiteType 未設定）で
+   * 呼ばれるため、ホスト名から直接 SharePoint かどうか判定する。
    */
   function _injectNavigationHook() {
+    if (location.hostname.endsWith('.sharepoint.com')) {
+      return;
+    }
     try {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('src/inject/navigation_hook.js');

@@ -102,6 +102,42 @@
   margin-left: 12px;
 }
 
+/* ── SharePoint Stream (Teams) テーマ対応 ────── */
+
+/* SharePoint コマンドバーは高さが小さいので余白を控えめに */
+.rfmd-sp-container {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+/* SharePoint 既知の Fluent UI クラス上での見た目調整 */
+[data-automationid="commandBarWrapper"] .rfmd-btn,
+[data-automationid="visibleCommands"] .rfmd-btn,
+.ms-CommandBar .rfmd-btn,
+.od-TopBar .rfmd-btn {
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  border-radius: 2px;
+  height: 32px;
+  padding: 4px 12px;
+}
+
+/* SharePoint プライマリボタンは Microsoft 365 ブランドカラー (#6264a7) */
+.rfmd-sp-container .rfmd-btn.rfmd-btn--primary {
+  background: #6264a7;
+  border-color: #6264a7;
+  color: #ffffff;
+}
+
+.rfmd-sp-container .rfmd-btn.rfmd-btn--primary:hover {
+  background: #4f5198;
+  border-color: #4f5198;
+}
+
+.rfmd-sp-container .rfmd-btn.rfmd-btn--primary:active {
+  background: #464786;
+}
+
 /* DevOps 一覧ページの小ボタンも DevOps 青テーマに */
 .bolt-table-row .rfmd-btn.rfmd-btn--sm,
 .bolt-list-row .rfmd-btn.rfmd-btn--sm {
@@ -207,6 +243,14 @@ body[data-theme="dark"] .rfmd-btn.rfmd-btn--primary {
 body[data-theme="dark"] .rfmd-btn.rfmd-btn--primary:hover {
   background: #106ebe;
   border-color: #106ebe;
+}
+
+/* SharePoint ダークモードでも primary ボタンの色味は維持 */
+body[data-theme="dark"] .rfmd-sp-container .rfmd-btn.rfmd-btn--primary,
+.ms-Fabric--isFocusVisible .rfmd-sp-container .rfmd-btn.rfmd-btn--primary {
+  background: #6264a7;
+  border-color: #6264a7;
+  color: #ffffff;
 }
 
 /* ダークモードでのフォーカスリング */

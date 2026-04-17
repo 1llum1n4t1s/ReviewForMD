@@ -1,6 +1,7 @@
 /**
  * サイト検出モジュール
- * GitHub と Azure DevOps のプルリクエストページを判定する。
+ * GitHub / Azure DevOps のプルリクエストページ、
+ * および SharePoint Stream (Teams 会議録画) ページを判定する。
  * DevOps は企業独自ドメインで運用されることが多いため、
  * URL だけでなく DOM 構造も併用して判定する。
  */
@@ -9,6 +10,7 @@ var SiteDetector = SiteDetector || (() => {
   const SiteType = {
     GITHUB: 'github',
     AZURE_DEVOPS: 'devops',
+    SHAREPOINT_TEAMS: 'sharepoint_teams',
     UNKNOWN: 'unknown',
   };
 
@@ -88,6 +90,19 @@ var SiteDetector = SiteDetector || (() => {
     return count >= THRESHOLD;
   }
 
+  /* ── SharePoint Stream (Teams 会議録画) 判定 ──── */
+
+  /**
+   * SharePoint の Stream プレイヤーページかどうかを判定する。
+   * URL 例: https://{tenant}.sharepoint.com/{site}/_layouts/15/stream.aspx?id=...
+   */
+  function _isSharePointStreamByUrl() {
+    const host = location.hostname;
+    if (!host.endsWith('.sharepoint.com')) return false;
+    // stream.aspx を含むパス（大文字小文字不問）
+    return /\/stream\.aspx/i.test(location.pathname);
+  }
+
   /* ── 公開 API ─────────────────────────────────── */
 
   /**
@@ -108,6 +123,11 @@ var SiteDetector = SiteDetector || (() => {
     // Azure DevOps: カスタムドメイン → DOM ベース判定
     if (_isDevOpsPRByDom()) {
       return SiteType.AZURE_DEVOPS;
+    }
+
+    // SharePoint Stream (Teams 会議録画ページ)
+    if (_isSharePointStreamByUrl()) {
+      return SiteType.SHAREPOINT_TEAMS;
     }
 
     return SiteType.UNKNOWN;

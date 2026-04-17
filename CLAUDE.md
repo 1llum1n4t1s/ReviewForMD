@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Chrome extension (Manifest V3) — PR のタイトル・本文・レビューコメントを Markdown ファイルでダウンロード（またはクリップボードにコピー）。GitHub と Azure DevOps（カスタムドメイン含む）に対応。Vanilla JS、ビルドステップなし。日本語 UI/コメント。
+Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイルでダウンロード:
+- **PR レビュー**: GitHub・Azure DevOps（カスタムドメイン含む）の PR タイトル/本文/レビューコメントを Markdown でダウンロード（またはコピー）
+- **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
+
+Vanilla JS、ビルドステップなし。日本語 UI/コメント。
 
 ## Commands
 
@@ -35,7 +39,7 @@ PR 一覧ページ:
 
 Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that exposes a global (`SiteDetector`, `MarkdownBuilder`, etc.), so order determines dependency availability:
 
-site_detector → markdown_builder → clipboard → github_extractor → devops_extractor → button_injector → content_script
+site_detector → markdown_builder → clipboard → github_extractor → devops_extractor → sharepoint_extractor → button_injector → content_script
 
 ### Module pattern
 
@@ -83,7 +87,18 @@ Two extraction entry points exist:
 
 ### Site detection
 
-`site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc.).
+`site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc.). SharePoint Stream by `*.sharepoint.com` domain + `stream.aspx` path.
+
+### SharePoint Stream extraction strategy
+
+`sharepoint_extractor.js` は Teams 会議録画ページから VTT トランスクリプトを取得する。Drive ID と File ID の取得には2層構造を採用:
+
+1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から `drives/b!XXX` と `items/YYY` を正規表現抽出（同期）
+2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — `<script>` から取れない場合に備え、main world に注入したフックが `window.fetch` を監視し、`/_api/v2.1/drives/` を含む URL から ID をキャプチャして CustomEvent `rfmd:sp-ids` で content script に通知
+
+ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+
+`checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更で別動画に遷移した際、`_capturedDriveId/_capturedFileId` も自動でクリアされる（古い動画の ID で API を叩かないため）。
 
 ### Button injection
 

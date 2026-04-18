@@ -1068,54 +1068,65 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   }
 
   /**
-   * 全データを取得して Markdown を生成する
-   * DOM に未ロードコメントがある場合は API を優先使用する
+   * 全データを取得して Markdown を生成する。
+   *
+   * 設計方針（部分ロード対策 + 重複防止）:
+   *   DevOps PR ページは SPA で、Activity / Discussion タブを訪問していないと
+   *   一部のスレッドだけ DOM にレンダリング済み・残りは未ロードという「部分ロード」状態が起こりうる。
+   *   この状態では DOM だけを信じるとレビューコメントが欠落する（データロス）。
+   *   一方、DOM と API を単純マージすると、タイムスタンプやファイルパスのフォーマット差で
+   *   重複除去が効かず同じスレッドが2回出力されうる（データ破損）。
+   *
+   *   そのため:
+   *   1. API を最優先採用（DevOps Threads API が PR の完全なスレッド一覧を返す）
+   *   2. DOM は「差分コードの補完ソース」としてのみ使う（_enrichWithDomContext）
+   *   3. API 取得失敗時のみ DOM にフォールバック
+   *
    * @returns {Promise<string>}
    */
   async function extractAll() {
     let domTitle = getTitle();
     let body = getBody();
-    let threads = getComments(); // Array<Array<comment>>
-
-    // DOM でコメントが取れなかった場合、または未ロードのコメントがある場合、API を試す
-    const domCommentCount = threads.reduce((sum, t) => sum + t.length, 0);
-    const needApi = domCommentCount === 0 || _hasUnloadedComments();
+    let threads = getComments(); // Array<Array<comment>> (DOM 由来)
 
     let title = '';
     let itemsApiDone = false; // Items API 補完が既に実行済みかどうか
     let apiData = null; // _enrichDomThreadsViaItemsApi に渡すため extractAll スコープで保持
-    if (needApi) {
-      // fetchViaApi 内部で catch しているが、予期しないランタイムエラーに備え外側でも保護
-      try {
-        apiData = await fetchViaApi();
-      } catch (e) {
-        console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', e);
-      }
-      if (apiData) {
-        // API タイトルを優先（DOM より確実）
-        if (apiData.title) title = `${apiData.title} ${getPRNumber()}`;
-        if (!body) body = apiData.body;
-        // API から取得したコメントが DOM より多い場合のみ API を採用
-        const apiCommentCount = apiData.threads.reduce((sum, t) => sum + t.length, 0);
-        if (apiCommentCount > domCommentCount) {
-          // API スレッドには diffLines が空のため、DOM から差分コードを補完
-          _enrichWithDomContext(apiData.threads);
-          // DOM で補完できなかった残りのスレッドを Items API で補完
-          try {
-            await _enrichWithItemsApi(apiData.threads, apiData.rawApiThreads, apiData.urlInfo);
-          } catch (e) {
-            console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
-          }
-          itemsApiDone = true;
-          threads = apiData.threads;
+    let usingApiThreads = false;
+
+    // 常に API を取得する（部分ロードによるデータ欠損を防ぐ）
+    try {
+      apiData = await fetchViaApi();
+    } catch (e) {
+      console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', e);
+    }
+
+    if (apiData) {
+      // API タイトルを優先（DOM より確実）
+      if (apiData.title) title = `${apiData.title} ${getPRNumber()}`;
+      if (!body) body = apiData.body;
+
+      if (apiData.threads.length > 0) {
+        // API スレッドには diffLines が空のため、DOM から差分コードを補完
+        _enrichWithDomContext(apiData.threads);
+        // DOM で補完できなかった残りのスレッドを Items API で補完
+        try {
+          await _enrichWithItemsApi(apiData.threads, apiData.rawApiThreads, apiData.urlInfo);
+        } catch (e) {
+          console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
         }
+        itemsApiDone = true;
+
+        // API を採用（DOM とマージしない: タイムスタンプ/パス正規化差で重複が出るため）
+        threads = apiData.threads;
+        usingApiThreads = true;
       }
     }
 
-    // DOM パスで取得したスレッドに diffLines が欠落しているものがあれば Items API で補完
+    // API が取れず DOM にフォールバックした場合のみ、DOM パスで取得したスレッドに
+    // diffLines が欠落しているものがあれば Items API で補完
     // （diff コンテナが未ロード（スピナー表示中）のケースをカバー）
-    // API パスで既に Items API 補完済みの場合は重複呼び出しを回避
-    if (!itemsApiDone && _hasMissingDiffLines(threads)) {
+    if (!usingApiThreads && !itemsApiDone && _hasMissingDiffLines(threads)) {
       try {
         await _enrichDomThreadsViaItemsApi(threads, apiData);
       } catch (e) {

@@ -12,13 +12,11 @@ var ButtonInjector = ButtonInjector || (() => {
   const VTT_DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} VTTダウンロード`;
 
   /**
-   * ボタンのコピー完了フィードバック（連打防止付き）
+   * ボタンのコピー完了フィードバック表示。
+   * busy フラグは呼び出し側（click handler）で既に '1' に立てられている前提。
+   * setTimeout 後に '0' に戻す責務はこの関数が持つ。
    */
   function _showFeedback(btn, success) {
-    // フィードバック中なら無視
-    if (btn.dataset.rfmdBusy === '1') return;
-    btn.dataset.rfmdBusy = '1';
-
     // 前回のタイマーが残っていればクリアして積み重なりを防止
     if (btn._rfmdTimer) {
       clearTimeout(btn._rfmdTimer);
@@ -68,6 +66,10 @@ var ButtonInjector = ButtonInjector || (() => {
       e.preventDefault();
       e.stopPropagation();
       if (btn.dataset.rfmdBusy === '1') return;
+      // 即座に busy 状態にして並行クリックを防止 (single-flight)
+      // 遅い処理 (DevOps Items API enrichment, SharePoint VTT fetch 等) の途中で
+      // 二度目のクリックが来ても、ここで弾かれる
+      btn.dataset.rfmdBusy = '1';
       try {
         const result = await Promise.resolve(extractFn());
         let ok;
@@ -374,10 +376,23 @@ var ButtonInjector = ButtonInjector || (() => {
   let _spCheckInFlight = false;
 
   function _injectSharePoint() {
-    // 既に注入済みなら再評価不要
-    if (document.querySelector('[data-rfmd="all"][data-rfmd-site="sharepoint"]')) {
-      return;
+    const currentUrl = location.href;
+    const existing = document.querySelector('[data-rfmd="all"][data-rfmd-site="sharepoint"]');
+
+    // 既に注入済みでも、URL が変わっていれば古いボタン（古い動画 ID 想定）は破棄して再注入。
+    // SharePoint Stream は stream.aspx?id=A → ?id=B のような in-page 動画切替が起こるため。
+    if (existing) {
+      const boundUrl = existing.getAttribute('data-rfmd-sp-url');
+      if (boundUrl === currentUrl) {
+        return; // 同じ動画 → 再注入不要
+      }
+      // 動画切替: 古いボタンと captured ID をリセット
+      console.debug('[ReviewForMD][SP] URL changed, rebuilding button');
+      const wrap = existing.closest('.rfmd-sp-container');
+      if (wrap) wrap.remove(); else existing.remove();
+      try { SharePointExtractor.reset(); } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
     }
+
     // 別の checkAvailability() がフライト中ならスキップ（API 多重発射の防止）
     if (_spCheckInFlight) return;
 
@@ -407,6 +422,7 @@ var ButtonInjector = ButtonInjector || (() => {
       wrap.className = 'rfmd-all-copy-container rfmd-sp-container';
       const btn = _createSharePointDownloadButton();
       btn.setAttribute('data-rfmd-site', 'sharepoint');
+      btn.setAttribute('data-rfmd-sp-url', currentUrl); // URL紐付け（動画切替検出用）
       wrap.appendChild(btn);
       insertTarget.appendChild(wrap);
     }).catch((e) => {

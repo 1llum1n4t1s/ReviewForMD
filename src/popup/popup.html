@@ -47,6 +47,35 @@
       background: #fff8c5;
       color: #4d2d00;
     }
+    .status--needs-permission {
+      background: #ffebe9;
+      color: #82071e;
+    }
+    .grant-btn {
+      display: none;
+      width: 100%;
+      margin-top: 12px;
+      padding: 8px 12px;
+      border: 1px solid #cf222e;
+      background: #cf222e;
+      color: #ffffff;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .grant-btn:hover { background: #a40e26; border-color: #a40e26; }
+    .grant-btn:active { background: #8a0c20; }
+    .grant-btn--visible { display: block; }
+    .grant-hint {
+      display: none;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #57606a;
+      line-height: 1.5;
+    }
+    .grant-hint--visible { display: block; }
     .platforms {
       margin-top: 12px;
       font-size: 12px;
@@ -78,11 +107,19 @@
   <div id="status" class="status status--inactive" role="status" aria-live="polite">
     PR ページを開いてください
   </div>
+  <button id="grant-btn" class="grant-btn" type="button">
+    このサイトでの動作を許可する
+  </button>
+  <p id="grant-hint" class="grant-hint">
+    カスタムドメインの Azure DevOps を検出しました。<br>
+    動作させるにはホスト権限を許可してください（一度だけ）。
+  </p>
   <div class="platforms">
     <strong>対応プラットフォーム:</strong>
     <ul>
       <li>GitHub</li>
       <li>Azure DevOps（カスタムドメイン対応）</li>
+      <li>SharePoint Stream（Teams 会議録画 VTT）</li>
     </ul>
   </div>
   <script src="popup.js"></script>

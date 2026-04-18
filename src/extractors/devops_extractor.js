@@ -5,6 +5,9 @@
  * DOM ベースの抽出に加えて REST API をフォールバックとして利用する。
  */
 var DevOpsExtractor = DevOpsExtractor || (() => {
+  // RfmdFetch.withTimeout と FETCH_TIMEOUT_MS は src/lib/fetch_utils.js の
+  // RfmdFetch.withTimeout / RfmdFetch.TIMEOUT_MS に集約済み。
+
   /**
    * PR タイトルを取得する
    * @returns {string}
@@ -344,10 +347,13 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
   /**
    * REST API 経由で PR データを取得する（フォールバック）
-   * @returns {Promise<{title: string, body: string, comments: Array}|null>}
+   * @param {{ baseUrl: string, repo: string, prId: string } | null} [urlInfoOverride]
+   *   extractAll() から URL スナップショットを渡すことで SPA 遷移中の URL 変化による
+   *   urlInfo 不整合（P0#3 URL race）を防ぐ。省略時は内部で _parseDevOpsUrl() を呼ぶ。
+   * @returns {Promise<{title: string, body: string, threads: Array, rawApiThreads: Array, urlInfo: object}|null>}
    */
-  async function fetchViaApi() {
-    const urlInfo = _parseDevOpsUrl();
+  async function fetchViaApi(urlInfoOverride) {
+    const urlInfo = urlInfoOverride || _parseDevOpsUrl();
     if (!urlInfo) return null;
 
     try {
@@ -407,7 +413,11 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
   /**
    * セキュリティ: credentials:'include' を同一オリジンのみに制限し、
-   * 認証情報の意図しない外部送信を防止する
+   * 認証情報の意図しない外部送信を防止する。
+   * DevOps の全 API URL は _parseDevOpsUrl() 由来で常に location.origin と同一なため、
+   * 単引数で location.origin と直接比較する形式を採用。
+   * （github_extractor.js は DOMParser 用に baseUrl 引数あり・
+   *   sharepoint_extractor.js は *.sharepoint.com ホワイトリスト形式の _isSharePointOrigin）
    * @param {string} url
    * @returns {boolean} 同一オリジンなら true
    */
@@ -420,7 +430,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     if (!_isSameOrigin(url)) {
       throw new Error(`クロスオリジンリクエストは許可されていません: ${new URL(url, location.origin).origin}`);
     }
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await RfmdFetch.withTimeout(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // JSON パース失敗時にも呼び出し元の catch で捕捉できるよう await する
     return await res.json();
@@ -434,7 +444,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   async function _fetchText(url) {
     if (!_isSameOrigin(url)) return null;
     try {
-      const res = await fetch(url, { credentials: 'include' });
+      const res = await RfmdFetch.withTimeout(url, { credentials: 'include' });
       if (!res.ok) return null;
       return await res.text();
     } catch {
@@ -498,7 +508,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/FileDiffs?api-version=7.2-preview.1`;
     if (!_isSameOrigin(url)) return null;
     try {
-      const res = await fetch(url, {
+      const res = await RfmdFetch.withTimeout(url, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -613,22 +623,24 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     }
 
     const result = [];
+    // 出力済み db を追跡する Set。以前は `db.baseCount = 0` で入力オブジェクトを
+    // 破壊的に書き換えていたが、副作用が外から見えないのでローカル状態に分離。
+    const outputtedDbs = new Set();
 
     for (let modLine = from; modLine <= to; modLine++) {
       // この行の直前に挿入すべき削除行があるか確認（Map で O(1) ルックアップ）
       const dbs = deletedBlockMap.get(modLine);
       if (dbs) {
         for (const db of dbs) {
-          if (db.baseCount > 0) {
-            for (let i = 0; i < db.baseCount; i++) {
-              const baseLine = db.baseStart + i;
-              result.push({
-                prefix: '-',
-                lineNum: String(baseLine),
-                code: baseLines[baseLine - 1] ?? '',
-              });
-            }
-            db.baseCount = 0; // 出力済みマーク
+          if (outputtedDbs.has(db) || db.baseCount <= 0) continue;
+          outputtedDbs.add(db);
+          for (let i = 0; i < db.baseCount; i++) {
+            const baseLine = db.baseStart + i;
+            result.push({
+              prefix: '-',
+              lineNum: String(baseLine),
+              code: baseLines[baseLine - 1] ?? '',
+            });
           }
         }
       }
@@ -668,16 +680,24 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @param {Array} rawApiThreads - API 生スレッドデータ（threadContext 等を持つ）
    * @param {{ baseUrl: string, repo: string, prId: string }} urlInfo
    */
-  async function _enrichWithItemsApi(apiThreads, rawApiThreads, urlInfo) {
-    // 1. イテレーション一覧を取得
-    let iterationMap;
-    try {
-      iterationMap = await _fetchIterations(urlInfo);
-    } catch {
-      console.warn('[ReviewForMD] イテレーション取得失敗、Items API 補完をスキップ');
+  async function _enrichWithItemsApi(apiThreads, rawApiThreads, urlInfo, preloadedIterationMap) {
+    // 1. イテレーション一覧を取得（事前取得済みがあればそれを使って +1 RTT を節約）
+    let iterationMap = preloadedIterationMap;
+    if (!iterationMap) {
+      try {
+        iterationMap = await _fetchIterations(urlInfo);
+      } catch {
+        console.warn('[ReviewForMD] イテレーション取得失敗、Items API 補完をスキップ');
+        return;
+      }
+    }
+    // iterationMap が空 Map の場合: fetch は成功したが PR にイテレーションが存在しない。
+    // null と区別するため、このケースはスキップではなくデバッグログを出して続行判断する。
+    // （null = fetch 未実施 or 失敗 / Map(0) = fetch 成功・データなし）
+    if (iterationMap.size === 0) {
+      console.debug('[ReviewForMD] イテレーションが 0 件のため Items API 補完をスキップ');
       return;
     }
-    if (iterationMap.size === 0) return;
 
     // 2. フェッチ対象を収集（filePath + sourceCommitId + targetCommitId で重複排除）
     const fetchTasks = new Map(); // "filePath\0sourceCommitId" → { filePath, sourceCommitId, targetCommitId, entries }
@@ -956,26 +976,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   }
 
   /**
-   * DOM 上に未ロードのコメント（スピナー）が残っているかどうか判定する
-   * @returns {boolean}
-   */
-  function _hasUnloadedComments() {
-    // コメントスレッド内のスピナーを確認
-    const threads = document.querySelectorAll('.repos-discussion-thread');
-    for (const thread of threads) {
-      const spinners = thread.querySelectorAll('.bolt-spinner');
-      for (const sp of spinners) {
-        // スピナーがあっても、同じコメント要素内にヘッダーがあればロード済み
-        const comment = sp.closest('.repos-discussion-comment');
-        if (comment && !comment.querySelector('.repos-discussion-comment-header')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
    * DOM スレッドの中に diffLines が欠落しているインラインコメントがあるか判定
    * @param {Array<Array>} threads
    * @returns {boolean}
@@ -1094,9 +1094,25 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     let apiData = null; // _enrichDomThreadsViaItemsApi に渡すため extractAll スコープで保持
     let usingApiThreads = false;
 
-    // 常に API を取得する（部分ロードによるデータ欠損を防ぐ）
+    // URL を一度だけスナップショットする。
+    // fetchViaApi() と _fetchIterations() を並列化した場合、両者が別々に
+    // _parseDevOpsUrl() を呼ぶと SPA ナビゲーションで URL が変わった際に
+    // 異なる PR を指す urlInfo が混在し、Items API の補完データがズレる（P0#3 URL race）。
+    const urlInfo = _parseDevOpsUrl();
+    let iterationMapPre = null;
     try {
-      apiData = await fetchViaApi();
+      const [apiResult, iterResult] = await Promise.allSettled([
+        fetchViaApi(urlInfo),  // スナップショット済み urlInfo を渡す
+        urlInfo ? _fetchIterations(urlInfo) : Promise.resolve(null),
+      ]);
+      if (apiResult.status === 'fulfilled') {
+        apiData = apiResult.value;
+      } else {
+        console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', apiResult.reason);
+      }
+      if (iterResult.status === 'fulfilled' && iterResult.value) {
+        iterationMapPre = iterResult.value;
+      }
     } catch (e) {
       console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', e);
     }
@@ -1111,7 +1127,12 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
         _enrichWithDomContext(apiData.threads);
         // DOM で補完できなかった残りのスレッドを Items API で補完
         try {
-          await _enrichWithItemsApi(apiData.threads, apiData.rawApiThreads, apiData.urlInfo);
+          await _enrichWithItemsApi(
+            apiData.threads,
+            apiData.rawApiThreads,
+            apiData.urlInfo,
+            iterationMapPre
+          );
         } catch (e) {
           console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
         }
@@ -1153,7 +1174,10 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     const urlInfo = _parseDevOpsUrl(prUrl);
     if (!urlInfo) throw new Error('DevOps PR URL を解析できません: ' + prUrl);
 
-    const [prData, threadsData] = await Promise.all([
+    // prData と threads は別々のパーミッション境界を持つ (403/404 が別々に起こる)。
+    // Promise.all だと片方の失敗でもう一方のデータが捨てられ、原因不明のエラーになる。
+    // allSettled で個別判定し、prData 失敗時のみ throw、threads 失敗時は警告で続行。
+    const [prResult, threadsResult] = await Promise.allSettled([
       _fetchJson(
         `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/pullRequests/${urlInfo.prId}?api-version=7.1`
       ),
@@ -1161,6 +1185,20 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
         `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/pullRequests/${urlInfo.prId}/threads?api-version=7.1`
       ),
     ]);
+    if (prResult.status === 'rejected') {
+      const reason = prResult.reason?.message || prResult.reason;
+      throw new Error(`DevOps PR 情報の取得に失敗しました (${reason})`);
+    }
+    const prData = prResult.value;
+    const threadsData = threadsResult.status === 'fulfilled'
+      ? threadsResult.value
+      : { value: [] };
+    let threadsFetchFailed = false;
+    if (threadsResult.status === 'rejected') {
+      const reason = threadsResult.reason?.message || threadsResult.reason;
+      console.warn(`[ReviewForMD] DevOps threads 取得失敗（本文のみで出力します）: ${reason}`);
+      threadsFetchFailed = true;
+    }
 
     const title = prData.title || 'Pull Request';
     const body = prData.description || '';
@@ -1175,9 +1213,13 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
     const prNum = urlInfo.prId;
     const fullTitle = `${title} #${prNum}`;
+    // スレッド取得失敗時は Markdown に警告セクションを付与してユーザーに伝える
+    const warningNote = threadsFetchFailed
+      ? '\n\n> ⚠️ レビューコメントの取得に失敗しました。PR ページを直接開いてダウンロードしてください。'
+      : '';
     const markdown = MarkdownBuilder.buildFullMarkdown({
       title: fullTitle.trim(),
-      body,
+      body: body + warningNote,
       threads: apiThreads,
     });
 

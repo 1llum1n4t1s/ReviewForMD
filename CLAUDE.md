@@ -12,11 +12,22 @@ Vanilla JS、ビルドステップなし。日本語 UI/コメント。
 
 ## Commands
 
-**Package:** `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成
+**Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成。Windows から npm 経由で実行したい場合は `npm run zip:win`。
 
-**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、Chrome Web Store API 経由で自動アップロード＆公開される。必要な GitHub Secrets: `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`。
+**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、Chrome Web Store API 経由で自動アップロード＆公開される。必要な GitHub Secrets: `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`。バージョンバンプは `/vava` スキルで一括実行可。
 
-No npm, no tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
+No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
+
+## Repo layout
+
+- `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`)
+- `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `sharepoint_extractor`)
+- `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
+- `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
+- `src/popup/` — ツールバーアイコンのポップアップ UI
+- `src/content_script.js` / `src/service_worker.js` — エントリポイント
+- `docs/` — Chrome Web Store 審査用のプライバシーポリシーなど
+- `webstore/` — CWS 掲載用のアセット
 
 ## Architecture
 
@@ -39,9 +50,13 @@ PR 一覧ページ:
 
 ### Content script load order matters
 
-Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that exposes a global (`SiteDetector`, `MarkdownBuilder`, etc.), so order determines dependency availability:
+Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that exposes a global (`SiteDetector`, `MarkdownBuilder`, etc.), so order determines dependency availability. manifest は3エントリに分割されており、各エントリは以下の順で共通ライブラリ → サイト固有 extractor → UI の順にロードする:
 
-site_detector → markdown_builder → clipboard → github_extractor → devops_extractor → sharepoint_extractor → button_injector → content_script
+`site_detector` → `markdown_builder` → `clipboard` → `fetch_utils` → **[site-specific extractor]** → `button_injector` → `content_script`
+
+`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `_fetchWithTimeout` / `FETCH_TIMEOUT_MS` の共有モジュール。
+
+**動的注入（カスタムドメイン DevOps 専用）**: `service_worker.js` は `chrome.scripting.executeScript` でカスタムドメインの DevOps ページのみ動的注入する。GitHub・SharePoint は静的注入のみ。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
 
 ### Module pattern
 
@@ -49,7 +64,7 @@ IIFE returning public API object. Private functions prefixed with `_`. No ES mod
 
 ### SPA navigation detection (4 layers)
 
-`content_script.js` listens for navigation via: (1) `chrome.runtime.onMessage` from service worker, (2) custom events from `navigation_hook.js` (injected into main world to hook `history.pushState/replaceState`), (3) `popstate` for browser back/forward, (4) GitHub's `turbo:load` event. All trigger `init()` with 300ms debounce.
+`content_script.js` listens for navigation via: (1) `chrome.runtime.onMessage` from service worker, (2) custom events from `navigation_hook.js` (injected into main world to hook `history.pushState/replaceState`), (3) `popstate` for browser back/forward, (4) GitHub's `turbo:load` event. All four trigger `reinit()` — a 300 ms-debounced wrapper (`NAV_REINIT_DEBOUNCE_MS`) that resets `_retries` before calling `init()`. `init()` self は即時実行で、MutationObserver 側は別の 400 ms (`DEBOUNCE_MS`) で絞る。
 
 ### Service worker (`service_worker.js`)
 
@@ -98,7 +113,7 @@ Two extraction entry points exist:
 1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から `drives/b!XXX` と `items/YYY` を正規表現抽出（同期）
 2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — `<script>` から取れない場合に備え、main world に注入したフックが `window.fetch` を監視し、`/_api/v2.1/drives/` を含む URL から ID をキャプチャして CustomEvent `rfmd:sp-ids` で content script に通知
 
-ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'omit'`（temporaryDownloadUrl は SAS トークン埋め込み型のため cookie 不要）で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
 
 `checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更で別動画に遷移した際、`_capturedDriveId/_capturedFileId` も自動でクリアされる（古い動画の ID で API を叩かないため）。
 

@@ -2,6 +2,29 @@
  * GitHub プルリクエスト データ抽出モジュール
  */
 var GitHubExtractor = GitHubExtractor || (() => {
+  // RfmdFetch.withTimeout と FETCH_TIMEOUT_MS は src/lib/fetch_utils.js の
+  // RfmdFetch.withTimeout / RfmdFetch.TIMEOUT_MS に集約済み。
+
+  /**
+   * DOMParser 由来の URL に対して同一オリジンかどうかを判定する。
+   * turbo-frame[src] や pagination form[action] に外部オリジンが混入した際に、
+   * credentials 付き fetch が cookie を外部送信しないよう必ず事前検証する。
+   * DOMParser は location.href を base として使わないため baseUrl 引数で明示的に渡す形式。
+   * （devops_extractor.js は単引数で location.origin と直接比較・
+   *   sharepoint_extractor.js は *.sharepoint.com ホワイトリスト形式の _isSharePointOrigin）
+   * @param {string} url
+   * @param {string} baseUrl
+   */
+  function _isSameOrigin(url, baseUrl) {
+    try {
+      const target = new URL(url, baseUrl);
+      const base = new URL(baseUrl, location.href);
+      return target.origin === base.origin;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * PR タイトルを取得する
    * @param {Document|Element} [root=document] - 検索対象のルート要素
@@ -300,8 +323,10 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * @returns {Promise<void>}
    */
   async function _loadHiddenConversations() {
-    const MAX_ROUNDS = 20; // 無限ループ防止
-    const WAIT_MS = 1500;  // 各クリック後の待機時間
+    // 1500ms × 20 ラウンドで最大 30 秒 UI フリーズしていたのを短縮。
+    // 典型的な PR では 1-3 ラウンドで収束するため 5 ラウンド + 500ms でも十分。
+    const MAX_ROUNDS = 5;  // 無限ループ防止
+    const WAIT_MS = 500;   // 各クリック後の待機時間（turbo stream の UI 反映は通常 200-500ms）
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       // GitHub の hidden items ボタンを検索
@@ -396,13 +421,16 @@ var GitHubExtractor = GitHubExtractor || (() => {
   async function _fetchAndExtractComments() {
     try {
       const prUrl = location.origin + location.pathname;
-      const res = await fetch(prUrl, { credentials: 'include' });
+      const res = await RfmdFetch.withTimeout(prUrl, { credentials: 'include' });
       if (!res.ok) {
         console.warn(`[ReviewForMD] HTML fetch 失敗: HTTP ${res.status}`);
         return [];
       }
-      const html = await res.text();
+      // 大規模 PR (500 コメント超) では HTML が数 MB になる。await をまたぐと
+      // V8 の逃げ最適化が効かず GC されにくいので、パース後に明示的に参照を切る。
+      let html = await res.text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
+      html = null;
 
       // hidden conversations（turbo-frame）の追加読み込み
       await _fetchHiddenConversations(doc, prUrl);
@@ -421,12 +449,17 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * @returns {Promise<{title: string, markdown: string}>}
    */
   async function extractByPrUrl(prUrl) {
-    const res = await fetch(prUrl, { credentials: 'include' });
+    // 外部から渡される prUrl は念のためオリジン一致を検証してから credentials 付き fetch
+    if (!_isSameOrigin(prUrl, location.href)) {
+      throw new Error('クロスオリジンの PR URL はサポートされていません: ' + prUrl);
+    }
+    const res = await RfmdFetch.withTimeout(prUrl, { credentials: 'include' });
     if (!res.ok) throw new Error(`GitHub PR fetch failed: HTTP ${res.status}`);
-    const html = await res.text();
+    let html = await res.text();
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
+    html = null; // 大きな HTML 文字列の保持を早めに切る
 
     // hidden conversations（turbo-frame）の追加読み込み
     await _fetchHiddenConversations(doc, prUrl);
@@ -458,7 +491,9 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * @param {string} baseUrl - 元の PR URL（相対 URL 解決用）
    */
   async function _fetchHiddenConversations(doc, baseUrl) {
-    const MAX_ROUNDS = 20;
+    // _loadHiddenConversations（ライブ DOM 版）と同じ 5 ラウンドに統一。
+    // 旧来の 20 ラウンドは 1 ラウンドに失敗 URL が混在すると最大 20 RTT になり UX 劣化。
+    const MAX_ROUNDS = 5;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       // turbo-frame の src 属性、または pagination form の action 属性から URL を収集
@@ -487,13 +522,21 @@ var GitHubExtractor = GitHubExtractor || (() => {
         frameSrcs.map(async ({ url, el }) => {
           try {
             const absUrl = new URL(url, baseUrl).href;
-            const resp = await fetch(absUrl, { credentials: 'include' });
-            if (!resp.ok) return null;
-            const fragmentHtml = await resp.text();
-            return { el, fragmentHtml };
+            // セキュリティ: DOMParser 経由で取り込まれた任意 URL を credentials:'include' で
+            // そのまま叩くと cookie 外部送信の経路になる。必ず baseUrl と同一オリジンに限定。
+            if (!_isSameOrigin(absUrl, baseUrl)) {
+              console.warn('[ReviewForMD] クロスオリジン fetch をスキップ:', absUrl);
+              return { el, skip: true };
+            }
+            const resp = await RfmdFetch.withTimeout(absUrl, { credentials: 'include' });
+            if (!resp.ok) return { el, skip: true };
+            let fragmentHtml = await resp.text();
+            const result = { el, fragmentHtml };
+            fragmentHtml = null; // GC 促進: DOMParser.parseFromString() 前に文字列参照を解放
+            return result;
           } catch (e) {
             console.warn(`[ReviewForMD] hidden conversation の取得に失敗: ${url}`, e);
-            return null;
+            return { el, skip: true };
           }
         })
       );
@@ -501,6 +544,12 @@ var GitHubExtractor = GitHubExtractor || (() => {
       // 取得した HTML フラグメントを元の doc に挿入
       for (const r of results) {
         if (!r) continue;
+        // 失敗・スキップした el も doc から取り除いて、次ラウンドでの再収集を防ぐ。
+        // （放置すると 429 Too Many Requests 時に同一 URL が最大 ROUND 数回 fetch される）
+        if (r.skip) {
+          try { r.el.remove(); } catch { /* 既に外れている等 */ }
+          continue;
+        }
         const fragmentDoc = new DOMParser().parseFromString(r.fragmentHtml, 'text/html');
 
         // turbo-frame レスポンスがフル HTML ドキュメントの場合、
@@ -519,6 +568,8 @@ var GitHubExtractor = GitHubExtractor || (() => {
           // フルHTMLドキュメント判定: <head> にコンテンツがあればフルページとみなしスキップ
           if (fragmentDoc.head && fragmentDoc.head.children.length > 0) {
             console.warn('[ReviewForMD] turbo-frame レスポンスがフルHTMLのためスキップ');
+            // スキップ時も el を取り除いて再収集を防ぐ
+            try { r.el.remove(); } catch {}
             continue;
           }
           content = fragmentDoc.body;

@@ -39,22 +39,22 @@
     }
   }
 
-  // content script からのリセット要求を受信
-  // URL 変化時（動画切替）に呼ばれて closure 変数をクリア
-  window.addEventListener('rfmd:sp-reset', () => {
-    driveId = '';
-    fileId = '';
-  });
+  // rfmd:sp-reset リスナーは削除: content script 側で isolated world の変数を直接
+  // クリアするようになったため不要。リスナーを残すと攻撃者が CustomEvent を
+  // 任意タイミングで dispatch して driveId/fileId を消去する DoS 攻撃面になる。
 
   window.fetch = function (...args) {
     try {
       const url = args[0]?.toString() || '';
       // SharePoint v2.1 Drives API のみを対象にする。
-      // 単純に '/items/' を含むだけでは、ライブラリ一覧やドキュメント取得など
-      // 無関係な SharePoint API が誤マッチして fileId を上書きする恐れがある。
+      // 単純に '/media/transcripts' を含むだけでは、Drives API 以外の
+      // 無関係なエンドポイントが誤マッチして fileId を上書きする恐れがある。
+      // isTranscripts は isDrivesApi が true の文脈で /media/transcripts パスを
+      // 持つ URL（例: drives/.../items/.../media/transcripts）を特定するためのもの。
+      // 現在は isDrivesApi だけで ID を抽出できるため、追加条件は不要だが
+      // 将来の拡張性のためコメントとして残す。
       const isDrivesApi = url.includes('/_api/v2.1/drives/');
-      const isTranscripts = url.includes('/media/transcripts');
-      if (isDrivesApi || isTranscripts) {
+      if (isDrivesApi) {
         const m = url.match(/drives\/([^/]+)/);
         const p = url.match(/items\/([^/?]+)/);
         let updated = false;

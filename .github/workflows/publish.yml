@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: リポジトリをチェックアウト
-        uses: actions/checkout@v5
+        # SHA ピン留め: タグは mutable なため（タグ書き換え型の供給チェーン攻撃対策）。
+        # SHA 取得手順: `gh api repos/actions/checkout/git/ref/tags/v5`
+        # バージョン更新時は SHA を取り直して追記コメントも合わせる。
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: バージョンを取得
         id: version
@@ -48,7 +51,9 @@ jobs:
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: |
-          npx --yes chrome-webstore-upload-cli@3 upload \
+          # パッチ固定: npm maintainer アカウント侵害でも CWS 秘密情報を守るため、
+          # メジャータグ (`@3`) ではなくパッチ固定する。最新版への追随は手動 PR で。
+          npx --yes chrome-webstore-upload-cli@3.5.0 upload \
             --source ReviewForMD.zip \
             --extension-id "$CWS_EXTENSION_ID" \
             --client-id "$CWS_CLIENT_ID" \

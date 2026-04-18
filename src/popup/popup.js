@@ -46,6 +46,11 @@ async function hasOriginPermission(url) {
  * permission 取得後に呼ぶこと。
  * ユーザーの認証クッキー込みでページを評価できるため private テナントでも正確。
  *
+ * ⚠️ 同期必須: src/service_worker.js の verifyAzureDevOpsInTab と意図的な**コピー**。
+ *    MV3 は Service Worker と popup 間でモジュール共有できないため並存している。
+ *    判定ロジックを変更した際は必ず両方に反映すること（片方だけだとセキュリティ検証が分裂する）。
+ *    変更の起点: service_worker.js が正。このファイルはその転記版。
+ *
  * @param {number} tabId
  * @returns {Promise<boolean>}
  */
@@ -70,9 +75,9 @@ async function verifyAzureDevOpsInTab(tabId) {
           const src = s.getAttribute('src') || '';
           if (/VSS\.SDK|ms\.vss-tfs-web|_static\/tfs/.test(src)) return true;
         }
-        // HTML 中に埋め込まれた DevOps シグナル
-        const html = document.documentElement?.outerHTML || '';
-        return /VSS\.SDK|TfsContext|ms\.vss-tfs-web/.test(html);
+        // outerHTML による全体シリアライズフォールバックは削除
+        // （大 DOM で 1-5MB のシリアライズ + IPC が発生するため）
+        return false;
       },
     });
     return results?.[0]?.result === true;
@@ -142,7 +147,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         // 権限あり + 検証 OK → 注入
         _setInactive('コンテンツスクリプトを注入中...');
-        const ok = await injectContentScriptsInTab(tab.id);
+        const ok = await injectContentScriptsInTab(tab.id, url);
         if (ok) {
           _setActive('Azure DevOps PR ページを検出しました（カスタムドメイン）');
         } else {
@@ -222,40 +227,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * active tab にコンテンツスクリプト一式を popup から直接注入する。
- * service_worker 経由だと sender.tab が無くメッセージが届かない問題を回避。
+ * active tab にコンテンツスクリプト一式を注入する。
+ *
+ * 以前は popup が chrome.scripting.executeScript を直接呼び、ファイルリストを
+ * manifest.json / service_worker.js と 3 箇所で二重管理していた。
+ * いまは service_worker の `rfmd:request-injection` ハンドラに委譲して
+ * ファイルリストの権威を service_worker.js 一箇所に集約している。
+ *
  * @param {number} tabId
+ * @param {string} url - 注入先 URL（SW 側で host_permissions 検証に使用）
  * @returns {Promise<boolean>} 成否
  */
-async function injectContentScriptsInTab(tabId) {
+async function injectContentScriptsInTab(tabId, url) {
   try {
-    // 既に注入済みか確認
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => typeof SiteDetector !== 'undefined',
+    const res = await chrome.runtime.sendMessage({
+      type: 'rfmd:request-injection',
+      tabId,
+      url,
     });
-    if (results?.[0]?.result === true) return true;
-
-    await chrome.scripting.insertCSS({
-      target: { tabId },
-      files: ['src/ui/styles.css'],
-    });
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [
-        'src/lib/site_detector.js',
-        'src/lib/markdown_builder.js',
-        'src/lib/clipboard.js',
-        'src/extractors/github_extractor.js',
-        'src/extractors/devops_extractor.js',
-        'src/extractors/sharepoint_extractor.js',
-        'src/ui/button_injector.js',
-        'src/content_script.js',
-      ],
-    });
-    return true;
+    return !!(res && res.ok);
   } catch (e) {
-    console.error('[ReviewForMD] Popup injection failed:', e?.message || e);
+    console.error('[ReviewForMD] Popup injection request failed:', e?.message || e);
     return false;
   }
 }

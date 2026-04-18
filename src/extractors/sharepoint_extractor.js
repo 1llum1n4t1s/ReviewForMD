@@ -25,6 +25,14 @@ var SharePointExtractor = SharePointExtractor || (() => {
   let _availabilityCache = null;
   let _availabilityCacheUrl = '';
 
+  // RfmdFetch.withTimeout と FETCH_TIMEOUT_MS は src/lib/fetch_utils.js の
+  // RfmdFetch.withTimeout / RfmdFetch.TIMEOUT_MS に集約済み。
+
+  /** SharePoint Graph 形式の Drive ID フォーマット（b! で始まる url-safe base64-ish） */
+  const DRIVE_ID_RE = /^b![a-zA-Z0-9_-]+$/;
+  /** SharePoint の File ID フォーマット（大文字英数 20 文字以上） */
+  const FILE_ID_RE = /^[A-Za-z0-9]{20,}$/;
+
   /* ── ID 抽出 ────────────────────────────────── */
 
   /**
@@ -39,13 +47,20 @@ var SharePointExtractor = SharePointExtractor || (() => {
     const scripts = document.querySelectorAll('script');
     for (const script of scripts) {
       const text = script.textContent || '';
-      if (!driveId) {
-        const m = text.match(/drives\/b!([a-zA-Z0-9_-]+)/);
-        if (m) driveId = 'b!' + m[1];
+      // まず /_api/v2.1/drives/.../items/... の完全一致を試す（最も信頼度が高い）
+      // 単純な /items/ マッチはライブラリ一覧等の無関係 ID を拾う恐れがあるため、
+      // 必ず SharePoint v2.1 Drives API の文脈に限定する。
+      if (!driveId || !fileId) {
+        const combined = text.match(/\/_api\/v2\.1\/drives\/(b![a-zA-Z0-9_-]+)\/items\/([A-Za-z0-9]{20,})/);
+        if (combined) {
+          if (!driveId) driveId = combined[1];
+          if (!fileId) fileId = combined[2];
+        }
       }
-      if (!fileId) {
-        const m = text.match(/items\/([A-Z0-9]{20,})/);
-        if (m) fileId = m[1];
+      // drive 単独は b! プレフィックスで誤マッチリスクが低いためフォールバック
+      if (!driveId) {
+        const m = text.match(/drives\/(b![a-zA-Z0-9_-]+)/);
+        if (m) driveId = m[1];
       }
       if (driveId && fileId) break;
     }
@@ -72,8 +87,15 @@ var SharePointExtractor = SharePointExtractor || (() => {
 
     window.addEventListener('rfmd:sp-ids', (e) => {
       const detail = /** @type {CustomEvent} */(e).detail || {};
-      if (detail.driveId && !_capturedDriveId) _capturedDriveId = detail.driveId;
-      if (detail.fileId && !_capturedFileId) _capturedFileId = detail.fileId;
+      // main world は untrusted (SharePoint ページ上の任意スクリプトや他拡張が
+      // CustomEvent を spoof できる) ため、Graph ID のフォーマットで検証してから受理する。
+      // 「初回のみ代入」ガードは外す: 動画切替 (stream.aspx?id=A→B) でも最新値に追随する必要がある。
+      if (typeof detail.driveId === 'string' && DRIVE_ID_RE.test(detail.driveId)) {
+        _capturedDriveId = detail.driveId;
+      }
+      if (typeof detail.fileId === 'string' && FILE_ID_RE.test(detail.fileId)) {
+        _capturedFileId = detail.fileId;
+      }
     });
   }
 
@@ -98,13 +120,33 @@ var SharePointExtractor = SharePointExtractor || (() => {
   }
 
   /**
+   * SharePoint 系オリジンかどうかを判定する。
+   * `temporaryDownloadUrl` は SharePoint CDN の別サブドメイン（*-my.sharepoint.com 等）
+   * に向くことがあるので、同一オリジンに限定すると VTT 取得が失敗する。
+   * そのため「*.sharepoint.com + HTTPS」をホワイトリストとして許容する。
+   * @param {string} url
+   */
+  function _isSharePointOrigin(url) {
+    try {
+      const u = new URL(url, location.href);
+      return u.protocol === 'https:' && u.hostname.endsWith('.sharepoint.com');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 指定 Drive/File のトランスクリプトメタデータを取得する
    * @returns {Promise<Array<{ temporaryDownloadUrl: string }>>}
    */
   async function _fetchTranscripts(driveId, fileId) {
     const url = `${_origin()}/_api/v2.1/drives/${driveId}/items/${fileId}` +
       `?select=media/transcripts&$expand=media/transcripts`;
-    const res = await fetch(url, {
+    // _origin() はページホストなので同一オリジン確定。念のためホワイトリストを経由。
+    if (!_isSharePointOrigin(url)) {
+      throw new Error('SharePoint 以外のオリジンへのリクエストは許可されていません');
+    }
+    const res = await RfmdFetch.withTimeout(url, {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     });
@@ -222,10 +264,17 @@ var SharePointExtractor = SharePointExtractor || (() => {
       throw new Error('トランスクリプトが見つかりません');
     }
     const streamUrl = _normalizeStreamUrl(transcripts[0].temporaryDownloadUrl);
-    const res = await fetch(streamUrl, {
-      credentials: 'include',
+    // サーバー応答 (temporaryDownloadUrl) をそのまま credentials 付きで叩くと、
+    // サーバー側で URL を差し替えられたときに cookie が外部オリジンへ流出しうる。
+    // 必ず *.sharepoint.com ドメインに限定してから fetch する。
+    if (!_isSharePointOrigin(streamUrl)) {
+      throw new Error('VTT ダウンロード URL が SharePoint オリジンではありません');
+    }
+    const res = await RfmdFetch.withTimeout(streamUrl, {
+      // temporaryDownloadUrl は SAS トークン埋め込み型 URL のため cookie 不要。
+      // 'include' にすると *.sharepoint.com サブドメイン全体に cookie が送信されうる。
+      credentials: 'omit',
       cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache' },
     });
     if (!res.ok) {
       throw new Error(`VTT download failed: ${res.status}`);

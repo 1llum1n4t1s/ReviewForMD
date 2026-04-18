@@ -92,7 +92,15 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
           ? (codeEl.className || '').match(/(?:language-|highlight-source-)(\S+)/)
           : null;
         const lang = langClass ? langClass[1] : '';
-        return `\n\`\`\`${lang}\n${raw.trimEnd()}\n\`\`\`\n`;
+        // コード内に ``` が含まれる場合、固定の ``` ではフェンスが途中で閉じる。
+        // 入力中の最長バックティック連鎖より 1 文字長いフェンスを使う（diff ブロックと同方式）。
+        let maxTicks = 0;
+        const tickMatches = raw.match(/`+/g);
+        if (tickMatches) {
+          for (const m of tickMatches) if (m.length > maxTicks) maxTicks = m.length;
+        }
+        const fence = '`'.repeat(Math.max(3, maxTicks + 1));
+        return `\n${fence}${lang}\n${raw.trimEnd()}\n${fence}\n`;
       }
 
       // ── リンク ──
@@ -195,11 +203,14 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
    * @param {boolean} [insidePre=false] - pre 内フラグ
    */
   function _convertChildren(el, depth = 0, insidePre = false) {
-    let result = '';
+    // ループ内 `+=` はループごとに文字列アロケートが起きる。
+    // 巨大な diff やコメント (数百ノード) でピークメモリを押し上げるため、
+    // 配列 push + 最終 join(0) に統一して O(N + S) 1 回アロケートに揃える。
+    const parts = [];
     for (const child of el.childNodes) {
-      result += _convertNode(child, depth + 1, insidePre);
+      parts.push(_convertNode(child, depth + 1, insidePre));
     }
-    return result;
+    return parts.join('');
   }
 
   /**
@@ -299,8 +310,10 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
 
     if (rows.length === 0) return '';
 
-    // 全行で最大のセル数を算出し、不足分を空セルでパディング
-    const maxCols = Math.max(...rows.map(r => r.length));
+    // 全行で最大のセル数を算出し、不足分を空セルでパディング。
+    // Math.max(...array) はスプレッド展開でスタックに積むため、行数が膨大（数万行）だと
+    // Maximum call stack size exceeded になる。reduce で O(N) 比較に置き換える。
+    const maxCols = rows.reduce((m, r) => r.length > m ? r.length : m, 0);
     for (const row of rows) {
       while (row.length < maxCols) {
         row.push('');
@@ -402,21 +415,28 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
   }
 
   /**
-   * Markdown リンクテキスト内の ] をエスケープしてインジェクションを防止する
+   * Markdown リンクテキスト内の [ と ] をエスケープしてインジェクションを防止する。
+   * ] だけでなく [ もエスケープするのは、一部パーサで `[foo [bar](x)](y)` のような
+   * ネスト記法が通ってしまい、リンク構造が外側に漏れるのを防ぐため。
    * @param {string} text
    * @returns {string}
    */
   function _sanitizeLinkText(text) {
-    return text.replace(/\]/g, '\\]');
+    return text.replace(/[[\]]/g, '\\$&');
   }
 
   /**
-   * Markdown リンク URL 内の ) をエンコードしてインジェクションを防止する
+   * Markdown リンク URL 内の特殊文字をエンコードしてインジェクションを防止する。
+   * 既に %XX エンコード済みの文字列を再エンコードしないよう、生の特殊文字のみ対象にする。
    * @param {string} url
    * @returns {string}
    */
   function _sanitizeLinkUrl(url) {
-    return url.replace(/\)/g, '%29');
+    return url
+      .replace(/\)/g, '%29')       // ) → Markdown リンク閉じ括弧インジェクション防止
+      .replace(/[ \t]/g, '%20')    // 空白 → URL に生の空白が入るとパーサが誤認識
+      .replace(/"/g, '%22')        // " → HTML 属性値境界での XSS 防止
+      .replace(/'/g, '%27');       // ' → 同上
   }
 
   /** ブロックレベル要素の Set（毎回配列を生成する代わりに事前定義で O(1) 判定） */
@@ -590,11 +610,22 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
         lines.push('');
       }
       if (dc.diffLines && dc.diffLines.length > 0) {
-        lines.push('```diff');
+        // コード内にバックティック連続 (``` 以上) が含まれる場合、固定の ```diff では
+        // フェンスが途中で閉じてしまい後続の Markdown 構造が壊れる。
+        // 入力中の最長バックティック連鎖より 1 文字長い fence を動的に使う。
+        let maxTicks = 0;
+        for (const dl of dc.diffLines) {
+          const matches = (dl.code || '').match(/`+/g);
+          if (matches) {
+            for (const m of matches) if (m.length > maxTicks) maxTicks = m.length;
+          }
+        }
+        const fence = '`'.repeat(Math.max(3, maxTicks + 1));
+        lines.push(`${fence}diff`);
         dc.diffLines.forEach((dl) => {
           lines.push(`${dl.prefix}${dl.code}`);
         });
-        lines.push('```');
+        lines.push(fence);
         lines.push('');
       }
     }

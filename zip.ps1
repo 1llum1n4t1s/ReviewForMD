@@ -27,8 +27,10 @@ Copy-Item "manifest.json" -Destination $tempDir
 Copy-Item "src" -Destination $tempDir -Recurse
 Copy-Item "icons" -Destination $tempDir -Recurse
 
-# 不要なファイルを除外
+# 不要なファイル・機密ファイルを除外
 Get-ChildItem -Path $tempDir -Recurse -Include "*.DS_Store", "*.swp", "*~" | Remove-Item -Force
+Get-ChildItem -Path $tempDir -Recurse -Include ".env*", "*.env" | Remove-Item -Force
+Get-ChildItem -Path $tempDir -Recurse -Filter ".*" | Remove-Item -Force -ErrorAction SilentlyContinue
 
 # ZIPファイルを作成
 Write-Host "ZIPファイルを作成中..." -ForegroundColor Cyan

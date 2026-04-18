@@ -72,6 +72,13 @@ async function hasOriginPermission(url) {
  * 過去に許可済みのオリジン（一度 DevOps として許可された後、同オリジン上で
  * 偽装 PR URL を持つ非 DevOps ページが作られたケース）への注入を防ぐため、
  * カスタムドメインの自動注入前にも検証する。
+ *
+ * ⚠️ 同期必須: popup/popup.js の verifyAzureDevOpsInTab と意図的な**コピー**である。
+ *    Service Worker と popup はモジュール共有できない MV3 の制約のため、
+ *    どちらかのシグナル判定を変更した際はもう一方にも必ず反映すること。
+ *    シグナルが分裂するとセキュリティ検証が一方で緩くなる。
+ *    変更の起点: **このファイル (service_worker.js) を正として変更し、popup.js に転記する**。
+ *
  * @param {number} tabId
  * @returns {Promise<boolean>}
  */
@@ -80,19 +87,24 @@ async function verifyAzureDevOpsInTab(tabId) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
+        // VSS グローバルで確実に判定できる最速パス
         try {
           if (typeof VSS !== 'undefined' || typeof TfsContext !== 'undefined') return true;
         } catch {}
+        // DOM シグナル: Azure DevOps 固有の Formula DS クラス
         if (document.querySelector('.repos-pr-details-page')) return true;
         if (document.querySelector('[class*="bolt-header"]')) return true;
         if (document.querySelector('[class*="repos-pr-"]')) return true;
+        // script src の URL パターン
         const scripts = document.querySelectorAll('script[src]');
         for (const s of scripts) {
           const src = s.getAttribute('src') || '';
           if (/VSS\.SDK|ms\.vss-tfs-web|_static\/tfs/.test(src)) return true;
         }
-        const html = document.documentElement?.outerHTML || '';
-        return /VSS\.SDK|TfsContext|ms\.vss-tfs-web/.test(html);
+        // `outerHTML` を全体シリアライズするフォールバックは削除:
+        // - 大規模ページで 1-5MB の文字列シリアライズ + IPC が発生する
+        // - 上記の script src ループで同等のシグナルが検出可能
+        return false;
       },
     });
     return results?.[0]?.result === true;
@@ -178,16 +190,17 @@ async function injectContentScripts(tabId, url) {
       files: ['src/ui/styles.css'],
     });
 
-    // JS 注入（順序維持）
+    // JS 注入（順序維持）。
+    // 動的注入は「カスタムドメインの Azure DevOps」専用経路（verifyAzureDevOpsInTab で検証済み）。
+    // そのため GitHub/SharePoint 用 extractor は含めない（～55KB の無駄 parse 削減）。
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [
         'src/lib/site_detector.js',
         'src/lib/markdown_builder.js',
         'src/lib/clipboard.js',
-        'src/extractors/github_extractor.js',
+        'src/lib/fetch_utils.js',
         'src/extractors/devops_extractor.js',
-        'src/extractors/sharepoint_extractor.js',
         'src/ui/button_injector.js',
         'src/content_script.js',
       ],
@@ -202,6 +215,28 @@ async function injectContentScripts(tabId, url) {
 }
 
 // ── webNavigation によるSPA遷移検出 ──
+
+/**
+ * onHistoryStateUpdated と onCompleted の重複発火ガード。
+ * 同一タブ・同一 URL に対して短時間内に複数回 inject が走るのを抑止する。
+ * MV3 SW は短命 (idle 30s) のため完全な永続化はできないが、1 ナビゲーションの範囲では有効。
+ */
+const _recentInjection = new Map(); // tabId → { url, ts }
+const INJECT_DEBOUNCE_MS = 500;
+function _shouldInject(tabId, url) {
+  const rec = _recentInjection.get(tabId);
+  const now = Date.now();
+  if (rec && rec.url === url && now - rec.ts < INJECT_DEBOUNCE_MS) return false;
+  _recentInjection.set(tabId, { url, ts: now });
+  // タブ閉鎖時のリークを抑えるため、古いエントリは定期的に掃除
+  if (_recentInjection.size > 50) {
+    const cutoff = now - INJECT_DEBOUNCE_MS * 10;
+    for (const [k, v] of _recentInjection) {
+      if (v.ts < cutoff) _recentInjection.delete(k);
+    }
+  }
+  return true;
+}
 
 /** URL フィルタ: 対象ページに該当するパスパターンのみ Service Worker を起動 */
 const NAV_URL_FILTERS = {
@@ -228,6 +263,8 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     }
   } else {
     // カスタムドメイン → 動的注入
+    // onCompleted と同じ debounce ガードを適用（SPA ナビで両イベントが連続発火するケース対策）
+    if (!_shouldInject(details.tabId, details.url)) return;
     await injectContentScripts(details.tabId, details.url);
   }
 }, NAV_URL_FILTERS);
@@ -236,17 +273,31 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
 chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   if (!isTargetPageUrl(details.url)) return;
-  if (!isKnownDomain(details.url)) {
-    injectContentScripts(details.tabId, details.url);
-  }
+  if (isKnownDomain(details.url)) return;
+  // onHistoryStateUpdated と連続発火するときの二重注入を短時間 debounce で抑止。
+  // injectContentScripts 内にも既に「注入済みか」チェックはあるが、
+  // そこへの executeScript 自体が 1 RTT かかるので入口でスキップする方が軽い。
+  if (!_shouldInject(details.tabId, details.url)) return;
+  injectContentScripts(details.tabId, details.url);
 }, NAV_URL_FILTERS);
 
 // popup / content script から「権限取得後に注入してね」リクエストを受信。
-// セキュリティ: sender.tab がある場合は信頼できる送信元として優先使用。
-// 悪意ある content script が他タブの tabId を指定して注入を試みる攻撃を防ぐ。
-// popup からのメッセージには sender.tab が無いので、その場合のみ msg.tabId を採用。
+// セキュリティ:
+// 1. sender.id が拡張自身と一致することを検証 (外部拡張からの spoofing を遮断)
+// 2. sender.tab がある場合は信頼できる送信元として優先使用。
+//    悪意ある content script が他タブの tabId を指定して注入を試みる攻撃を防ぐ。
+//    popup からのメッセージには sender.tab が無いので、その場合のみ msg.tabId を採用。
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'rfmd:request-injection') {
+    // 外部拡張からの spoof リクエストを弾く。sender.id は拡張のメッセージング送信元 ID で、
+    // 自拡張内の content script / popup なら chrome.runtime.id と一致する。
+    // sender.id が空文字や undefined のケース（偽値）でも必ず弾く。
+    // `sender.id && sender.id !== id` だと sender.id が空文字のとき && が false を返し
+    // チェックをスキップするため、allowlist 的に "一致しない全て" を拒否する形式にする。
+    if (sender.id !== chrome.runtime.id) {
+      sendResponse({ ok: false, error: 'forbidden' });
+      return;
+    }
     const tabId = sender.tab?.id ?? msg.tabId;
     if (!tabId) {
       sendResponse({ ok: false, error: 'no tabId' });

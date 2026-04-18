@@ -27,7 +27,8 @@ zip -r ./ReviewForMD.zip \
   manifest.json \
   src/ \
   icons/ \
-  -x "*.DS_Store" "*.swp" "*~"
+  -x "*.DS_Store" "*.swp" "*~" \
+     "src/**/.env*" "src/**/.*" "src/**/*.env"
 
 if [ $? -eq 0 ]; then
   echo "ZIPファイルを作成しました: ReviewForMD.zip"

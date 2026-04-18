@@ -11,6 +11,9 @@ var ButtonInjector = ButtonInjector || (() => {
   const SINGLE_COPY_LABEL = `${COPY_ICON_SVG} MDコピー`;
   const VTT_DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} VTTダウンロード`;
 
+  /** フィードバックアニメーション表示時間 (ms)。コピー完了/失敗の視覚フィードバックが消えるまでの秒数。 */
+  const FEEDBACK_DURATION_MS = 1500;
+
   /**
    * ボタンのコピー完了フィードバック表示。
    * busy フラグは呼び出し側（click handler）で既に '1' に立てられている前提。
@@ -34,11 +37,17 @@ var ButtonInjector = ButtonInjector || (() => {
     btn.innerHTML = label;
 
     btn._rfmdTimer = setTimeout(() => {
+      // ページ遷移等でボタンが DOM から切り離されていたら DOM 操作をスキップ
+      // （タイマーから参照される btn のメモリ保持が最後にこの時点で切れる）
+      if (!btn.isConnected) {
+        btn._rfmdTimer = null;
+        return;
+      }
       btn.classList.remove(cls);
       btn.innerHTML = originalHtml;
       btn.dataset.rfmdBusy = '0';
       btn._rfmdTimer = null;
-    }, 1500);
+    }, FEEDBACK_DURATION_MS);
   }
 
   /**
@@ -76,9 +85,12 @@ var ButtonInjector = ButtonInjector || (() => {
         if (action === 'download') {
           // 既存の {title, markdown} 形式に加え、{text, filename, mimeType} 形式もサポート
           if (result && result.text !== undefined && result.filename) {
+            // VTT 経路でも必ず _sanitizeFilename を通す。
+            // Content-Disposition 由来の filename は SharePoint サーバーから
+            // 任意文字列で降ってくる可能性があり、制御文字・RTL・予約名が素通りする。
             ok = RfmdClipboard.download(
               result.text,
-              result.filename,
+              _sanitizeDownloadFilename(result.filename, '.vtt'),
               result.mimeType || 'text/markdown;charset=utf-8'
             );
           } else {
@@ -98,18 +110,73 @@ var ButtonInjector = ButtonInjector || (() => {
     return btn;
   }
 
-  /** サイトタイプに対応する Extractor を返す */
-  const _EXTRACTORS = {
-    [SiteDetector.SiteType.GITHUB]: GitHubExtractor,
-    [SiteDetector.SiteType.AZURE_DEVOPS]: DevOpsExtractor,
-    [SiteDetector.SiteType.SHAREPOINT_TEAMS]: SharePointExtractor,
-  };
+  /**
+   * サイトタイプに対応する Extractor を返す。
+   * manifest.json の content_scripts をサイト別に 3 分割したため、
+   * 現在のページで未ロードの extractor は `typeof ... === 'undefined'` になる。
+   * ReferenceError を避けるため typeof ガードで安全化する。
+   */
+  function _getExtractor(siteType) {
+    if (siteType === SiteDetector.SiteType.GITHUB) {
+      return typeof GitHubExtractor !== 'undefined' ? GitHubExtractor : null;
+    }
+    if (siteType === SiteDetector.SiteType.AZURE_DEVOPS) {
+      return typeof DevOpsExtractor !== 'undefined' ? DevOpsExtractor : null;
+    }
+    if (siteType === SiteDetector.SiteType.SHAREPOINT_TEAMS) {
+      return typeof SharePointExtractor !== 'undefined' ? SharePointExtractor : null;
+    }
+    return null;
+  }
 
   /**
-   * ファイル名として使えない文字を除去する
+   * ファイル名として使えない文字を除去する。
+   *
+   * 次のものを全て無害化する:
+   *   - 制御文字 (\x00-\x1f, \x7f) — NULL バイトでファイル名切り詰め攻撃
+   *   - RTL/LTR 制御文字 (U+202A〜U+202E, U+2066〜U+2069) — `.exe` 拡張子偽装
+   *   - 禁止文字 (\/:*?"<>|) — Windows/POSIX で使えない
+   *   - 先頭/末尾のドット — `.`/`..`/`foo.` で OS が解釈を壊す
+   *   - Windows 予約名 (CON/PRN/AUX/NUL/COM1-9/LPT1-9) — OS レベルでエラー
+   *   - 200 文字超の長大文字列 — FS 上限対策（拡張子を足した後でも収まる余裕）
    */
   function _sanitizeFilename(name) {
-    return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'pullrequest';
+    if (typeof name !== 'string') return 'pullrequest';
+    // NFKC 正規化: 全角スラッシュ U+FF0F → '/'、NFKC 互換分解で視覚的な偽装文字を無害化
+    let s = name.normalize('NFKC');
+    s = s
+      .replace(/[\x00-\x1f\x7f]/g, '')                // 制御文字 / NULL バイト
+      .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '') // RTL/LTR override
+      .replace(/[\ufeff\u00a0]/g, '')                  // BOM / NBSP（NFKC 後も残りうる）
+      .replace(/[\\/:*?"<>|]/g, '_')                  // FS 禁止文字（全角スラッシュは NFKC で '/' に変換済み）
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\.+|\.+$/g, '')                      // 先頭/末尾のドット
+      .trim();
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i.test(s)) {
+      s = '_' + s;
+    }
+    if (s.length > 200) s = s.slice(0, 200).trim();
+    return s || 'pullrequest';
+  }
+
+  /**
+   * 外部サーバー由来のファイル名を安全化する（拡張子を分離して sanitize）。
+   * VTT 経路で Content-Disposition ヘッダー由来の任意文字列を扱うために使う。
+   * @param {string} raw - サーバー由来の filename
+   * @param {string} fallbackExt - raw が拡張子を持たないときに付与する拡張子（".vtt" 等）
+   */
+  function _sanitizeDownloadFilename(raw, fallbackExt = '') {
+    const s = typeof raw === 'string' ? raw : '';
+    // バックスラッシュもパスセパレータとして扱う（Windows 由来の細工対策）
+    const noPath = s.replace(/\\/g, '/').split('/').pop() || '';
+    const dotIdx = noPath.lastIndexOf('.');
+    const base = dotIdx > 0 ? noPath.slice(0, dotIdx) : noPath;
+    let ext = dotIdx > 0 ? noPath.slice(dotIdx) : '';
+    // 拡張子にも制御文字・禁止文字が紛れていることがあるので sanitize
+    ext = ext.replace(/[\x00-\x1f\x7f\\/:*?"<>|\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '');
+    if (!/^\.[A-Za-z0-9._-]{1,12}$/.test(ext)) ext = fallbackExt || '';
+    return _sanitizeFilename(base) + ext;
   }
 
   function _createAllDownloadButton(siteType) {
@@ -120,7 +187,8 @@ var ButtonInjector = ButtonInjector || (() => {
       label: DOWNLOAD_LABEL,
       title: 'PR タイトル・本文・全レビューコメントを Markdown ファイルでダウンロード',
       extractFn: async () => {
-        const extractor = _EXTRACTORS[siteType];
+        const extractor = _getExtractor(siteType);
+        if (!extractor) throw new Error(`Extractor が未ロード: ${siteType}`);
         // タイトルは extractAll() の前に取得する
         // （API フォールバック中に DOM 状態が変わる可能性があるため）
         const title = extractor.getTitle();
@@ -137,7 +205,9 @@ var ButtonInjector = ButtonInjector || (() => {
       label: SINGLE_COPY_LABEL,
       title: 'このコメントを Markdown 形式でコピー',
       extractFn: () => {
-        const comment = _EXTRACTORS[siteType].extractSingleComment(commentContainer);
+        const extractor = _getExtractor(siteType);
+        if (!extractor) throw new Error(`Extractor が未ロード: ${siteType}`);
+        const comment = extractor.extractSingleComment(commentContainer);
         return MarkdownBuilder.formatSingleComment(comment);
       },
     });
@@ -156,7 +226,9 @@ var ButtonInjector = ButtonInjector || (() => {
       label: VTT_DOWNLOAD_LABEL,
       title: '会議トランスクリプトを VTT ファイルでダウンロード',
       extractFn: async () => {
-        const { text, filename } = await SharePointExtractor.downloadTranscript();
+        const extractor = _getExtractor(SiteDetector.SiteType.SHAREPOINT_TEAMS);
+        if (!extractor) throw new Error('SharePointExtractor が未ロード');
+        const { text, filename } = await extractor.downloadTranscript();
         return { text, filename, mimeType: 'text/vtt;charset=utf-8' };
       },
     });
@@ -169,7 +241,9 @@ var ButtonInjector = ButtonInjector || (() => {
       label: SINGLE_COPY_LABEL,
       title: 'このスレッド（返信含む）を Markdown 形式でコピー',
       extractFn: () => {
-        const comments = DevOpsExtractor.extractThreadComments(threadContainer);
+        const extractor = _getExtractor(SiteDetector.SiteType.AZURE_DEVOPS);
+        if (!extractor) throw new Error('DevOpsExtractor が未ロード');
+        const comments = extractor.extractThreadComments(threadContainer);
         return MarkdownBuilder.formatThreadComments(comments);
       },
     });
@@ -180,12 +254,16 @@ var ButtonInjector = ButtonInjector || (() => {
   /**
    * PR 本文コメントかどうかを判定する。
    * ロジックの重複・乖離を防ぐため GitHubExtractor.isPRBodyComment に委譲する。
+   * GitHub 専用 content_scripts でのみ GitHubExtractor がロードされるが、
+   * 念のため typeof ガードで ReferenceError を避ける。
    */
   function _isPRBodyContainer(container) {
+    if (typeof GitHubExtractor === 'undefined') return false;
     return GitHubExtractor.isPRBodyComment(container);
   }
 
   function _injectGitHub() {
+    if (typeof GitHubExtractor === 'undefined') return;
     // 「全てMDコピー」ボタンをヘッダーに注入
     // 新 UI: Primer React Components (prc-PageHeader-Actions-*)
     // 旧 UI: .gh-header-actions / .gh-header-meta
@@ -290,6 +368,7 @@ var ButtonInjector = ButtonInjector || (() => {
   /* ── Azure DevOps 用ボタン注入 ───────────────── */
 
   function _injectDevOps() {
+    if (typeof DevOpsExtractor === 'undefined') return;
     // 「全てMDコピー」ボタンを Approve ボタンの左隣に注入
     const voteButton = document.querySelector('.repos-pr-header-vote-button');
     const headerArea =
@@ -376,6 +455,7 @@ var ButtonInjector = ButtonInjector || (() => {
   let _spCheckInFlight = false;
 
   function _injectSharePoint() {
+    if (typeof SharePointExtractor === 'undefined') return;
     const currentUrl = location.href;
     const existing = document.querySelector('[data-rfmd="all"][data-rfmd-site="sharepoint"]');
 
@@ -391,6 +471,10 @@ var ButtonInjector = ButtonInjector || (() => {
       const wrap = existing.closest('.rfmd-sp-container');
       if (wrap) wrap.remove(); else existing.remove();
       try { SharePointExtractor.reset(); } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
+      // _spCheckInFlight も必ずリセット。リセットしないと checkAvailability() が
+      // フライト中のまま残り、次の _injectSharePoint() で if (_spCheckInFlight) return
+      // に引っかかって 30 秒間ボタンが表示されない。
+      _spCheckInFlight = false;
     }
 
     // 別の checkAvailability() がフライト中ならスキップ（API 多重発射の防止）
@@ -435,6 +519,7 @@ var ButtonInjector = ButtonInjector || (() => {
   /* ── PR 一覧ページ用ボタン注入 ─────────────────── */
 
   function _injectGitHubList() {
+    if (typeof GitHubExtractor === 'undefined') return;
     // GitHub PR 一覧: 各 PR 行に「MDでダウンロード」ボタンを注入
     const prRows = document.querySelectorAll('.js-issue-row, [data-testid="list-view-item"]');
 
@@ -471,6 +556,7 @@ var ButtonInjector = ButtonInjector || (() => {
   }
 
   function _injectDevOpsList() {
+    if (typeof DevOpsExtractor === 'undefined') return;
     // DevOps PR 一覧: 各 PR 行に「MDでダウンロード」ボタンを注入
     // DevOps では行自体が <a class="bolt-table-row"> で PR 詳細へのリンクになっている
     const prRows = document.querySelectorAll(
@@ -517,6 +603,28 @@ var ButtonInjector = ButtonInjector || (() => {
   /* ── 公開 API ─────────────────────────────────── */
 
   /**
+   * SPA 遷移で PR ページを離脱したとき content_script から呼び出される統合クリーンアップ。
+   * ButtonInjector 内部の状態 (_spCheckInFlight / _rfmdTimer) に加えて、
+   * SharePoint の captured ID もまとめてリセットする。
+   * （content_script が SharePointExtractor を直接参照せず UI 層に委譲する形に統一）
+   */
+  function cleanup() {
+    // 進行中の SharePoint チェックを解除（動画切替後のボタン注入ブロックを防ぐ）
+    _spCheckInFlight = false;
+    // フィードバックアニメーション中のボタンのタイマーを解除。
+    // DOM 要素はこの呼び出し後に content_script 側で削除されるが、
+    // querySelectorAll('[data-rfmd]') が 0 件になる前に呼ぶ必要がある。
+    document.querySelectorAll('[data-rfmd]').forEach((btn) => {
+      if (btn._rfmdTimer) {
+        clearTimeout(btn._rfmdTimer);
+        btn._rfmdTimer = null;
+      }
+    });
+    // SharePointExtractor.reset() は content_script._cleanup() が直接呼ぶ。
+    // UI 層（ButtonInjector）から data 層（SharePointExtractor）を操作しない設計。
+  }
+
+  /**
    * 検出されたサイトタイプに応じてボタンを注入する（PR 詳細ページ用）
    * @param {string} siteType
    */
@@ -542,5 +650,5 @@ var ButtonInjector = ButtonInjector || (() => {
     }
   }
 
-  return { inject, injectList };
+  return { inject, injectList, cleanup };
 })();

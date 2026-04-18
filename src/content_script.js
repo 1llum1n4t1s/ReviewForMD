@@ -26,6 +26,11 @@
    * GitHub/DevOps の SPA レンダリングは通常 200-300ms で完了するため十分に待てる。
    */
   const DEBOUNCE_MS = 400;
+  /**
+   * SPA ナビゲーション検出後の再初期化デバウンス間隔 (ms)。
+   * pushState/popstate/turbo:load から連続で発火するのを 1 回の init() にまとめる。
+   */
+  const NAV_REINIT_DEBOUNCE_MS = 300;
 
   let _retries = 0;
   let _currentSiteType = null;
@@ -48,12 +53,20 @@
       clearTimeout(_debounceTimer);
       _debounceTimer = null;
     }
+    // ButtonInjector.cleanup() を先に呼ぶ。
+    // cleanup() 内部で querySelectorAll('[data-rfmd]') を使ってタイマー参照を回収するため、
+    // DOM 要素を削除する前に実行する必要がある（逆順にすると 0 件ヒットになる）。
+    try {
+      if (typeof ButtonInjector !== 'undefined' && ButtonInjector.cleanup) {
+        ButtonInjector.cleanup();
+      }
+    } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
     // 前のページから残ったボタンを除去
     document
       .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap, .rfmd-list-btn-wrap')
       .forEach((el) => el.remove());
-    // SharePoint Stream では動画切替（URL クエリ変更）で別コンテンツになるため、
-    // 捕捉済み Drive/File ID・利用可能性キャッシュをリセットする
+    // SharePoint の captured ID / availability キャッシュをリセット。
+    // ButtonInjector は UI 層なので extractor 層の reset() は content_script から直接呼ぶ。
     try {
       if (typeof SharePointExtractor !== 'undefined' && SharePointExtractor.reset) {
         SharePointExtractor.reset();
@@ -150,12 +163,16 @@
 
       if (_debounceTimer) clearTimeout(_debounceTimer);
       _debounceTimer = setTimeout(() => {
-        // デバウンスコールバック内でも拡張コンテキスト無効化に備える
+        // クロージャに捕捉された古い siteType を使わず、最新の _currentSiteType を参照する。
+        // SPA 遷移 (GitHub → DevOps 等) と MutationObserver デバウンスが
+        // race したときに、観測時点のサイトタイプでボタン注入してしまう事故を防ぐ。
+        const site = _currentSiteType;
+        if (!site) return; // cleanup 済み
         try {
           if (_currentPageType === 'list') {
-            ButtonInjector.injectList(siteType);
+            ButtonInjector.injectList(site);
           } else {
-            ButtonInjector.inject(siteType);
+            ButtonInjector.inject(site);
           }
         } catch (e) {
           if (!_isExtCtxError(e)) {
@@ -193,7 +210,7 @@
         _reinitTimer = null;
         _retries = 0;
         init();
-      }, 300);
+      }, NAV_REINIT_DEBOUNCE_MS);
     };
 
     // 1. Service Worker / Popup からのメッセージ

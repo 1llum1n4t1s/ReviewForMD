@@ -7,7 +7,6 @@ temp-build/
 # webstore build dependencies
 webstore/node_modules/
 webstore/package.json
-webstore/package-lock.json
 
 # OS files
 .DS_Store

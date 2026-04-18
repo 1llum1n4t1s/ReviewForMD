@@ -1,10 +1,13 @@
 # Privacy Policy — Review For MD
 
-**Last Updated: February 17, 2026**
+**Last Updated: April 19, 2026**
 
 ## Overview
 
-Review For MD (the "Extension") is a Chrome extension that copies pull request titles, descriptions, and review comments in Markdown format from GitHub and Azure DevOps.
+Review For MD (the "Extension") is a Chrome extension that helps users with the following:
+
+- Extract pull request titles, descriptions, and review comments from GitHub and Azure DevOps (including custom domains), and either download them as Markdown files or copy them to the clipboard.
+- Download meeting transcripts (VTT subtitle files) from SharePoint Stream (Teams meeting recording) pages.
 
 This Extension is designed with maximum respect for user privacy.
 
@@ -44,26 +47,30 @@ Content scripts only operate on the following domains:
 - `https://*.github.com/*` (GitHub Enterprise support)
 - `https://dev.azure.com/*`
 - `https://*.visualstudio.com/*`
+- `https://*.sharepoint.com/*` (to fetch VTT transcripts from Teams meeting recording pages)
 
-The Extension does not operate on any other websites.
+For custom domains (such as self-hosted Azure DevOps instances), `optional_host_permissions` is used. The Extension only operates on an origin if the user has explicitly clicked "Allow this site" for that origin. It does not operate on any domain the user has not explicitly approved.
 
 ## Data Processing
 
-Data accessed by this Extension (PR titles, body, review comments) is processed exclusively as follows:
+Data accessed by this Extension (PR titles, body, review comments, and SharePoint Stream VTT transcripts) is processed exclusively as follows:
 
-- Converted to Markdown format in browser memory
-- Copied to the user's clipboard
+- Converted/formatted to Markdown or VTT format in browser memory
+- In response to an explicit user action (button click), one of the following is performed:
+  - Copied to the clipboard ("Copy as MD" button)
+  - Downloaded as a `.md` / `.vtt` file ("Download as MD" / "Download VTT" button)
 - Discarded from memory after processing
-- Never transmitted outside the browser
+- Never transmitted to any third-party server by the Extension
 
 ## Data Storage
 
-This Extension does not store data in any form:
+The Extension itself does not persist user data:
 
 - No localStorage usage
-- No IndexedDB usage
-- No file system storage
+- No IndexedDB / chrome.storage usage
 - No external server storage
+
+However, when the user clicks the "MDでダウンロード" or "VTTダウンロード" button, the browser's native download mechanism saves a `.md` / `.vtt` file to the user's own Downloads folder. This is an explicit user-initiated save, and the Extension does not access the file after it is saved.
 
 ## Third-Party Sharing
 

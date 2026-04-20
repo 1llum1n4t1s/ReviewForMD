@@ -1,6 +1,6 @@
 {
   "name": "review-for-md",
-  "version": "1.0.44",
+  "version": "1.0.45",
   "private": true,
   "description": "プルリクのタイトル・本文・レビューコメントをMarkdownでダウンロードするChrome拡張",
   "scripts": {

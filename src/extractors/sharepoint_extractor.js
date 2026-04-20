@@ -271,9 +271,13 @@ var SharePointExtractor = SharePointExtractor || (() => {
       throw new Error('VTT ダウンロード URL が SharePoint オリジンではありません');
     }
     const res = await RfmdFetch.withTimeout(streamUrl, {
-      // temporaryDownloadUrl は SAS トークン埋め込み型 URL のため cookie 不要。
-      // 'include' にすると *.sharepoint.com サブドメイン全体に cookie が送信されうる。
-      credentials: 'omit',
+      // _normalizeStreamUrl が元 URL のクエリ文字列を ?is=1&applymediaedits=false で
+      // 上書きするため、temporaryDownloadUrl に SAS トークンが含まれていても剥がれる。
+      // よって認証は SharePoint のセッション cookie に依存する必要がある。
+      // URL は _isSharePointOrigin ガードで *.sharepoint.com HTTPS に限定済み。
+      // Cookie はドメインスコープなので、別テナントのサブドメインに自テナント cookie は
+      // 送信されず、cookie 漏洩は発生しない。
+      credentials: 'include',
       cache: 'no-store',
     });
     if (!res.ok) {

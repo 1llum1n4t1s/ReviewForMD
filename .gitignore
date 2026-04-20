@@ -13,3 +13,6 @@ webstore/package.json
 *.swp
 *~
 Thumbs.db
+
+# Serena MCP cache
+.serena/

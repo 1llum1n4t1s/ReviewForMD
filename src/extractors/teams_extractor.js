@@ -504,7 +504,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
       /* スクロール不可は無視 */
     }
     await _delay(STEP_WAIT_MS);
-    _captureInto(map, roundRef);
+    // wait 中に会話切替が起きたら初回 capture もスキップ（ループ内 wait の guard と同様。
+    // スキップ後は直後の while 先頭 guard が startHref 不一致で即 break する）。
+    if (location.href === startHref) _captureInto(map, roundRef);
 
     const start = Date.now();
     let stagnant = 0;

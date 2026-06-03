@@ -95,6 +95,24 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
   }
 
   /**
+   * el 自身が selector に一致すれば el を、しなければ子孫を querySelector で探す。
+   * コメントコンテナの広いフォールバック（[data-testid*="comment"]）が
+   * `comment-body` 要素そのものを掴んだとき、querySelector は子孫しか見ないため
+   * body を取りこぼす（＝コメントが丸ごとスキップされる）のを防ぐ。
+   */
+  function _selfOrFirst(el, selectors) {
+    if (!el) return null;
+    for (const sel of selectors) {
+      try {
+        if (typeof el.matches === 'function' && el.matches(sel)) return el;
+        const found = el.querySelector(sel);
+        if (found) return found;
+      } catch { /* 無効セレクタ等は無視して次の候補へ */ }
+    }
+    return null;
+  }
+
+  /**
    * タイトル末尾の "#42" / "Pull request #42" / "Pull request 42" 等の番号サフィックスを除去。
    * `#` か "pull request" を伴う明示的なサフィックスのみ対象にし、"RFC 9110" や
    * "Protocol v2" のような末尾が数字の正規タイトルを誤って削らないようにする。
@@ -184,19 +202,21 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
    * @returns {{author:string, body:string, timestamp:string, filePath?:string}|null}
    */
   function _parseComment(container) {
-    const authorEl = _firstEl(SELECTORS.commentAuthor, container);
+    // self-or-descendant で探す。コンテナの広いフォールバックが body 要素自体を
+    // 掴んだ場合（card/item ラッパーが無い DOM 形状）でも取りこぼさない。
+    const authorEl = _selfOrFirst(container, SELECTORS.commentAuthor);
     const author = (authorEl ? authorEl.textContent.trim() : '') || '(unknown)';
 
-    const timeEl = _firstEl(SELECTORS.commentTimestamp, container);
+    const timeEl = _selfOrFirst(container, SELECTORS.commentTimestamp);
     const timestamp = timeEl
       ? (timeEl.getAttribute('datetime') || timeEl.textContent.trim())
       : '';
 
-    const bodyEl = _firstEl(SELECTORS.commentBody, container);
+    const bodyEl = _selfOrFirst(container, SELECTORS.commentBody);
     const body = bodyEl ? MarkdownBuilder.htmlToMarkdown(bodyEl) : '';
     if (!body) return null;
 
-    const fileEl = _firstEl(SELECTORS.commentFilePath, container);
+    const fileEl = _selfOrFirst(container, SELECTORS.commentFilePath);
     const filePath = fileEl ? fileEl.textContent.trim() : '';
 
     const result = { author, body, timestamp };

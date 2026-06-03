@@ -42,14 +42,14 @@ var RfmdFetch = RfmdFetch || (() => {
       try {
         const res = await withTimeout(url, options);
         if ((res.status === 429 || res.status === 503) && attempt < retries) {
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, 400 * (2 ** attempt)));
           continue;
         }
         return res;
       } catch (e) {
         lastErr = e;
         if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, 400 * (2 ** attempt)));
           continue;
         }
       }

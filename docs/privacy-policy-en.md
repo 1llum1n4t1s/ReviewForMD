@@ -34,11 +34,11 @@ Used to read page content (PR title, body, review comments) from the currently a
 
 ### scripting
 
-Used to inject copy button UI into target pages (GitHub / Azure DevOps PR pages) and execute scripts to read page content.
+Used primarily to dynamically inject content scripts into pages that are not statically registered (such as custom-domain Azure DevOps, or AWS CodeCommit reached via in-console navigation) when the user has explicitly granted permission. All actions are initiated from the toolbar popup.
 
 ### webNavigation
 
-Used to detect page navigation in SPAs (Single Page Applications) like GitHub, ensuring copy buttons are properly displayed when navigating to PR pages.
+Used to detect page navigation in SPAs (Single Page Applications) in order to re-display the per-row download buttons on PR list pages and to re-initialize the content script at the appropriate time.
 
 ### clipboardWrite
 

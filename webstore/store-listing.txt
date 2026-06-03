@@ -131,16 +131,18 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 ■ 権限の正当性
 
   activeTab:
-  ユーザーがボタンをクリックした際に、PRページのDOM要素を読み取り
-  Markdown形式に変換するために使用します。
+  ユーザーがポップアップから操作した際に、現在のタブの対応ページ
+  （PR / SharePoint 会議録画 / Teams チャット）の内容を読み取り、
+  Markdown・VTT 形式へ変換するために使用します。
 
   scripting:
-  カスタムドメインのAzure DevOpsページにコンテンツスクリプトを
-  動的に注入するために使用します。
+  カスタムドメインのAzure DevOpsや、別サービスから遷移したAWS CodeCommitの
+  ページにコンテンツスクリプトを動的に注入するために使用します。
 
   webNavigation:
   SPA（シングルページアプリケーション）のページ遷移を検出し、
-  適切なタイミングでボタンを注入するために使用します。
+  PR一覧の行ダウンロードボタンの再表示やコンテンツスクリプトの
+  再初期化を適切なタイミングで行うために使用します。
 
   clipboardWrite:
   ポップアップの「コピー」操作で、整形した Markdown / VTT テキストを

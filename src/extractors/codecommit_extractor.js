@@ -88,12 +88,16 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
     return [];
   }
 
-  /** タイトル末尾の "#42" / "Pull request #42" 等の番号サフィックスと余分な空白を除去。 */
+  /**
+   * タイトル末尾の "#42" / "Pull request #42" / "Pull request 42" 等の番号サフィックスを除去。
+   * `#` か "pull request" を伴う明示的なサフィックスのみ対象にし、"RFC 9110" や
+   * "Protocol v2" のような末尾が数字の正規タイトルを誤って削らないようにする。
+   */
   function _cleanTitle(raw) {
     if (!raw) return '';
     return raw
       .replace(/\s+/g, ' ')
-      .replace(/\s*[-–—]?\s*(pull request\s*)?#?\d+\s*$/i, '')
+      .replace(/\s*(?:[-–—]\s*)?(?:(?:pull request\s*)?#\d+|pull request\s*\d+)\s*$/i, '')
       .trim();
   }
 

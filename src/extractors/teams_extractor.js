@@ -565,7 +565,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * MarkdownBuilder のリンク URL エスケープを再利用（未ロード時のみローカルフォールバック）。
    */
   function _mdLinkUrl(s) {
-    const t = String(s == null ? '' : s);
+    const t = String(s == null ? '' : s).replace(/[\x00-\x1f\x7f]/g, '').trim();
+    // 危険スキーム（javascript:/vbscript:/data:/file:/about:）はリンク化しない。
+    // 添付 URL は送信者制御の外部由来なので、空を返して呼び出し側でプレーンテキストに落とす
+    // （HTML 許容 MD ビューアでの XSS / 巨大 data: URL の埋め込みを防ぐ）。
+    if (/^(javascript|vbscript|data|file|about):/i.test(t)) return '';
     return (typeof MarkdownBuilder !== 'undefined' && MarkdownBuilder.sanitizeLinkUrl)
       ? MarkdownBuilder.sanitizeLinkUrl(t)
       : t.replace(/\)/g, '%29').replace(/[ \t]/g, '%20').replace(/"/g, '%22').replace(/'/g, '%27');
@@ -608,7 +612,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
           // メタ文字（]・) 等）を MarkdownBuilder と同じ規則でエスケープしてから埋め込む。
           const label = _mdLinkText(_safeName(att.name, att.kind));
           const safeRef = _mdLinkUrl(ref);
-          lines.push(`- ${icon} [${label}](${safeRef})`);
+          // 危険スキーム等で safeRef が空のときはリンク化せずプレーンテキストにする
+          lines.push(safeRef ? `- ${icon} [${label}](${safeRef})` : `- ${icon} ${label}`);
         }
         lines.push('');
       }

@@ -16,6 +16,7 @@ const NAV_PATH_PATTERNS = [
   /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps PR 詳細
   /\/pulls\b/,                             // GitHub PR 一覧
   /\/_git\/[^/]+\/pullrequests\b/i,         // Azure DevOps PR 一覧
+  /\/codesuite\/codecommit\/repositories\/[^/]+\/pull-requests\/\d+/i, // AWS CodeCommit PR 詳細
   /\/stream\.aspx/i,                        // SharePoint Stream (Teams 会議録画)
 ];
 
@@ -46,8 +47,26 @@ function isKnownDomain(url) {
       host.endsWith('.github.com') ||
       host === 'dev.azure.com' ||
       host.endsWith('.visualstudio.com') ||
+      host === 'console.aws.amazon.com' ||
+      host.endsWith('.console.aws.amazon.com') ||
       host.endsWith('.sharepoint.com')
     );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * DevOps の既知ドメインか。
+ * injectContentScripts のファイルリストは DevOps 用 extractor のみなので、
+ * 既知ドメインのフォールバック注入はこのドメインに限定する（誤った extractor セットの注入防止）。
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isDevOpsKnownDomain(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'dev.azure.com' || host.endsWith('.visualstudio.com');
   } catch {
     return false;
   }
@@ -245,6 +264,7 @@ const NAV_URL_FILTERS = {
     { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps PR 詳細
     { urlMatches: '.*/pulls(\\?.*)?$' },                // GitHub PR 一覧
     { urlMatches: '.*/_git/[^/]+/pullrequests(\\?.*)?$' }, // Azure DevOps PR 一覧
+    { urlMatches: '.*/codesuite/codecommit/repositories/[^/]+/pull-requests/\\d+.*' }, // AWS CodeCommit PR 詳細
     { urlMatches: '.*/[Ss]tream\\.aspx.*' },            // SharePoint Stream
   ],
 };
@@ -259,7 +279,13 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     try {
       await chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' });
     } catch {
-      await injectContentScripts(details.tabId, details.url);
+      // メッセージ未達 = コンテンツスクリプト未ロード。
+      // injectContentScripts のファイルリストは DevOps 用なので、DevOps 既知ドメインのみ
+      // フォールバック注入する。GitHub / SharePoint は manifest の静的注入に委ねる
+      // （誤った extractor セットを注入し __rfmd_initialized で正規注入を阻害しないため）。
+      if (isDevOpsKnownDomain(details.url)) {
+        await injectContentScripts(details.tabId, details.url);
+      }
     }
   } else {
     // カスタムドメイン → 動的注入

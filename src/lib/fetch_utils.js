@@ -28,5 +28,34 @@ var RfmdFetch = RfmdFetch || (() => {
     }
   }
 
-  return { withTimeout, TIMEOUT_MS };
+  /**
+   * 429 / 503 / ネットワークエラーに限り、指数バックオフで最大 retries 回まで再試行する。
+   * 401/403/404 等は再試行しても無駄なのでそのまま返す。
+   * @param {string} url
+   * @param {RequestInit} [options]
+   * @param {number} [retries=1] 追加試行回数（0 で withTimeout と同等）
+   * @returns {Promise<Response>}
+   */
+  async function withRetry(url, options = {}, retries = 1) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await withTimeout(url, options);
+        if ((res.status === 429 || res.status === 503) && attempt < retries) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          continue;
+        }
+        return res;
+      } catch (e) {
+        lastErr = e;
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          continue;
+        }
+      }
+    }
+    throw lastErr || new Error('fetch failed');
+  }
+
+  return { withTimeout, withRetry, TIMEOUT_MS };
 })();

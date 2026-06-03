@@ -60,23 +60,38 @@ var RfmdClipboard = RfmdClipboard || (() => {
     if (typeof text !== 'string' || text === '') return false;
     try {
       const blob = new Blob([text], { type: mimeType });
+      return downloadBlob(blob, filename || 'download.txt');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Blob をファイルとしてダウンロードする（ZIP など binary 用）。
+   * @param {Blob} blob
+   * @param {string} filename - ファイル名（拡張子付き）
+   * @returns {boolean}
+   */
+  function downloadBlob(blob, filename) {
+    if (!(blob instanceof Blob) || blob.size === 0) return false;
+    try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename || 'download.txt';
+      a.download = filename || 'download.bin';
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      // クリーンアップ
+      // クリーンアップ（binary は生成に時間がかかるため余裕を持って遅延）
       setTimeout(() => {
         URL.revokeObjectURL(url);
         a.parentNode?.removeChild(a);
-      }, 100);
+      }, 1000);
       return true;
     } catch {
       return false;
     }
   }
 
-  return { copy, download };
+  return { copy, download, downloadBlob };
 })();

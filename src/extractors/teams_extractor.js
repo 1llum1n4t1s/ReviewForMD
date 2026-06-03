@@ -1,0 +1,749 @@
+/**
+ * Microsoft Teams チャット抽出モジュール
+ *
+ * Teams Web（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）の
+ * チャット・チャネルから、メッセージ全履歴を自動スクロールで収集し、
+ * 送信者 / 日時 / 本文 / リアクション / 添付を Markdown としてエクスポートする。
+ *
+ * 動作の流れ:
+ *   1. メッセージリストのスクロールコンテナを特定
+ *   2. 下端（最新）から上端（最古）へ段階的にスクロールし、可視メッセージを
+ *      逐次 Map に回収する（Teans Web は仮想スクロールで画面外要素が DOM から
+ *      外れるため、スクロールしながら確保する必要がある）
+ *   3. メッセージ id（または合成キー）で重複除去し時系列ソート
+ *   4. Markdown を生成。ZIP 経路では添付実バイトも取得して同梱する
+ *
+ * ⚠️ Teams の DOM クラス/属性は頻繁に変わる。サイト固有セレクタは
+ *    すべて SELECTORS に集約してあるので、UI 変更で動かなくなったら
+ *    まずここを実機 DOM に合わせて調整する。
+ *
+ * 全コードはこのプロジェクトのためのオリジナル実装。
+ */
+var TeamsExtractor = TeamsExtractor || (() => {
+  /* ── サイト固有セレクタ（実機調整ポイント）──────────────── */
+
+  const SELECTORS = {
+    // メッセージリストのスクロールコンテナ候補（上から優先）
+    scroller: [
+      '[data-tid="message-pane-list-viewport"]',
+      '[data-tid="messageListContainer"]',
+      '[data-tid="pane-list"]',
+      '[role="main"] [data-tid*="messageList"]',
+      '.ts-message-list-container',
+    ],
+    // 1 メッセージのコンテナ候補
+    message: [
+      '[data-tid="chat-pane-message"]',
+      '[data-tid^="chat-pane-item"]',
+      '[data-tid="messageBodyContainer"]',
+      'div[role="listitem"][data-mid]',
+      '.ui-chat__item',
+      '.message-body',
+    ],
+    // 送信者名
+    author: [
+      '[data-tid="message-author-name"]',
+      '[data-tid="messageSenderName"]',
+      '.ui-chat__message__author',
+      '[class*="authorName"]',
+    ],
+    // 本文（HTML→Markdown 変換対象）
+    body: [
+      '[data-tid="messageBodyContent"]',
+      '[id^="content-"]',
+      '.ui-chat__messagecontent',
+      '[class*="messageContent"]',
+      '.message-body-content',
+    ],
+    // リアクション
+    reaction: [
+      '[data-tid^="reaction"]',
+      '[data-tid="messageReactionsCount"]',
+      '.ui-reaction',
+      '[class*="reactionsBar"] [class*="reaction"]',
+    ],
+    // 添付ファイルカード（本文と別枠のファイル）
+    fileCard: [
+      'a[data-tid="file-attachment"]',
+      '[data-tid="file-preview"] a[href]',
+      '[data-tid="cards"] a[href]',
+      'a[href*="sharepoint.com"][download]',
+    ],
+    // チャット/チャネルのタイトル
+    title: [
+      '[data-tid="chat-header-title"]',
+      '[data-tid="threadHeaderTitle"]',
+      '[data-tid="channel-header-title"]',
+      'h1[role="heading"]',
+      '[class*="chatHeaderTitle"]',
+    ],
+  };
+
+  /* ── 自動スクロールのガード値 ───────────────────────── */
+
+  /** スクロール 1 段あたりの待機 (ms) */
+  const STEP_WAIT_MS = 280;
+  /** 上端で古いメッセージ読み込みを待つ時間 (ms) */
+  const LOAD_WAIT_MS = 750;
+  /** 上端で「これ以上増えない」と判断するまでの連続回数 */
+  const STABLE_ROUNDS = 3;
+  /** スクロール反復の上限 */
+  const MAX_ITERATIONS = 1500;
+  /** 自動スクロール全体の時間上限 (ms) */
+  const MAX_DURATION_MS = 240000;
+  /** 収集メッセージ数の上限（暴走防止） */
+  const MAX_MESSAGES = 50000;
+  /** ZIP に同梱する添付の合計バイト上限（OOM 防止）。超過分はリモート URL リンクのまま残す。 */
+  const MAX_ATTACH_TOTAL_BYTES = 512 * 1024 * 1024;
+  /** 添付取得の並列度（直列だと添付数 × RTT で遅い） */
+  const ATTACH_CONCURRENCY = 4;
+
+  /** 抽出の再入ガード（同一ページで収集ループの多重起動・DOM 奪い合いを防ぐ） */
+  let _busy = false;
+
+  /** 認証付き取得を許可する添付ホスト（cookie 漏洩防止の allowlist） */
+  function _isAllowedAttachmentUrl(url) {
+    try {
+      const u = new URL(url, location.href);
+      if (u.protocol === 'blob:') return true; // 同コンテキストの blob は安全
+      if (u.protocol !== 'https:') return false;
+      const h = u.hostname;
+      return (
+        h === 'teams.microsoft.com' ||
+        h.endsWith('.teams.microsoft.com') ||
+        h === 'teams.cloud.microsoft' ||
+        h.endsWith('.teams.cloud.microsoft') ||
+        // 添付/画像の実配信ホストに限定して cookie 境界を最小化する（SSRF/cookie 流出対策）。
+        // 取得できない添付が出たら、実機 Teams の Network から配信ホストを採取してここに追加する。
+        // （広域サフィックス .microsoft.com/.office.com/.live.com 等は送信者制御 URL での
+        //   クロスサービス cookie 送信を許すため意図的に除外）
+        h.endsWith('.sharepoint.com') ||
+        h.endsWith('.svc.ms')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /* ── 状態 ─────────────────────────────────────────── */
+
+  let _availabilityCache = null;
+  let _availabilityCacheUrl = '';
+
+  /* ── DOM 探索ヘルパ ─────────────────────────────── */
+
+  function _qsFirst(root, selList) {
+    for (const sel of selList) {
+      try {
+        const el = root.querySelector(sel);
+        if (el) return el;
+      } catch {
+        /* 無効セレクタは無視 */
+      }
+    }
+    return null;
+  }
+
+  function _qsAllFirst(root, selList) {
+    for (const sel of selList) {
+      try {
+        const els = root.querySelectorAll(sel);
+        if (els && els.length) return Array.from(els);
+      } catch {
+        /* 無効セレクタは無視 */
+      }
+    }
+    return [];
+  }
+
+  /** スクロール可能な祖先を探す（セレクタが外れたときの保険）。 */
+  function _findScrollableAncestor(el) {
+    let node = el;
+    let depth = 0;
+    while (node && node !== document.body && depth < 30) {
+      try {
+        const style = getComputedStyle(node);
+        const oy = style.overflowY;
+        if (
+          (oy === 'auto' || oy === 'scroll') &&
+          node.scrollHeight > node.clientHeight + 20
+        ) {
+          return node;
+        }
+      } catch {
+        /* getComputedStyle 失敗は無視 */
+      }
+      node = node.parentElement;
+      depth++;
+    }
+    return null;
+  }
+
+  /** メッセージリストのスクロールコンテナを特定する。 */
+  function _findScroller() {
+    const direct = _qsFirst(document, SELECTORS.scroller);
+    if (direct && direct.scrollHeight > direct.clientHeight + 20) return direct;
+    // セレクタが外れている場合: メッセージ要素から上方向にスクロール可能祖先を探す
+    const msgs = _findMessages();
+    if (msgs.length) {
+      const anc = _findScrollableAncestor(msgs[0]);
+      if (anc) return anc;
+    }
+    return direct || null;
+  }
+
+  /** 現在レンダリングされているメッセージ要素一覧。 */
+  function _findMessages() {
+    return _qsAllFirst(document, SELECTORS.message);
+  }
+
+  /* ── メッセージ解析 ─────────────────────────────── */
+
+  /** メッセージの安定 id（重複除去キーの第一候補）。 */
+  function _messageId(el) {
+    return (
+      el.getAttribute('data-mid') ||
+      el.getAttribute('data-tid') ||
+      el.getAttribute('id') ||
+      ''
+    );
+  }
+
+  /** ソート用の数値キー（mid は概ね epoch ms ベースの単調増加値）。 */
+  function _numericId(id) {
+    const m = String(id).match(/(\d{10,})/);
+    return m ? Number(m[1]) : NaN;
+  }
+
+  function _getAuthor(el) {
+    const a = _qsFirst(el, SELECTORS.author);
+    const text = a ? (a.textContent || '').trim() : '';
+    if (text) return text;
+    // aria-label フォールバック: "Alice, 10:30 AM, ..." 形式の先頭トークン
+    const label = el.getAttribute('aria-label') || '';
+    const m = label.match(/^([^,]{1,80}),/);
+    return m ? m[1].trim() : '';
+  }
+
+  function _getBodyElement(el) {
+    return _qsFirst(el, SELECTORS.body) || el;
+  }
+
+  function _getTimestamp(el) {
+    const t = el.querySelector('time[datetime]');
+    if (t) {
+      const dt = t.getAttribute('datetime') || '';
+      const ms = Date.parse(dt);
+      return { raw: dt, ms: Number.isNaN(ms) ? NaN : ms };
+    }
+    // title 属性に日時が入るケース
+    const titled = el.querySelector('[title]');
+    if (titled) {
+      const raw = titled.getAttribute('title') || '';
+      const ms = Date.parse(raw);
+      if (!Number.isNaN(ms)) return { raw, ms };
+    }
+    return { raw: '', ms: NaN };
+  }
+
+  function _getReactions(el) {
+    const out = [];
+    const pills = _qsAllFirst(el, SELECTORS.reaction);
+    for (const p of pills) {
+      const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+      // 絵文字画像の alt も拾う
+      const img = p.querySelector('img[alt]');
+      const alt = img ? (img.getAttribute('alt') || '').trim() : '';
+      const combined = [alt, text].filter(Boolean).join(' ').trim();
+      if (combined) out.push(combined);
+    }
+    return out;
+  }
+
+  /**
+   * 本文クローンから添付（画像・ファイルカード）要素を抽出し、
+   * クローン側からは除去する（本文 Markdown と添付一覧の二重化を避ける）。
+   * @returns {Array<{kind:'image'|'file', name:string, url:string}>}
+   */
+  function _extractAttachments(messageEl, bodyClone) {
+    const list = [];
+
+    // 画像（絵文字・アバターは除外）
+    const imgs = bodyClone.querySelectorAll('img');
+    imgs.forEach((img) => {
+      const src = img.getAttribute('src') || '';
+      if (!src) return;
+      const w = img.naturalWidth || parseInt(img.getAttribute('width') || '0', 10);
+      const h = img.naturalHeight || parseInt(img.getAttribute('height') || '0', 10);
+      const isEmoji =
+        /emoji|emoticon|skypeemoji/i.test(src) ||
+        img.closest('[class*="emoji"]') !== null;
+      const isAvatar =
+        /avatar|profilepic|userTile/i.test(src) ||
+        img.closest('[class*="avatar"], [class*="persona"]') !== null;
+      // 小さすぎる装飾画像はスキップ
+      if (isEmoji || isAvatar || (w && w < 32) || (h && h < 32)) {
+        img.remove();
+        return;
+      }
+      const alt = (img.getAttribute('alt') || '').trim();
+      list.push({ kind: 'image', name: alt || 'image', url: src });
+      img.remove();
+    });
+
+    // ファイルカード（本文とは別枠のファイル）は messageEl 全体から探す
+    const cards = _qsAllFirst(messageEl, SELECTORS.fileCard);
+    cards.forEach((a) => {
+      const href = a.getAttribute('href') || '';
+      if (!href) return;
+      const name =
+        (a.getAttribute('title') || a.textContent || '').replace(/\s+/g, ' ').trim() ||
+        'file';
+      list.push({ kind: 'file', name, url: href });
+    });
+
+    return list;
+  }
+
+  /**
+   * 1 メッセージ要素を解析してレコード化する。
+   * @returns {{id:string, sortKey:number, author:string, tsRaw:string,
+   *            bodyMd:string, reactions:string[], attachments:object[]}|null}
+   */
+  function _parseMessage(el, seq) {
+    const bodyEl = _getBodyElement(el);
+    // 本文クローンから添付を抜いてから Markdown 化する
+    const bodyClone = bodyEl.cloneNode(true);
+    const attachments = _extractAttachments(el, bodyClone);
+    let bodyMd = '';
+    try {
+      bodyMd =
+        typeof MarkdownBuilder !== 'undefined'
+          ? MarkdownBuilder.htmlToMarkdown(bodyClone)
+          : (bodyClone.textContent || '').trim();
+    } catch {
+      bodyMd = (bodyClone.textContent || '').trim();
+    }
+
+    const author = _getAuthor(el);
+    const ts = _getTimestamp(el);
+    const reactions = _getReactions(el);
+
+    // 本文も添付もリアクションも空なら、システム行などとみなしスキップ
+    if (!bodyMd && attachments.length === 0 && reactions.length === 0) {
+      return null;
+    }
+
+    const rawId = _messageId(el);
+    const id =
+      rawId ||
+      `${author}::${ts.raw}::${bodyMd.slice(0, 80)}`; // 合成キー
+    const numeric = _numericId(rawId);
+    const sortKey = !Number.isNaN(numeric)
+      ? numeric
+      : !Number.isNaN(ts.ms)
+        ? ts.ms
+        : seq; // どちらも無ければ収集順
+
+    return {
+      id,
+      sortKey,
+      author,
+      tsRaw: ts.raw,
+      bodyMd,
+      reactions,
+      attachments,
+    };
+  }
+
+  /* ── 自動スクロール収集 ─────────────────────────── */
+
+  function _delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function _captureInto(map, seqRef) {
+    const els = _findMessages();
+    for (const el of els) {
+      // 安定 id があり既に収集済みなら、重い _parseMessage（cloneNode + htmlToMarkdown）を省く。
+      // 仮想スクロールで同一要素が複数反復の viewport に跨るため、再パースの無駄が大きい。
+      const rawId = _messageId(el);
+      if (rawId && map.has(rawId)) continue;
+      const rec = _parseMessage(el, seqRef.value);
+      if (!rec) continue;
+      if (!map.has(rec.id)) {
+        map.set(rec.id, rec);
+        seqRef.value++;
+      }
+    }
+  }
+
+  /**
+   * 下端から上端まで段階的にスクロールしながら全メッセージを収集する。
+   * @returns {Promise<Array>} 時系列ソート済みレコード配列
+   */
+  async function _collectRecords() {
+    const scroller = _findScroller();
+    const map = new Map();
+    const seqRef = { value: 0 };
+    const startHref = location.href; // 収集中にページ/会話が変わったら中断する基準
+
+    if (!scroller) {
+      // スクローラ不明: 現在表示分だけでも回収して返す
+      _captureInto(map, seqRef);
+      return _finalizeWithWarn(map, scroller);
+    }
+
+    // まず下端（最新）に寄せて初回キャプチャ
+    try {
+      scroller.scrollTop = scroller.scrollHeight;
+    } catch {
+      /* スクロール不可は無視 */
+    }
+    await _delay(STEP_WAIT_MS);
+    _captureInto(map, seqRef);
+
+    const start = Date.now();
+    let stagnant = 0;
+    let iter = 0;
+
+    while (iter < MAX_ITERATIONS) {
+      iter++;
+      if (Date.now() - start > MAX_DURATION_MS) break;
+      if (map.size >= MAX_MESSAGES) break;
+      // ユーザーが別会話へ切替 / ページ遷移したら中断（誤会話の収集と DOM 奪い合いを防ぐ）
+      if (location.href !== startHref) break;
+
+      const prevHeight = scroller.scrollHeight;
+      const prevTop = scroller.scrollTop;
+
+      if (prevTop <= 0) {
+        // 上端: 古いメッセージの読み込みを待つ
+        scroller.scrollTop = 0;
+        await _delay(LOAD_WAIT_MS);
+        _captureInto(map, seqRef);
+        if (scroller.scrollHeight > prevHeight + 4) {
+          stagnant = 0; // 古い分が読み込まれた → 継続
+        } else {
+          stagnant++;
+          if (stagnant >= STABLE_ROUNDS) break; // 本当に先頭に到達
+        }
+      } else {
+        // 読み込み済み範囲を 1 段ずつ上へ（全メッセージを viewport に通す）
+        const step = Math.max(200, Math.floor(scroller.clientHeight * 0.8));
+        scroller.scrollTop = Math.max(0, prevTop - step);
+        await _delay(STEP_WAIT_MS);
+        _captureInto(map, seqRef);
+        stagnant = 0;
+      }
+    }
+
+    return _finalizeWithWarn(map, scroller);
+  }
+
+  /** Map → 時系列ソート → 送信者の前方補完（グループ化された継続メッセージ対策）。 */
+  function _finalize(map) {
+    const records = Array.from(map.values());
+    records.sort((a, b) => a.sortKey - b.sortKey);
+    // Teams は同一送信者の連投で名前を 1 度しか出さない。
+    // 時系列順に並べた後、空の送信者を直前の送信者で補完する。
+    let lastAuthor = '';
+    for (const r of records) {
+      if (r.author) {
+        lastAuthor = r.author;
+      } else if (lastAuthor) {
+        r.author = lastAuthor;
+      }
+    }
+    return records;
+  }
+
+  /** _finalize に加え、0 件のときは切り分け用に必ず警告ログを残す。 */
+  function _finalizeWithWarn(map, scroller) {
+    const records = _finalize(map);
+    if (records.length === 0) {
+      // 0 件は最も壊れやすい「Teams DOM 変更でセレクタ全滅」のサイン。無言にしない。
+      console.warn(
+        '[ReviewForMD][Teams] 収集メッセージ 0 件 / scroller=', !!scroller,
+        'msgEls=', _findMessages().length
+      );
+    }
+    return records;
+  }
+
+  /* ── Markdown 生成 ─────────────────────────────── */
+
+  /** ファイル名/パスとして安全な文字列にする。 */
+  function _safeName(name, fallback) {
+    let s = (typeof name === 'string' ? name : '').normalize('NFKC');
+    s = s
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .replace(/[‎‏‪-‮⁦-⁩]/g, '')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\.+|\.+$/g, '')
+      .trim();
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i.test(s)) {
+      s = '_' + s; // Windows 予約名（button_injector の _sanitizeFilename と同方針）
+    }
+    if (s.length > 120) s = s.slice(0, 120).trim();
+    return s || fallback || 'item';
+  }
+
+  /** URL のパス末尾から拡張子を推測する。 */
+  function _extFromUrl(url) {
+    try {
+      const u = new URL(url, location.href);
+      const m = u.pathname.match(/\.([A-Za-z0-9]{1,8})$/);
+      return m ? '.' + m[1].toLowerCase() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** ログ用に URL から機微なクエリ（SAS トークン等）を落とし origin+pathname だけにする。 */
+  function _redactUrl(url) {
+    try {
+      const u = new URL(url, location.href);
+      return u.origin + u.pathname;
+    } catch {
+      return '(invalid url)';
+    }
+  }
+
+  /**
+   * Markdown のインライン構文位置（見出し・著者名等）に外部由来文字列を埋める前のエスケープ。
+   * 改行除去 + raw HTML 無効化(<) + 構造文字の無害化（HTML 許容 MD ビューアでのインジェクション対策）。
+   */
+  function _escapeMdInline(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/</g, '&lt;')
+      .replace(/([\\`*_#\[\]])/g, '\\$1')
+      .trim();
+  }
+
+  /**
+   * レコード配列から Markdown 本文を組み立てる。
+   * @param {string} title 会話タイトル
+   * @param {Array} records レコード
+   * @param {Map<string,string>|null} localPaths url→ZIP内ローカルパス（ZIP 経路のみ）
+   */
+  function _buildMarkdown(title, records, localPaths) {
+    const lines = [];
+    lines.push(`# ${_escapeMdInline(title)}`);
+    lines.push('');
+    lines.push(`> Microsoft Teams チャット書き出し / メッセージ数: ${records.length}`);
+    lines.push('');
+
+    for (const r of records) {
+      const ts = r.tsRaw
+        ? (typeof MarkdownBuilder !== 'undefined'
+            ? MarkdownBuilder.formatTimestamp(r.tsRaw)
+            : r.tsRaw)
+        : '';
+      const author = _escapeMdInline(r.author || '不明');
+      const head = ts ? `**${author}** · ${ts}` : `**${author}**`;
+      lines.push(`### ${head}`);
+      lines.push('');
+      if (r.bodyMd) {
+        lines.push(r.bodyMd);
+        lines.push('');
+      }
+      if (r.attachments.length) {
+        for (const att of r.attachments) {
+          const ref = localPaths && localPaths.has(att.url)
+            ? localPaths.get(att.url)
+            : att.url;
+          const icon = att.kind === 'image' ? '🖼' : '📎';
+          const label = _safeName(att.name, att.kind);
+          lines.push(`- ${icon} [${label}](${ref})`);
+        }
+        lines.push('');
+      }
+      if (r.reactions.length) {
+        lines.push(`*リアクション: ${r.reactions.join(' / ')}*`);
+        lines.push('');
+      }
+      lines.push('---');
+      lines.push('');
+    }
+
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  }
+
+  /* ── 添付取得（ZIP 経路）─────────────────────────── */
+
+  async function _fetchAttachmentBytes(url) {
+    if (!_isAllowedAttachmentUrl(url)) {
+      throw new Error('許可されていない添付オリジンです');
+    }
+    const u = new URL(url, location.href);
+    const opts =
+      u.protocol === 'blob:'
+        ? { cache: 'no-store' }
+        : { credentials: 'include', cache: 'no-store' };
+    // 429/503/一時障害は 1 回までリトライ（添付の取りこぼし低減）
+    const res = await RfmdFetch.withRetry(u.href, opts, 1);
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const buf = await res.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
+  /* ── 公開 API ─────────────────────────────────── */
+
+  /**
+   * Teams チャット画面でメッセージが存在するかを判定する（軽量・スクロールしない）。
+   * @returns {Promise<{available:boolean, reason?:string}>}
+   */
+  /**
+   * チャット/チャネルのメッセージ系 DOM が存在するか。
+   * Teams 判定セレクタの単一の真実の源として site_detector._isTeamsChatByDom が委譲する
+   * （detect 側と extract 側でセレクタが分裂するのを防ぐ）。
+   */
+  function hasChatDom() {
+    try {
+      return _findMessages().length > 0 || !!_qsFirst(document, SELECTORS.scroller);
+    } catch {
+      return false;
+    }
+  }
+
+  async function checkAvailability() {
+    if (_availabilityCacheUrl === location.href && _availabilityCache) {
+      return _availabilityCache;
+    }
+    const msgs = _findMessages();
+    if (msgs.length > 0) {
+      const result = { available: true };
+      _availabilityCache = result;
+      _availabilityCacheUrl = location.href;
+      return result;
+    }
+    // 未検出はキャッシュしない（SPA でメッセージが後から描画されるため再評価を許す）
+    return { available: false, reason: 'no-messages' };
+  }
+
+  /** 会話タイトルを取得する（DOM → document.title フォールバック）。 */
+  function getTitle() {
+    const el = _qsFirst(document, SELECTORS.title);
+    const fromDom = el ? (el.textContent || '').trim() : '';
+    if (fromDom) return fromDom;
+    const dt = document.title
+      .replace(/\s*[\|–\-]\s*Microsoft Teams.*$/i, '')
+      .trim();
+    return dt || 'teams-chat';
+  }
+
+  /**
+   * 全履歴を収集して Markdown 文字列を返す（MD ダウンロード用）。
+   * @returns {Promise<string>}
+   */
+  async function extractAll() {
+    if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
+    _busy = true;
+    try {
+      const records = await _collectRecords();
+      return { markdown: _buildMarkdown(getTitle(), records, null), count: records.length };
+    } finally {
+      _busy = false;
+    }
+  }
+
+  /**
+   * 全履歴 + 添付実バイトを収集し、ZIP（transcript.md + attachments/）を返す。
+   * @returns {Promise<{blob: Blob, filename: string}>}
+   */
+  async function extractWithAttachments() {
+    if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
+    _busy = true;
+    try {
+      const title = getTitle();
+      const records = await _collectRecords();
+
+      // 添付タスクを平坦化（同一 URL は 1 度だけ）。収集順を保持し採番を決定的にする。
+      const seen = new Set();
+      const tasks = [];
+      for (const r of records) {
+        for (const att of r.attachments) {
+          if (seen.has(att.url)) continue;
+          seen.add(att.url);
+          tasks.push(att);
+        }
+      }
+
+      // 並列度制限プールでバイト取得（直列だと添付数 × RTT で遅い）
+      const bytesByIndex = new Array(tasks.length).fill(null);
+      let cursor = 0;
+      async function _worker() {
+        while (true) {
+          const i = cursor++;
+          if (i >= tasks.length) break;
+          try {
+            bytesByIndex[i] = await _fetchAttachmentBytes(tasks[i].url);
+          } catch (e) {
+            bytesByIndex[i] = null;
+            // SAS トークンを含みうる URL はそのまま出さず redact する
+            console.debug('[ReviewForMD][Teams] 添付取得失敗:', _redactUrl(tasks[i].url), e?.message || e);
+          }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(ATTACH_CONCURRENCY, tasks.length) }, _worker)
+      );
+
+      /** url → ZIP 内ローカルパス */
+      const localPaths = new Map();
+      /** @type {Array<{name:string, data:Uint8Array}>} */
+      const files = [];
+      const usedNames = new Set();
+      let counter = 0;
+      let totalBytes = 0;
+
+      // 採番・同梱はインデックス順で決定的に行う
+      for (let i = 0; i < tasks.length; i++) {
+        const att = tasks[i];
+        const bytes = bytesByIndex[i];
+        if (!bytes) continue; // 取得失敗 → リモート URL リンクのまま残す
+        // 合計バイト上限を超えたら同梱せずリンクのまま残す（OOM 防止）
+        if (totalBytes + bytes.length > MAX_ATTACH_TOTAL_BYTES) continue;
+        totalBytes += bytes.length;
+        counter++;
+        let base = _safeName(att.name, att.kind);
+        // 拡張子が無ければ URL から補う（_extFromUrl は英数字のみ抽出＝安全）
+        if (!/\.[A-Za-z0-9]{1,8}$/.test(base)) {
+          base += _extFromUrl(att.url) || (att.kind === 'image' ? '.png' : '');
+        }
+        // 衝突回避
+        let name = base;
+        let n = 1;
+        while (usedNames.has(name.toLowerCase())) {
+          const dot = base.lastIndexOf('.');
+          name = dot > 0 ? `${base.slice(0, dot)}_${n}${base.slice(dot)}` : `${base}_${n}`;
+          n++;
+        }
+        usedNames.add(name.toLowerCase());
+        const path = `attachments/${String(counter).padStart(3, '0')}_${name}`;
+        files.push({ name: path, data: bytes });
+        localPaths.set(att.url, path);
+      }
+
+      const markdown = _buildMarkdown(title, records, localPaths);
+      const entries = [{ name: 'transcript.md', data: markdown }, ...files];
+      const blob = RfmdZip.create(entries);
+      const filename = _safeName(title, 'teams-chat') + '.zip';
+      return { blob, filename, count: records.length };
+    } finally {
+      _busy = false;
+    }
+  }
+
+  /** ページ遷移時にキャッシュをクリアする。 */
+  function reset() {
+    _availabilityCache = null;
+    _availabilityCacheUrl = '';
+  }
+
+  return { checkAvailability, hasChatDom, getTitle, extractAll, extractWithAttachments, reset };
+})();

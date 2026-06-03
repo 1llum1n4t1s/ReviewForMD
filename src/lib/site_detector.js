@@ -10,7 +10,9 @@ var SiteDetector = SiteDetector || (() => {
   const SiteType = {
     GITHUB: 'github',
     AZURE_DEVOPS: 'devops',
+    AWS_CODECOMMIT: 'codecommit',
     SHAREPOINT_TEAMS: 'sharepoint_teams',
+    TEAMS_CHAT: 'teams_chat',
     UNKNOWN: 'unknown',
   };
 
@@ -90,6 +92,30 @@ var SiteDetector = SiteDetector || (() => {
     return count >= THRESHOLD;
   }
 
+  /* ── AWS CodeCommit 判定 ──────────────────────── */
+
+  /**
+   * AWS マネジメントコンソール（リージョン別 / グローバル）かどうかを判定する。
+   * 対象: {region}.console.aws.amazon.com / console.aws.amazon.com
+   */
+  function _isCodeCommitByHost() {
+    const host = location.hostname;
+    return host === 'console.aws.amazon.com' || host.endsWith('.console.aws.amazon.com');
+  }
+
+  /**
+   * URL ベースで CodeCommit の PR 詳細ページを検出する。
+   * コンソールは Cloudscape の React SPA で DOM クラスがハッシュ化され揮発性が高いため、
+   * 検出は安定した URL パス（/codesuite/codecommit/repositories/{repo}/pull-requests/{id}）で行う。
+   * PR ID は数値。
+   */
+  function _isCodeCommitPRByUrl() {
+    return (
+      _isCodeCommitByHost() &&
+      /\/codesuite\/codecommit\/repositories\/[^/]+\/pull-requests\/\d+/i.test(location.pathname)
+    );
+  }
+
   /* ── SharePoint Stream (Teams 会議録画) 判定 ──── */
 
   /**
@@ -101,6 +127,48 @@ var SiteDetector = SiteDetector || (() => {
     if (!host.endsWith('.sharepoint.com')) return false;
     // stream.aspx を含むパス（大文字小文字不問）
     return /\/stream\.aspx/i.test(location.pathname);
+  }
+
+  /* ── Microsoft Teams チャット判定 ─────────────── */
+
+  /**
+   * Teams Web のドメインかどうかを判定する。
+   * 対象: teams.microsoft.com / *.teams.microsoft.com / teams.live.com /
+   *       teams.cloud.microsoft
+   */
+  function _isTeamsByHost() {
+    const host = location.hostname;
+    return (
+      host === 'teams.microsoft.com' ||
+      host.endsWith('.teams.microsoft.com') ||
+      host === 'teams.live.com' ||
+      host.endsWith('.teams.live.com') ||
+      host === 'teams.cloud.microsoft' ||
+      host.endsWith('.teams.cloud.microsoft')
+    );
+  }
+
+  /**
+   * Teams のチャット/チャネル会話が表示されているかを DOM シグナルで判定する。
+   * Teams はハッシュルーティング SPA で URL からは会話か判別しにくいため、
+   * メッセージリスト系の DOM の存在で判定する。
+   */
+  function _isTeamsChatByDom() {
+    if (!_isTeamsByHost()) return false;
+    // セレクタの単一の真実の源は teams_extractor の SELECTORS。判定はそちらへ委譲する
+    // （detect 側と extract 側でセレクタが分裂し「検出できるが抽出は空」になる乖離を防ぐ）。
+    // Teams content_scripts エントリでは teams_extractor が同梱されるため hasChatDom が使える。
+    if (typeof TeamsExtractor !== 'undefined' && typeof TeamsExtractor.hasChatDom === 'function') {
+      try {
+        return TeamsExtractor.hasChatDom();
+      } catch {
+        /* フォールスルー */
+      }
+    }
+    // TeamsExtractor 未ロード時の最小フォールバック（通常は Teams エントリで到達しない）
+    return !!document.querySelector(
+      '[data-tid="chat-pane-list"], [data-tid="messageListContainer"], [data-tid="message-pane-list-viewport"]'
+    );
   }
 
   /* ── 公開 API ─────────────────────────────────── */
@@ -125,9 +193,19 @@ var SiteDetector = SiteDetector || (() => {
       return SiteType.AZURE_DEVOPS;
     }
 
+    // AWS CodeCommit: コンソールホスト + PR 詳細パスパターン
+    if (_isCodeCommitPRByUrl()) {
+      return SiteType.AWS_CODECOMMIT;
+    }
+
     // SharePoint Stream (Teams 会議録画ページ)
     if (_isSharePointStreamByUrl()) {
       return SiteType.SHAREPOINT_TEAMS;
+    }
+
+    // Microsoft Teams チャット/チャネル（DOM シグナルで判定）
+    if (_isTeamsChatByDom()) {
+      return SiteType.TEAMS_CHAT;
     }
 
     return SiteType.UNKNOWN;

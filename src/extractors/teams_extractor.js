@@ -119,6 +119,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
         h.endsWith('.teams.microsoft.com') ||
         h === 'teams.cloud.microsoft' ||
         h.endsWith('.teams.cloud.microsoft') ||
+        // consumer Teams（manifest / site_detector が対応している teams.live.com）。
+        // 同一オリジンの添付/画像なので CORS 制約を受けず取得できる。
+        h === 'teams.live.com' ||
+        h.endsWith('.teams.live.com') ||
         // 添付/画像の実配信ホストに限定して cookie 境界を最小化する（SSRF/cookie 流出対策）。
         // 取得できない添付が出たら、実機 Teams の Network から配信ホストを採取してここに追加する。
         // （広域サフィックス .microsoft.com/.office.com/.live.com 等は送信者制御 URL での
@@ -680,15 +684,31 @@ var TeamsExtractor = TeamsExtractor || (() => {
       u.protocol === 'blob:'
         ? { cache: 'no-store' }
         : { credentials: 'include', cache: 'no-store' };
-    // 429/503/一時障害は 1 回までリトライ（添付の取りこぼし低減）
-    const res = await RfmdFetch.withRetry(u.href, opts, 1);
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    const cap = budget
-      ? Math.min(MAX_ATTACH_SINGLE_BYTES, Math.max(0, budget.remaining))
-      : MAX_ATTACH_SINGLE_BYTES;
-    const bytes = await _readBoundedBytes(res, cap);
-    if (budget) budget.remaining -= bytes.length; // 後続ワーカーの上限判定に反映
-    return bytes;
+
+    // 予算は「読み込み前に予約」する。読み込み後に消費する方式だと、4 並列が同時に
+    // 各 MAX_ATTACH_SINGLE_BYTES を確保してから減算するため、ピークが合計上限を超えうる
+    // （Codex 指摘: 約 640MB まで膨らむ）。予約方式なら同時に確保できるバッファの総和が
+    // 常に予算（=合計上限）以内に収まる。
+    let reserved = MAX_ATTACH_SINGLE_BYTES;
+    if (budget) {
+      reserved = Math.min(MAX_ATTACH_SINGLE_BYTES, Math.max(0, budget.remaining));
+      if (reserved <= 0) throw new Error('添付合計上限に到達');
+      budget.remaining -= reserved;
+    }
+    try {
+      // 429/503/一時障害は 1 回までリトライ（添付の取りこぼし低減）
+      const res = await RfmdFetch.withRetry(u.href, opts, 1);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const bytes = await _readBoundedBytes(res, reserved);
+      if (budget) {
+        budget.remaining += reserved - bytes.length; // 予約超過分（未使用枠）を返金
+        reserved = 0; // 返金済み → finally での二重返金を防ぐ
+      }
+      return bytes;
+    } finally {
+      // 取得失敗・サイズ超過時は予約を全額返金して後続ワーカーへ回す
+      if (budget && reserved > 0) budget.remaining += reserved;
+    }
   }
 
   /* ── 公開 API ─────────────────────────────────── */

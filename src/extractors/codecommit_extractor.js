@@ -182,13 +182,25 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
   }
 
   /**
+   * 別の選択要素に含まれる（ネストした）要素を除外し、最も外側だけを残す。
+   * 広いフォールバック（[data-testid*="comment"]）が wrapper と子孫（comment-body /
+   * timestamp 等の testid に "comment" を含むノード）の両方を拾うと、wrapper と body-node が
+   * 別コメントとして二重に出てしまう（author/timestamp が異なるため deduplicateThreads でも
+   * 消えない）のを防ぐ。
+   */
+  function _dropNestedContainers(els) {
+    return els.filter((el) => !els.some((other) => other !== el && other.contains(el)));
+  }
+
+  /**
    * 全コメントをスレッド単位で取得する（v1 は 1 コメント = 1 スレッド）。
    * 返信スレッドのグルーピングは実機調整時に SELECTORS とともに精緻化する。
    * @returns {Array<Array<{author:string, body:string, filePath?:string, timestamp?:string}>>}
    */
   function getComments() {
     const threads = [];
-    const containers = _firstList(SELECTORS.commentContainer);
+    // ネストした二重マッチ（wrapper + その内側の comment-body）を除外してから解析する
+    const containers = _dropNestedContainers(_firstList(SELECTORS.commentContainer));
     containers.forEach((c) => {
       const comment = _parseComment(c);
       if (comment && comment.body) threads.push([comment]);

@@ -40,6 +40,14 @@ var TeamsExtractor = TeamsExtractor || (() => {
       '.ui-chat__item',
       '.message-body',
     ],
+    // row らしき祖先。message が body-level セレクタ（messageBodyContainer / .message-body）で
+    // マッチしたとき、ファイルカードは body の兄弟（row 配下）にあるため、ここまで広げて探す。
+    messageRow: [
+      '[data-tid="chat-pane-message"]',
+      '[data-tid^="chat-pane-item"]',
+      'div[role="listitem"]',
+      '.ui-chat__item',
+    ],
     // 送信者名
     author: [
       '[data-tid="message-author-name"]',
@@ -291,6 +299,20 @@ var TeamsExtractor = TeamsExtractor || (() => {
   }
 
   /**
+   * body-level メッセージ要素から row らしき祖先まで広げる。
+   * message が messageBodyContainer / .message-body でマッチした場合、ファイルカードは
+   * body の兄弟（row 配下）にあるため、closest で row まで上がってから探す。
+   * row らしき祖先が無ければ el 自身を返す（degrade）。
+   */
+  function _messageRow(el) {
+    try {
+      return el.closest(SELECTORS.messageRow.join(',')) || el;
+    } catch {
+      return el;
+    }
+  }
+
+  /**
    * 本文クローンから添付（画像・ファイルカード）要素を抽出し、
    * クローン側からは除去する（本文 Markdown と添付一覧の二重化を避ける）。
    * @returns {Array<{kind:'image'|'file', name:string, url:string}>}
@@ -321,8 +343,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
       img.remove();
     });
 
-    // ファイルカード（本文とは別枠のファイル）は messageEl 全体から探す
-    const cards = _qsAllFirst(messageEl, SELECTORS.fileCard);
+    // ファイルカード（本文とは別枠のファイル）。body-level セレクタがマッチした場合は
+    // カードが body の兄弟（row 配下）にあるため、row らしき祖先まで広げて探す。
+    const cards = _qsAllFirst(_messageRow(messageEl), SELECTORS.fileCard);
     cards.forEach((a) => {
       const href = a.getAttribute('href') || '';
       if (!href) return;
@@ -370,9 +393,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
     const rawId = _messageId(el);
     // 合成キー（data-mid / 一意 id が無い行用）。本文だけだと、同一送信者・同一時刻の
     // 添付のみ / リアクションのみメッセージが `author::ts::`（空本文）に潰れて 2 件目以降が
-    // 捨てられる。添付件数＋添付名＋リアクションを足して衝突を防ぐ（名前は再キャプチャでも
-    // 安定するので、重複除去は維持しつつ別メッセージは区別できる）。
-    const attachSig = attachments.map((a) => a.name).join(',');
+    // 捨てられる。添付は **URL を弁別子に含める**（既定名 "image" の貼り付け画像連投でも
+    // URL は異なるため区別できる）。収集は下→上の単調スクロールで、各メッセージは可視区間中
+    // （mounted のまま）に隣接ラウンドで再キャプチャされるだけなので URL は安定し、重複除去も保てる。
+    const attachSig = attachments.map((a) => `${a.kind}:${a.name}:${a.url}`).join('|');
     const reactSig = reactions.join(',');
     const id =
       rawId ||

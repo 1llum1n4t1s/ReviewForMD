@@ -126,6 +126,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * fetch を開始しておく。MD 専用経路ではバイトを使わないので false（無駄取得を避ける）。
    */
   let _prefetchBlobs = false;
+  /**
+   * ZIP 全体で共有する残り合計バイト予算。収集中の blob prefetch も後段の worker fetch も
+   * この同じ予算から消費し、合計を MAX_ATTACH_TOTAL_BYTES 以内に束縛する（OOM 防止）。
+   * extractWithAttachments が収集前に初期化し、finally でクリアする。
+   */
+  let _attachBudget = null;
 
   /** 認証付き取得を許可する添付ホスト（cookie 漏洩防止の allowlist） */
   function _isAllowedAttachmentUrl(url) {
@@ -518,6 +524,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
         // 上端: 古いメッセージの読み込みを待つ
         scroller.scrollTop = 0;
         await _delay(LOAD_WAIT_MS);
+        // wait 中に会話切替が起きると新会話の DOM を現 transcript に混入するため、capture 前に再チェック
+        if (location.href !== startHref) break;
         _captureInto(map, roundRef);
         if (scroller.scrollHeight > prevHeight + 4) {
           stagnant = 0; // 古い分が読み込まれた → 継続
@@ -530,6 +538,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
         const step = Math.max(200, Math.floor(scroller.clientHeight * 0.8));
         scroller.scrollTop = Math.max(0, prevTop - step);
         await _delay(STEP_WAIT_MS);
+        // wait 中に会話切替が起きると新会話の DOM を現 transcript に混入するため、capture 前に再チェック
+        if (location.href !== startHref) break;
         _captureInto(map, roundRef);
         stagnant = 0;
       }
@@ -751,14 +761,45 @@ var TeamsExtractor = TeamsExtractor || (() => {
   /**
    * blob: 画像のバイト取得を「今」（行が mounted のうち）開始する Promise を返す。
    * fetch 呼び出し時点で blob URL を解決するため、後で行が unmount されて URL が revoke されても
-   * in-flight の取得は完了できる。単体上限でストリーム打ち切り。失敗時は null に解決する。
+   * in-flight の取得は完了できる。
+   *
+   * メモリ束縛: 共有予算 `_attachBudget` から **読む前にサイズで予約** する。blob は Content-Length
+   * が判明することが多いので、本体をバッファする前に「単体上限」と「残り合計予算」で弾ける。
+   * これにより、多数/大容量の blob 画像を収集中に一斉取得しても合計が MAX_ATTACH_TOTAL_BYTES を
+   * 超えない（worker fetch と同じ予算を共有）。失敗・予算超過時は null に解決する。
    * @returns {Promise<Uint8Array|null>}
    */
   function _startBlobFetch(url) {
+    const budget = _attachBudget;
     try {
-      return fetch(url, { cache: 'no-store' })
-        .then((res) => (res.ok ? _readBoundedBytes(res, MAX_ATTACH_SINGLE_BYTES) : null))
-        .catch(() => null);
+      return fetch(url, { cache: 'no-store' }).then(async (res) => {
+        if (!res.ok) return null;
+        const avail = budget ? Math.max(0, budget.remaining) : Infinity;
+        const cap = Math.min(MAX_ATTACH_SINGLE_BYTES, avail);
+        const len = Number(res.headers.get('content-length'));
+        if (Number.isFinite(len) && len > 0) {
+          // Content-Length 既知: 読む前にサイズで弾き、予算から予約する。
+          // check→reserve の間に await が無いため、並列 prefetch でも予約は競合しない（単一スレッド）。
+          if (len > cap) { try { await res.body?.cancel(); } catch { /* 既に閉じている等 */ } return null; }
+          if (budget) budget.remaining -= len;
+          try {
+            const bytes = await _readBoundedBytes(res, len);
+            if (budget) budget.remaining += len - bytes.length; // 実サイズ差を返金
+            return bytes;
+          } catch {
+            if (budget) budget.remaining += len; // 失敗時は予約全額返金
+            return null;
+          }
+        }
+        // Content-Length 不明（稀）: 単体上限で読み、実サイズを事後減算
+        try {
+          const bytes = await _readBoundedBytes(res, cap);
+          if (budget) budget.remaining -= bytes.length;
+          return bytes;
+        } catch {
+          return null;
+        }
+      }).catch(() => null);
     } catch {
       return Promise.resolve(null);
     }
@@ -876,6 +917,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
     if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
     _busy = true;
     _prefetchBlobs = true; // 収集中、mounted のうちに blob: 画像の取得を先行開始する
+    // 収集中の blob prefetch と後段の worker fetch が同じ予算を共有する（合計上限を一元管理）
+    _attachBudget = { remaining: MAX_ATTACH_TOTAL_BYTES };
     try {
       const title = getTitle();
       const records = await _collectRecords();
@@ -892,9 +935,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
       }
 
       // 並列度制限プールでバイト取得（直列だと添付数 × RTT で遅い）。
-      // ZIP 全体で残り合計バイト予算を共有し、複数大容量ファイルでも合計上限を超える前に
-      // 取得を打ち切ってバッファ蓄積による OOM を防ぐ。
-      const budget = { remaining: MAX_ATTACH_TOTAL_BYTES };
+      // 予算は _attachBudget（収集中の blob prefetch と共有）。複数大容量でも合計上限を
+      // 超える前に取得を打ち切ってバッファ蓄積による OOM を防ぐ。
+      const budget = _attachBudget;
       const bytesByIndex = new Array(tasks.length).fill(null);
       let cursor = 0;
       async function _worker() {
@@ -904,14 +947,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
           const task = tasks[i];
           try {
             if (task._pending) {
-              // 収集中に開始済みの blob 取得（revoke 前に in-flight 化済み）。予算も合算する。
-              const bytes = await task._pending;
-              if (bytes && bytes.length <= budget.remaining) {
-                budget.remaining -= bytes.length;
-                bytesByIndex[i] = bytes;
-              } else {
-                bytesByIndex[i] = null; // 取得失敗 or 予算超過 → リモート URL リンクのまま残す
-              }
+              // 収集中に開始済みの blob 取得（revoke 前に in-flight 化済み）。
+              // バイトは既に _attachBudget から予約・消費済みなので、ここで再減算しない。
+              bytesByIndex[i] = await task._pending;
             } else {
               bytesByIndex[i] = await _fetchAttachmentBytes(task.url, budget);
             }
@@ -969,6 +1007,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       return { blob, filename, count: records.length };
     } finally {
       _prefetchBlobs = false;
+      _attachBudget = null;
       _busy = false;
     }
   }

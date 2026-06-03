@@ -113,6 +113,22 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
   }
 
   /**
+   * selectors 全ての一致を要素単位（重複排除）でマージして返す。
+   * `_firstList` は最初にヒットしたセレクタだけ返すため、comment-card と comment-item が
+   * 混在する DOM で後者の variant を取りこぼす。コンテナ収集はこちらで全 variant を拾う。
+   */
+  function _allMatches(selectors, root) {
+    const r = root || document;
+    const set = new Set();
+    for (const sel of selectors) {
+      try {
+        r.querySelectorAll(sel).forEach((el) => set.add(el));
+      } catch { /* 無効セレクタ等は無視して次の候補へ */ }
+    }
+    return Array.from(set);
+  }
+
+  /**
    * タイトル末尾の "#42" / "Pull request #42" / "Pull request 42" 等の番号サフィックスを除去。
    * `#` か "pull request" を伴う明示的なサフィックスのみ対象にし、"RFC 9110" や
    * "Protocol v2" のような末尾が数字の正規タイトルを誤って削らないようにする。
@@ -220,8 +236,8 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
    */
   function getComments() {
     const threads = [];
-    // wrapper+body の二重取りとリストの飲み込みを避け、1 コメント単位に正規化してから解析する
-    const containers = _selectCommentContainers(_firstList(SELECTORS.commentContainer));
+    // 全セレクタ variant をマージ（card/item 混在対応）し、1 コメント単位に正規化してから解析する
+    const containers = _selectCommentContainers(_allMatches(SELECTORS.commentContainer));
     containers.forEach((c) => {
       const comment = _parseComment(c);
       if (comment && comment.body) threads.push([comment]);

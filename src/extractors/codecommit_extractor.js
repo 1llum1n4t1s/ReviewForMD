@@ -182,40 +182,35 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
   }
 
   /**
-   * 広いフォールバック（[data-testid*="comment"]）が「リスト」「個別 wrapper」「body」を
-   * 混在して拾ったとき、各要素を 1 コメント単位に正規化する。
-   *   - リスト（matched を 2 件以上含む。例: comment-list）は採用せず、中の個別要素に委ねる
-   *     （最外をそのまま残すと全コメントを 1 件に飲み込んでしまうため）
-   *   - wrapper（matched を 1 件だけ＝自分の body を含む）はそれ自体を 1 コメントとして採用し、
-   *     その body（最も近い matched 祖先が wrapper）は落とす（wrapper+body の二重取り防止）
-   *   - それ以外（ネストなしの単独 body 等）はそのまま採用
+   * el 内（自身含む）の「コメント本文(body)」数を数える。1 コメント単位の判定に使う。
+   * markdown の入れ子等で過剰カウントしないよう、最外マッチだけを数える。
+   */
+  function _bodyCount(el) {
+    for (const sel of SELECTORS.commentBody) {
+      try {
+        if (typeof el.matches === 'function' && el.matches(sel)) return 1; // 自身が body
+        const found = Array.from(el.querySelectorAll(sel));
+        if (found.length) {
+          // 入れ子（markdown の多重マッチ等）は最外だけ数えて 1 コメント=1 本文とみなす
+          return found.filter((m) => !found.some((o) => o !== m && o.contains(m))).length;
+        }
+      } catch { /* 無効セレクタ等は無視して次の候補へ */ }
+    }
+    return 0;
+  }
+
+  /**
+   * 広いフォールバック（[data-testid*="comment"]）が「リスト」「wrapper」「body」「メタ要素
+   * （comment-author / comment-time 等）」を混在して拾ったとき、各要素を 1 コメント単位に正規化する。
+   *   - 本文をちょうど 1 つ含む要素＝1 コメント（wrapper でも body 自身でも可）を採用候補にする。
+   *     メタ要素（author/time）は本文 0 で除外、comment-list 等のリストは本文 2 件以上で除外。
+   *     ＝「matched ノード数」で判定すると wrapper(author+time+body を含む)を list と誤判定するため、
+   *       本文数で判定する。
+   *   - ネスト時は最も外側（wrapper）を残し、内側（その body）は落とす（wrapper+body 二重取り防止）。
    */
   function _selectCommentContainers(els) {
-    return els.filter((el) => {
-      // 自分が含む matched 要素数（リスト判定）
-      let innerCount = 0;
-      for (const o of els) {
-        if (o !== el && el.contains(o)) innerCount++;
-      }
-      if (innerCount >= 2) return false; // リスト/グループ → 中の個別要素に任せる
-
-      // 最も近い matched 祖先を探す
-      let ancestor = null;
-      for (const o of els) {
-        if (o === el || !o.contains(el)) continue;
-        if (ancestor === null || ancestor.contains(o)) ancestor = o;
-      }
-      if (ancestor) {
-        // 祖先が wrapper（含む matched が自分だけ）なら祖先側が 1 コメントとして採用されるので
-        // 自分（その body 等）は落とす。祖先がリスト（>=2）なら自分（個別コメント）を採用する。
-        let ancestorInner = 0;
-        for (const o of els) {
-          if (o !== ancestor && ancestor.contains(o)) ancestorInner++;
-        }
-        if (ancestorInner <= 1) return false;
-      }
-      return true;
-    });
+    const units = els.filter((el) => _bodyCount(el) === 1);
+    return units.filter((el) => !units.some((o) => o !== el && o.contains(el)));
   }
 
   /**

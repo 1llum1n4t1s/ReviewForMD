@@ -120,6 +120,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
 
   /** 抽出の再入ガード（同一ページで収集ループの多重起動・DOM 奪い合いを防ぐ） */
   let _busy = false;
+  /**
+   * 収集中に blob: 画像のバイト取得を先行開始するか（ZIP 経路のみ true）。
+   * 仮想スクロールで行が unmount されると blob URL が revoke されうるため、mounted のうちに
+   * fetch を開始しておく。MD 専用経路ではバイトを使わないので false（無駄取得を避ける）。
+   */
+  let _prefetchBlobs = false;
 
   /** 認証付き取得を許可する添付ホスト（cookie 漏洩防止の allowlist） */
   function _isAllowedAttachmentUrl(url) {
@@ -274,10 +280,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
       const ms = Date.parse(dt);
       return { raw: dt, ms: Number.isNaN(ms) ? NaN : ms };
     }
-    // title 属性に日時が入るケース
-    const titled = el.querySelector('[title]');
-    if (titled) {
-      const raw = titled.getAttribute('title') || '';
+    // title 属性に日時が入るケース。row スコープでは添付カードのファイル名等、非日時の title が
+    // 先に来ることがあるため、最初の 1 件で諦めず、パース可能な title が見つかるまで走査する。
+    const titled = el.querySelectorAll('[title]');
+    for (const node of titled) {
+      const raw = node.getAttribute('title') || '';
       const ms = Date.parse(raw);
       if (!Number.isNaN(ms)) return { raw, ms };
     }
@@ -312,6 +319,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
     }
   }
 
+  /** 安定 id。body-level 一致時は row 側の data-mid/id を拾う（_messageId の row フォールバック）。 */
+  function _stableId(el) {
+    return _messageId(el) || _messageId(_messageRow(el));
+  }
+
   /**
    * 本文クローンから添付（画像・ファイルカード）要素を抽出し、
    * クローン側からは除去する（本文 Markdown と添付一覧の二重化を避ける）。
@@ -339,7 +351,13 @@ var TeamsExtractor = TeamsExtractor || (() => {
         return;
       }
       const alt = (img.getAttribute('alt') || '').trim();
-      list.push({ kind: 'image', name: alt || 'image', url: src });
+      const att = { kind: 'image', name: alt || 'image', url: src };
+      // blob: は行が unmount されると revoke されうるため、ZIP 経路では mounted の今のうちに
+      // 取得を開始しておく（_pending に Promise を持たせ、extractWithAttachments で await する）。
+      if (_prefetchBlobs && /^blob:/i.test(src)) {
+        att._pending = _startBlobFetch(src);
+      }
+      list.push(att);
       img.remove();
     });
 
@@ -394,7 +412,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
       return null;
     }
 
-    const rawId = _messageId(el);
+    // body-level セレクタ一致時、安定 id（data-mid / id）は body ではなく row 側にあることが
+    // 多い。row も見て拾うことで、合成キーへのフォールバックと numeric ID 順の喪失を防ぐ。
+    const rawId = _messageId(el) || _messageId(rowEl);
     // 合成キー（data-mid / 一意 id が無い行用）。本文だけだと、同一送信者・同一時刻の
     // 添付のみ / リアクションのみメッセージが `author::ts::`（空本文）に潰れて 2 件目以降が
     // 捨てられる。添付は **URL を弁別子に含める**（既定名 "image" の貼り付け画像連投でも
@@ -443,7 +463,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
       const el = els[i];
       // 安定 id があり既に収集済みなら、重い _parseMessage（cloneNode + htmlToMarkdown）を省く。
       // 仮想スクロールで同一要素が複数反復の viewport に跨るため、再パースの無駄が大きい。
-      const rawId = _messageId(el);
+      // body-level 一致時は row 側の id を拾う（_parseMessage の rawId と整合させる）。
+      const rawId = _stableId(el);
       if (rawId && map.has(rawId)) continue;
       // domIndex は viewport 内 DOM 順（古→新）。フォールバック sortKey の時系列復元に使う。
       const rec = _parseMessage(el, round, i);
@@ -728,6 +749,22 @@ var TeamsExtractor = TeamsExtractor || (() => {
   }
 
   /**
+   * blob: 画像のバイト取得を「今」（行が mounted のうち）開始する Promise を返す。
+   * fetch 呼び出し時点で blob URL を解決するため、後で行が unmount されて URL が revoke されても
+   * in-flight の取得は完了できる。単体上限でストリーム打ち切り。失敗時は null に解決する。
+   * @returns {Promise<Uint8Array|null>}
+   */
+  function _startBlobFetch(url) {
+    try {
+      return fetch(url, { cache: 'no-store' })
+        .then((res) => (res.ok ? _readBoundedBytes(res, MAX_ATTACH_SINGLE_BYTES) : null))
+        .catch(() => null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  }
+
+  /**
    * 添付 1 件の実バイトを取得する。
    * 単体上限と「残り合計予算」の小さい方を上限にストリーム読みするため、
    * 巨大ファイル 1 件でも、複数大容量ファイルでも、バッファ前にサイズで弾ける。
@@ -838,6 +875,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
   async function extractWithAttachments() {
     if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
     _busy = true;
+    _prefetchBlobs = true; // 収集中、mounted のうちに blob: 画像の取得を先行開始する
     try {
       const title = getTitle();
       const records = await _collectRecords();
@@ -863,12 +901,24 @@ var TeamsExtractor = TeamsExtractor || (() => {
         while (true) {
           const i = cursor++;
           if (i >= tasks.length) break;
+          const task = tasks[i];
           try {
-            bytesByIndex[i] = await _fetchAttachmentBytes(tasks[i].url, budget);
+            if (task._pending) {
+              // 収集中に開始済みの blob 取得（revoke 前に in-flight 化済み）。予算も合算する。
+              const bytes = await task._pending;
+              if (bytes && bytes.length <= budget.remaining) {
+                budget.remaining -= bytes.length;
+                bytesByIndex[i] = bytes;
+              } else {
+                bytesByIndex[i] = null; // 取得失敗 or 予算超過 → リモート URL リンクのまま残す
+              }
+            } else {
+              bytesByIndex[i] = await _fetchAttachmentBytes(task.url, budget);
+            }
           } catch (e) {
             bytesByIndex[i] = null;
             // SAS トークンを含みうる URL はそのまま出さず redact する
-            console.debug('[ReviewForMD][Teams] 添付取得失敗:', _redactUrl(tasks[i].url), e?.message || e);
+            console.debug('[ReviewForMD][Teams] 添付取得失敗:', _redactUrl(task.url), e?.message || e);
           }
         }
       }
@@ -918,6 +968,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       const filename = _safeName(title, 'teams-chat') + '.zip';
       return { blob, filename, count: records.length };
     } finally {
+      _prefetchBlobs = false;
       _busy = false;
     }
   }

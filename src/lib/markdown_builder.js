@@ -682,5 +682,15 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
     });
   }
 
-  return { buildFullMarkdown, formatSingleComment, formatThreadComments, htmlToMarkdown, formatTimestamp, deduplicateThreads };
+  return {
+    buildFullMarkdown,
+    formatSingleComment,
+    formatThreadComments,
+    htmlToMarkdown,
+    formatTimestamp,
+    deduplicateThreads,
+    // リンクのテキスト/URL エスケープを他 extractor（Teams 添付リンク等）からも再利用できるよう公開する。
+    sanitizeLinkText: _sanitizeLinkText,
+    sanitizeLinkUrl: _sanitizeLinkUrl,
+  };
 })();

@@ -97,6 +97,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
   const MAX_ATTACH_TOTAL_BYTES = 512 * 1024 * 1024;
   /** 添付取得の並列度（直列だと添付数 × RTT で遅い） */
   const ATTACH_CONCURRENCY = 4;
+  /**
+   * 添付 1 件あたりのバイト上限（OOM 防止）。
+   * 「並列度 × 単体上限 ≤ 合計上限」になるよう合計 / 並列度で決めることで、
+   * 同時にバッファされる添付のピークが合計上限を超えないようにする。
+   */
+  const MAX_ATTACH_SINGLE_BYTES = Math.floor(MAX_ATTACH_TOTAL_BYTES / ATTACH_CONCURRENCY);
 
   /** 抽出の再入ガード（同一ページで収集ループの多重起動・DOM 奪い合いを防ぐ） */
   let _busy = false;
@@ -199,14 +205,28 @@ var TeamsExtractor = TeamsExtractor || (() => {
 
   /* ── メッセージ解析 ─────────────────────────────── */
 
-  /** メッセージの安定 id（重複除去キーの第一候補）。 */
+  /**
+   * メッセージの安定 id（重複除去キーの第一候補）。
+   *
+   * ⚠️ `data-tid` は「コンポーネント種別マーカー」で、SELECTORS.message が使う
+   *    `chat-pane-message` / `chat-pane-item` / `messageBodyContainer` のように
+   *    **行をまたいで同じ値が繰り返される**ことが多い。これをユニークキーにすると
+   *    全メッセージが同一キーになり、`_captureInto` の `map.has(rawId)` 早期 continue で
+   *    2 件目以降が丸ごと捨てられる（＝最初の 1 件しかエクスポートされない）。
+   *    そのため data-tid は「メッセージ ID 由来の長い数字列を含む＝インスタンス固有」と
+   *    判断できる場合のみ採用し、汎用 tid は無視して `_parseMessage` 側の合成キー
+   *    （author::timestamp::body 先頭）に委ねる。
+   *
+   * @returns {string} 安定ユニーク id（取れなければ ''）
+   */
   function _messageId(el) {
-    return (
-      el.getAttribute('data-mid') ||
-      el.getAttribute('data-tid') ||
-      el.getAttribute('id') ||
-      ''
-    );
+    const mid = el.getAttribute('data-mid');
+    if (mid) return mid; // メッセージ ID（最も信頼できる一意値）
+    const id = el.getAttribute('id');
+    if (id) return id; // 要素 id は文書内で一意であるべき
+    const tid = el.getAttribute('data-tid') || '';
+    if (/\d{5,}/.test(tid)) return tid; // 長い数字列を含む tid のみインスタンス固有とみなす
+    return '';
   }
 
   /** ソート用の数値キー（mid は概ね epoch ms ベースの単調増加値）。 */
@@ -525,6 +545,29 @@ var TeamsExtractor = TeamsExtractor || (() => {
   }
 
   /**
+   * Markdown リンクのテキスト部 `[...]` を壊さないようエスケープする。
+   * MarkdownBuilder のリンクエスケープを単一の真実の源として再利用し、
+   * 未ロード時のみローカルフォールバック（[ と ] を退避）。
+   */
+  function _mdLinkText(s) {
+    const t = String(s == null ? '' : s);
+    return (typeof MarkdownBuilder !== 'undefined' && MarkdownBuilder.sanitizeLinkText)
+      ? MarkdownBuilder.sanitizeLinkText(t)
+      : t.replace(/[[\]]/g, '\\$&');
+  }
+
+  /**
+   * Markdown リンクの URL 部 `(...)` を壊さないようエスケープする。
+   * MarkdownBuilder のリンク URL エスケープを再利用（未ロード時のみローカルフォールバック）。
+   */
+  function _mdLinkUrl(s) {
+    const t = String(s == null ? '' : s);
+    return (typeof MarkdownBuilder !== 'undefined' && MarkdownBuilder.sanitizeLinkUrl)
+      ? MarkdownBuilder.sanitizeLinkUrl(t)
+      : t.replace(/\)/g, '%29').replace(/[ \t]/g, '%20').replace(/"/g, '%22').replace(/'/g, '%27');
+  }
+
+  /**
    * レコード配列から Markdown 本文を組み立てる。
    * @param {string} title 会話タイトル
    * @param {Array} records レコード
@@ -557,8 +600,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
             ? localPaths.get(att.url)
             : att.url;
           const icon = att.kind === 'image' ? '🖼' : '📎';
-          const label = _safeName(att.name, att.kind);
-          lines.push(`- ${icon} [${label}](${ref})`);
+          // 添付名・URL は送信者が制御できるため、Markdown のリンク構文を壊す/注入する
+          // メタ文字（]・) 等）を MarkdownBuilder と同じ規則でエスケープしてから埋め込む。
+          const label = _mdLinkText(_safeName(att.name, att.kind));
+          const safeRef = _mdLinkUrl(ref);
+          lines.push(`- ${icon} [${label}](${safeRef})`);
         }
         lines.push('');
       }
@@ -575,7 +621,57 @@ var TeamsExtractor = TeamsExtractor || (() => {
 
   /* ── 添付取得（ZIP 経路）─────────────────────────── */
 
-  async function _fetchAttachmentBytes(url) {
+  /**
+   * Response を「上限バイト」を超えない範囲でストリーム読みして Uint8Array 化する。
+   * Content-Length が判明していれば全読み前に弾き、不明/虚偽でも running limit で
+   * 打ち切る。巨大ファイルを `arrayBuffer()` で丸ごとバッファしてからチェックする
+   * （＝上限が効く前に OOM する）のを防ぐ。
+   * @param {Response} res
+   * @param {number} maxBytes
+   * @returns {Promise<Uint8Array>}
+   */
+  async function _readBoundedBytes(res, maxBytes) {
+    if (!(maxBytes > 0)) throw new Error('添付合計上限に到達');
+    const len = Number(res.headers.get('content-length'));
+    if (Number.isFinite(len) && len > maxBytes) {
+      try { await res.body?.cancel(); } catch { /* 既に閉じている等 */ }
+      throw new Error(`添付がサイズ上限を超過: ${len} bytes`);
+    }
+    // ストリーム非対応環境では arrayBuffer にフォールバック（事後に上限チェック）
+    if (!res.body || typeof res.body.getReader !== 'function') {
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length > maxBytes) throw new Error(`添付がサイズ上限を超過: ${bytes.length} bytes`);
+      return bytes;
+    }
+    // Content-Length 不明/虚偽でも、読みながら上限超過で即打ち切る
+    const reader = res.body.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch { /* 既に閉じている等 */ }
+        throw new Error(`添付がサイズ上限を超過: >${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    return out;
+  }
+
+  /**
+   * 添付 1 件の実バイトを取得する。
+   * 単体上限と「残り合計予算」の小さい方を上限にストリーム読みするため、
+   * 巨大ファイル 1 件でも、複数大容量ファイルでも、バッファ前にサイズで弾ける。
+   * @param {string} url
+   * @param {{remaining:number}} [budget] ZIP 全体で共有する残り合計バイト予算
+   * @returns {Promise<Uint8Array>}
+   */
+  async function _fetchAttachmentBytes(url, budget) {
     if (!_isAllowedAttachmentUrl(url)) {
       throw new Error('許可されていない添付オリジンです');
     }
@@ -587,8 +683,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
     // 429/503/一時障害は 1 回までリトライ（添付の取りこぼし低減）
     const res = await RfmdFetch.withRetry(u.href, opts, 1);
     if (!res.ok) throw new Error(`status ${res.status}`);
-    const buf = await res.arrayBuffer();
-    return new Uint8Array(buf);
+    const cap = budget
+      ? Math.min(MAX_ATTACH_SINGLE_BYTES, Math.max(0, budget.remaining))
+      : MAX_ATTACH_SINGLE_BYTES;
+    const bytes = await _readBoundedBytes(res, cap);
+    if (budget) budget.remaining -= bytes.length; // 後続ワーカーの上限判定に反映
+    return bytes;
   }
 
   /* ── 公開 API ─────────────────────────────────── */
@@ -673,7 +773,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
         }
       }
 
-      // 並列度制限プールでバイト取得（直列だと添付数 × RTT で遅い）
+      // 並列度制限プールでバイト取得（直列だと添付数 × RTT で遅い）。
+      // ZIP 全体で残り合計バイト予算を共有し、複数大容量ファイルでも合計上限を超える前に
+      // 取得を打ち切ってバッファ蓄積による OOM を防ぐ。
+      const budget = { remaining: MAX_ATTACH_TOTAL_BYTES };
       const bytesByIndex = new Array(tasks.length).fill(null);
       let cursor = 0;
       async function _worker() {
@@ -681,7 +784,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
           const i = cursor++;
           if (i >= tasks.length) break;
           try {
-            bytesByIndex[i] = await _fetchAttachmentBytes(tasks[i].url);
+            bytesByIndex[i] = await _fetchAttachmentBytes(tasks[i].url, budget);
           } catch (e) {
             bytesByIndex[i] = null;
             // SAS トークンを含みうる URL はそのまま出さず redact する

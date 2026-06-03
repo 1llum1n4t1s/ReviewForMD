@@ -381,9 +381,13 @@ var TeamsExtractor = TeamsExtractor || (() => {
       bodyMd = (bodyClone.textContent || '').trim();
     }
 
-    const author = _getAuthor(el);
-    const ts = _getTimestamp(el);
-    const reactions = _getReactions(el);
+    // body-level セレクタ（messageBodyContainer / .message-body）がマッチした場合、
+    // author / timestamp / reaction は body の外側（row）に兄弟として置かれることが多いため、
+    // ファイルカードと同様に row らしき祖先まで広げてから取る。
+    const rowEl = _messageRow(el);
+    const author = _getAuthor(rowEl);
+    const ts = _getTimestamp(rowEl);
+    const reactions = _getReactions(rowEl);
 
     // 本文も添付もリアクションも空なら、システム行などとみなしスキップ
     if (!bodyMd && attachments.length === 0 && reactions.length === 0) {
@@ -402,19 +406,21 @@ var TeamsExtractor = TeamsExtractor || (() => {
       rawId ||
       `${author}::${ts.raw}::${bodyMd.slice(0, 80)}::${attachments.length}:${attachSig}::${reactSig}`;
     const numeric = _numericId(rawId);
-    // フォールバック sortKey（id も timestamp も無い行用）: _collectRecords は下端（最新）から
-    // 上へ収集するため round が大きいほど古い。-(round*STRIDE)+domIndex とすることで
-    // 「古い round ほど小さい値」かつ「同一 viewport 内は DOM 順（古→新）で増加」になり、
-    // 昇順ソートで時系列に並ぶ（収集順 seq のままだと newest-block-first で逆順になる）。
+    // 収集順から復元した時系列キー: _collectRecords は下端（最新）から上へ収集するため
+    // round が大きいほど古い。-(round*STRIDE)+domIndex で「古い round ほど小さい値」かつ
+    // 「同一 viewport 内は DOM 順（古→新）で増加」になり、昇順ソートで時系列に並ぶ。
+    const seqKey = -(round * FALLBACK_ROUND_STRIDE) + domIndex;
+    // 主キー: mid(numeric) → timestamp(ms) → seqKey の優先。
     const sortKey = !Number.isNaN(numeric)
       ? numeric
       : !Number.isNaN(ts.ms)
         ? ts.ms
-        : -(round * FALLBACK_ROUND_STRIDE) + domIndex;
+        : seqKey;
 
     return {
       id,
       sortKey,
+      seqKey, // sortKey 同値（粗いタイムスタンプで複数メッセージが同分など）のタイブレーカ
       author,
       tsRaw: ts.raw,
       bodyMd,
@@ -514,7 +520,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
   /** Map → 時系列ソート → 送信者の前方補完（グループ化された継続メッセージ対策）。 */
   function _finalize(map) {
     const records = Array.from(map.values());
-    records.sort((a, b) => a.sortKey - b.sortKey);
+    // 主キー sortKey、同値時は seqKey（収集順から復元した時系列）でタイブレーク。
+    // 粗いタイムスタンプ（分単位）で複数メッセージが同じ ts.ms を持つとき、収集が下→上のため
+    // 同分内が newest-before-oldest にならないよう、seqKey で chronological に整える。
+    records.sort((a, b) => (a.sortKey - b.sortKey) || (a.seqKey - b.seqKey));
     // Teams は同一送信者の連投で名前を 1 度しか出さない。
     // 時系列順に並べた後、空の送信者を直前の送信者で補完する。
     let lastAuthor = '';

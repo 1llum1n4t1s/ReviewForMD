@@ -93,6 +93,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
   const MAX_DURATION_MS = 240000;
   /** 収集メッセージ数の上限（暴走防止） */
   const MAX_MESSAGES = 50000;
+  /**
+   * フォールバック sortKey のラウンド間ストライド。
+   * 1 viewport 内のメッセージ数より十分大きくし、ラウンドをまたいだ順序が
+   * viewport 内 DOM 順（domIndex）で乱れないようにする。
+   */
+  const FALLBACK_ROUND_STRIDE = 1e6;
   /** ZIP に同梱する添付の合計バイト上限（OOM 防止）。超過分はリモート URL リンクのまま残す。 */
   const MAX_ATTACH_TOTAL_BYTES = 512 * 1024 * 1024;
   /** 添付取得の並列度（直列だと添付数 × RTT で遅い） */
@@ -331,10 +337,13 @@ var TeamsExtractor = TeamsExtractor || (() => {
 
   /**
    * 1 メッセージ要素を解析してレコード化する。
+   * @param {Element} el メッセージ要素
+   * @param {number} round 収集ラウンド（_captureInto 呼び出し回数。下端=0 で上へ行くほど増える）
+   * @param {number} domIndex そのラウンドの viewport 内 DOM 順インデックス（古→新で増加）
    * @returns {{id:string, sortKey:number, author:string, tsRaw:string,
    *            bodyMd:string, reactions:string[], attachments:object[]}|null}
    */
-  function _parseMessage(el, seq) {
+  function _parseMessage(el, round, domIndex) {
     const bodyEl = _getBodyElement(el);
     // 本文クローンから添付を抜いてから Markdown 化する
     const bodyClone = bodyEl.cloneNode(true);
@@ -359,15 +368,25 @@ var TeamsExtractor = TeamsExtractor || (() => {
     }
 
     const rawId = _messageId(el);
+    // 合成キー（data-mid / 一意 id が無い行用）。本文だけだと、同一送信者・同一時刻の
+    // 添付のみ / リアクションのみメッセージが `author::ts::`（空本文）に潰れて 2 件目以降が
+    // 捨てられる。添付件数＋添付名＋リアクションを足して衝突を防ぐ（名前は再キャプチャでも
+    // 安定するので、重複除去は維持しつつ別メッセージは区別できる）。
+    const attachSig = attachments.map((a) => a.name).join(',');
+    const reactSig = reactions.join(',');
     const id =
       rawId ||
-      `${author}::${ts.raw}::${bodyMd.slice(0, 80)}`; // 合成キー
+      `${author}::${ts.raw}::${bodyMd.slice(0, 80)}::${attachments.length}:${attachSig}::${reactSig}`;
     const numeric = _numericId(rawId);
+    // フォールバック sortKey（id も timestamp も無い行用）: _collectRecords は下端（最新）から
+    // 上へ収集するため round が大きいほど古い。-(round*STRIDE)+domIndex とすることで
+    // 「古い round ほど小さい値」かつ「同一 viewport 内は DOM 順（古→新）で増加」になり、
+    // 昇順ソートで時系列に並ぶ（収集順 seq のままだと newest-block-first で逆順になる）。
     const sortKey = !Number.isNaN(numeric)
       ? numeric
       : !Number.isNaN(ts.ms)
         ? ts.ms
-        : seq; // どちらも無ければ収集順
+        : -(round * FALLBACK_ROUND_STRIDE) + domIndex;
 
     return {
       id,
@@ -386,18 +405,21 @@ var TeamsExtractor = TeamsExtractor || (() => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  function _captureInto(map, seqRef) {
+  function _captureInto(map, roundRef) {
+    // 1 回の _captureInto = 1 ラウンド。下端から上へ進むので round が大きいほど古い viewport。
+    const round = roundRef.value++;
     const els = _findMessages();
-    for (const el of els) {
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
       // 安定 id があり既に収集済みなら、重い _parseMessage（cloneNode + htmlToMarkdown）を省く。
       // 仮想スクロールで同一要素が複数反復の viewport に跨るため、再パースの無駄が大きい。
       const rawId = _messageId(el);
       if (rawId && map.has(rawId)) continue;
-      const rec = _parseMessage(el, seqRef.value);
+      // domIndex は viewport 内 DOM 順（古→新）。フォールバック sortKey の時系列復元に使う。
+      const rec = _parseMessage(el, round, i);
       if (!rec) continue;
       if (!map.has(rec.id)) {
         map.set(rec.id, rec);
-        seqRef.value++;
       }
     }
   }
@@ -409,12 +431,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
   async function _collectRecords() {
     const scroller = _findScroller();
     const map = new Map();
-    const seqRef = { value: 0 };
+    const roundRef = { value: 0 };
     const startHref = location.href; // 収集中にページ/会話が変わったら中断する基準
 
     if (!scroller) {
       // スクローラ不明: 現在表示分だけでも回収して返す
-      _captureInto(map, seqRef);
+      _captureInto(map, roundRef);
       return _finalizeWithWarn(map, scroller);
     }
 
@@ -425,7 +447,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       /* スクロール不可は無視 */
     }
     await _delay(STEP_WAIT_MS);
-    _captureInto(map, seqRef);
+    _captureInto(map, roundRef);
 
     const start = Date.now();
     let stagnant = 0;
@@ -445,7 +467,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
         // 上端: 古いメッセージの読み込みを待つ
         scroller.scrollTop = 0;
         await _delay(LOAD_WAIT_MS);
-        _captureInto(map, seqRef);
+        _captureInto(map, roundRef);
         if (scroller.scrollHeight > prevHeight + 4) {
           stagnant = 0; // 古い分が読み込まれた → 継続
         } else {
@@ -457,7 +479,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
         const step = Math.max(200, Math.floor(scroller.clientHeight * 0.8));
         scroller.scrollTop = Math.max(0, prevTop - step);
         await _delay(STEP_WAIT_MS);
-        _captureInto(map, seqRef);
+        _captureInto(map, roundRef);
         stagnant = 0;
       }
     }

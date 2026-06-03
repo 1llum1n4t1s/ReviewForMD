@@ -60,7 +60,13 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
     commentBody: ['[data-testid*="comment-body"]', '[class*="comment-body"]', '[class*="markdown"]'],
     // インラインコメントの対象ファイルパス（取れたら付与）
     commentFilePath: ['[data-testid*="file-path"]', '[class*="filePath"]', '[class*="file-path"]'],
+    // タブ見出しテキスト（小文字・前方一致で判定）。本文＝Details、コメント＝Activity が別タブのため。
+    detailsTabText: ['details', '詳細'],
+    activityTabText: ['activity', 'アクティビティ'],
   };
+
+  /** タブ切替後の描画待ち (ms)。 */
+  const TAB_RENDER_WAIT_MS = 600;
 
   /* ── DOM ヘルパ ─────────────────────────────────── */
 
@@ -198,16 +204,57 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
     return result;
   }
 
+  function _delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 表示テキストが labelPatterns に一致する role=tab 要素をクリックする（best-effort）。
+   * Cloudscape のタブは role="tab" を持つ。誤クリックを避けるため role=tab に限定する。
+   * @returns {boolean} クリックできたら true
+   */
+  function _clickTabByLabel(labelPatterns) {
+    const tabs = document.querySelectorAll('[role="tab"]');
+    for (const tab of tabs) {
+      const text = (tab.textContent || '').trim().toLowerCase();
+      if (text && labelPatterns.some((p) => text === p || text.startsWith(p))) {
+        try {
+          tab.click();
+          return true;
+        } catch { /* クリック不可は無視 */ }
+      }
+    }
+    return false;
+  }
+
+  /** タブを開いて描画を待つ（クリックできたときのみ待つ）。 */
+  async function _activateTab(labelPatterns) {
+    if (_clickTabByLabel(labelPatterns)) {
+      await _delay(TAB_RENDER_WAIT_MS);
+      return true;
+    }
+    return false;
+  }
+
   /**
    * 全データを取得して Markdown を生成する（popup の MDダウンロード/コピー用）。
+   *
+   * 本文（Details タブ）とコメント（Activity タブ）は別タブに描画されるため、
+   * それぞれのタブを開いてから収集する（best-effort）。タブ切替に失敗しても、
+   * 現在表示中の内容から取れる範囲で抽出して degrade する。
    * 本文・コメントが両方取れなくても、タイトル見出しは必ず出す（GitHub/DevOps と同じく
    * 「空ファイル」にはしない）。両方空のときは実機調整のシグナルとして warn を出す。
    * @returns {Promise<string>}
    */
   async function extractAll() {
-    const title = `${getTitle()} ${getPRNumber()}`.trim();
+    // Details タブを開いてから本文を取る（Activity 開始時の本文欠落を防ぐ）
+    await _activateTab(SELECTORS.detailsTabText);
     const body = getBody();
+    // Activity タブを開いてからコメントを取る（Details 開始時のコメント欠落を防ぐ）
+    await _activateTab(SELECTORS.activityTabText);
     const threads = getComments();
+
+    const title = `${getTitle()} ${getPRNumber()}`.trim();
     if (!body && threads.length === 0) {
       console.warn(
         '[ReviewForMD][CodeCommit] PR 本文・コメントを抽出できませんでした' +

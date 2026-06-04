@@ -11,6 +11,11 @@
   if (window.__rfmd_initialized) return;
   window.__rfmd_initialized = true;
 
+  // 起動ログ: ユーザー報告から「どのバージョン・どのサイトか」を特定できるようにする。
+  try {
+    console.info(`[ReviewForMD] v${chrome.runtime.getManifest().version} loaded on ${location.hostname}`);
+  } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
+
   /** Extension が更新されてコンテキストが無効化されたエラーかどうか */
   function _isExtCtxError(e) {
     return e?.message?.includes('Extension context invalidated');
@@ -61,15 +66,22 @@
         ButtonInjector.cleanup();
       }
     } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
-    // 前のページから残ったボタンを除去
+    // 前のページから残った一覧行ボタンを除去
+    // （詳細/SP/Teams のページ埋め込みは廃止したので一覧行ボタンのみ）
     document
-      .querySelectorAll('.rfmd-all-copy-container, .rfmd-comment-btn-wrap, .rfmd-list-btn-wrap')
+      .querySelectorAll('.rfmd-list-btn-wrap')
       .forEach((el) => el.remove());
     // SharePoint の captured ID / availability キャッシュをリセット。
     // ButtonInjector は UI 層なので extractor 層の reset() は content_script から直接呼ぶ。
     try {
       if (typeof SharePointExtractor !== 'undefined' && SharePointExtractor.reset) {
         SharePointExtractor.reset();
+      }
+    } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
+    // Teams チャットの availability キャッシュもリセット（会話切替対応）。
+    try {
+      if (typeof TeamsExtractor !== 'undefined' && TeamsExtractor.reset) {
+        TeamsExtractor.reset();
       }
     } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
     _currentSiteType = null;
@@ -110,21 +122,29 @@
     _retries = 0;
     console.debug(`[ReviewForMD] Detected: ${siteType} (${pageType})`);
 
-    // ボタンを注入（拡張コンテキスト無効化時のエラーを安全に無視）
-    try {
-      if (pageType === 'list') {
+    // 設計（popup 集約）: 詳細ページのボタンはページに埋め込まず popup から操作する。
+    // ページ側に残すのは PR 一覧の各行ダウンロードボタンのみ。
+    if (pageType === 'list') {
+      try {
         ButtonInjector.injectList(siteType);
-      } else {
-        ButtonInjector.inject(siteType);
+      } catch (e) {
+        if (!_isExtCtxError(e)) {
+          console.warn('[ReviewForMD] ButtonInjector.injectList error:', e);
+        }
       }
-    } catch (e) {
-      if (!_isExtCtxError(e)) {
-        console.warn('[ReviewForMD] ButtonInjector.inject error:', e);
-      }
+      // 一覧は SPA で行が遅延描画されるため DOM 変更を監視して再注入する
+      _startObserver(siteType);
+    } else if (siteType === SiteDetector.SiteType.SHAREPOINT_TEAMS) {
+      // SharePoint は再生中に発生する fetch から ID を捕捉する main world フックを
+      // 早めに仕込んでおく必要があるため、ボタンは出さないが checkAvailability を
+      // 一度だけ走らせてフックを注入する（popup を開く前から ID 捕捉を有効化）。
+      try {
+        if (typeof SharePointExtractor !== 'undefined') {
+          SharePointExtractor.checkAvailability();
+        }
+      } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
     }
-
-    // DOM 変更を監視（多重登録を防止）
-    _startObserver(siteType);
+    // 詳細ページ（GitHub/DevOps/SharePoint/Teams）は popup 主導のため Observer 不要。
   }
 
   /**
@@ -150,8 +170,7 @@
           if (
             n.nodeType === Node.ELEMENT_NODE &&
             !/** @type {Element} */(n).hasAttribute('data-rfmd') &&
-            !/** @type {Element} */(n).classList?.contains('rfmd-comment-btn-wrap') &&
-            !/** @type {Element} */(n).classList?.contains('rfmd-all-copy-container')
+            !/** @type {Element} */(n).classList?.contains('rfmd-list-btn-wrap')
           ) {
             hasRelevantChange = true;
             break;
@@ -168,15 +187,13 @@
         // race したときに、観測時点のサイトタイプでボタン注入してしまう事故を防ぐ。
         const site = _currentSiteType;
         if (!site) return; // cleanup 済み
+        // Observer は一覧ページでのみ起動するため、再注入も injectList のみ。
+        if (_currentPageType !== 'list') return;
         try {
-          if (_currentPageType === 'list') {
-            ButtonInjector.injectList(site);
-          } else {
-            ButtonInjector.inject(site);
-          }
+          ButtonInjector.injectList(site);
         } catch (e) {
           if (!_isExtCtxError(e)) {
-            console.warn('[ReviewForMD] ButtonInjector.inject (observer) error:', e);
+            console.warn('[ReviewForMD] ButtonInjector.injectList (observer) error:', e);
           }
         }
       }, DEBOUNCE_MS);
@@ -220,11 +237,27 @@
         try {
           if (msg?.type === 'rfmd:navigate') {
             reinit();
+            return; // 同期
           }
-          // Popup からの ping に応答（カスタムドメイン対応）
-          if (msg?.type === 'rfmd:ping') {
-            sendResponse({ siteType: _currentSiteType });
-            return; // sendResponse を同期的に呼んでいるので true 不要
+          // Popup へ現在ページの状態（サイト種別/ページ種別/利用可否/タイトル）を返す
+          if (msg?.type === 'rfmd:status') {
+            Promise.resolve(ButtonInjector.getStatus())
+              .then((s) => sendResponse(s))
+              .catch((e) => sendResponse({
+                siteType: SiteDetector.SiteType.UNKNOWN,
+                pageType: null,
+                available: false,
+                title: '',
+                error: e?.message || String(e),
+              }));
+            return true; // 非同期 sendResponse
+          }
+          // Popup からのアクション実行依頼（抽出 + ダウンロード/コピー）
+          if (msg?.type === 'rfmd:extract') {
+            Promise.resolve(ButtonInjector.runAction({ kind: msg.kind, mode: msg.mode }))
+              .then((r) => sendResponse(r))
+              .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
+            return true; // 非同期 sendResponse
           }
         } catch (innerErr) {
           if (!_isExtCtxError(innerErr)) {
@@ -247,6 +280,9 @@
 
     // 4. GitHub turbo
     document.addEventListener('turbo:load', reinit);
+
+    // 5. hashchange（Teams クラシックのハッシュルーティング会話切替に対応）
+    window.addEventListener('hashchange', reinit);
 
     // main world スクリプトを注入（history.pushState/replaceState をフック）
     _injectNavigationHook();

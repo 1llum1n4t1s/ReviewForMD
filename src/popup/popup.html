@@ -93,20 +93,85 @@
       color: #2da44e;
       font-weight: bold;
     }
+    /* ── 動的アクションボタン（サイト別に出し分け）── */
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .actions:empty { margin-top: 0; }
+    .pop-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #d0d7de;
+      background: #f6f8fa;
+      color: #24292f;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .pop-btn:hover:not(:disabled) { background: #eaeef2; }
+    .pop-btn:active:not(:disabled) { background: #dde2e8; }
+    .pop-btn:disabled { opacity: 0.6; cursor: default; }
+    .pop-btn--primary {
+      background: #1f883d;
+      border-color: rgba(31, 136, 61, 0.4);
+      color: #ffffff;
+    }
+    .pop-btn--primary:hover:not(:disabled) { background: #1a7f37; }
+    .pop-btn--primary:active:not(:disabled) { background: #197935; }
+    .pop-btn--success {
+      background: #dafbe1;
+      border-color: #56d364;
+      color: #116329;
+    }
+    .pop-btn--error {
+      background: #ffebe9;
+      border-color: #ff818266;
+      color: #82071e;
+    }
+    .pop-btn .pop-icon { font-size: 14px; line-height: 1; }
+    .note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #57606a;
+      line-height: 1.5;
+    }
+    .note:empty { display: none; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0d1117; color: #e6edf3; }
+      .description, .platforms, .note { color: #9198a1; }
+      .status--inactive { background: #2d2a1a; color: #e3b341; }
+      .pop-btn { background: #21262d; border-color: #30363d; color: #e6edf3; }
+      .pop-btn:hover:not(:disabled) { background: #30363d; }
+      .pop-btn--primary { background: #238636; color: #ffffff; border-color: #2ea04366; }
+      .pop-btn--primary:hover:not(:disabled) { background: #2ea043; }
+      .pop-btn--success { background: #12361f; color: #56d364; border-color: #2ea04366; }
+      .pop-btn--error { background: #3c1618; color: #ff7b72; border-color: #f8514966; }
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <img src="../../icons/icon.png" alt="" role="presentation">
-    <h1>Review For MD</h1>
+    <h1>いろいろMDコピー</h1>
   </div>
   <p class="description">
-    プルリクエストのタイトル・本文・レビューコメントを<br>
-    Markdown 形式でクリップボードにコピーします。
+    PR レビュー・Teams 会議録画・Teams チャットを<br>
+    Markdown / VTT / ZIP でダウンロードします。
   </p>
   <div id="status" class="status status--inactive" role="status" aria-live="polite">
     PR ページを開いてください
   </div>
+  <div id="actions" class="actions"></div>
+  <p id="note" class="note"></p>
   <button id="grant-btn" class="grant-btn" type="button">
     このサイトでの動作を許可する
   </button>
@@ -120,6 +185,7 @@
       <li>GitHub</li>
       <li>Azure DevOps（カスタムドメイン対応）</li>
       <li>SharePoint Stream（Teams 会議録画 VTT）</li>
+      <li>Microsoft Teams チャット（MD / 添付ごと ZIP）</li>
     </ul>
   </div>
   <script src="popup.js"></script>

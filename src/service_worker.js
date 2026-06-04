@@ -16,6 +16,7 @@ const NAV_PATH_PATTERNS = [
   /\/_git\/[^/]+\/pullrequest\/\d+/i,       // Azure DevOps PR 詳細
   /\/pulls\b/,                             // GitHub PR 一覧
   /\/_git\/[^/]+\/pullrequests\b/i,         // Azure DevOps PR 一覧
+  /\/codesuite\/codecommit\/repositories\/[^/]+\/pull-requests\/\d+/i, // AWS CodeCommit PR 詳細
   /\/stream\.aspx/i,                        // SharePoint Stream (Teams 会議録画)
 ];
 
@@ -46,11 +47,59 @@ function isKnownDomain(url) {
       host.endsWith('.github.com') ||
       host === 'dev.azure.com' ||
       host.endsWith('.visualstudio.com') ||
+      host === 'console.aws.amazon.com' ||
+      host.endsWith('.console.aws.amazon.com') ||
       host.endsWith('.sharepoint.com')
     );
   } catch {
     return false;
   }
+}
+
+/**
+ * DevOps の既知ドメインか。
+ * injectContentScripts のファイルリストは DevOps 用 extractor のみなので、
+ * 既知ドメインのフォールバック注入はこのドメインに限定する（誤った extractor セットの注入防止）。
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isDevOpsKnownDomain(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'dev.azure.com' || host.endsWith('.visualstudio.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * AWS CodeCommit（マネジメントコンソール）の既知ドメインか。
+ * CodeCommit は静的注入が `/codesuite/codecommit/*` にしかマッチしないため、
+ * 別サービス（例: /ec2）から AWS コンソールの SPA で CodeCommit PR へ遷移すると
+ * コンテンツスクリプトが未ロードになる。その場合のフォールバック動的注入対象にする。
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isCodeCommitKnownDomain(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'console.aws.amazon.com' || host.endsWith('.console.aws.amazon.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 動的注入に使うサイト固有 extractor ファイルを URL から選ぶ。
+ * 動的注入の対象は「カスタムドメイン DevOps」と「CodeCommit 既知ドメインの SPA 遷移」の 2 経路のみ。
+ * GitHub / SharePoint / Teams は静的注入に委ねるため対象外（誤った extractor セットの注入防止）。
+ * @param {string} url
+ * @returns {string}
+ */
+function extractorFileForUrl(url) {
+  return isCodeCommitKnownDomain(url)
+    ? 'src/extractors/codecommit_extractor.js'
+    : 'src/extractors/devops_extractor.js';
 }
 
 /**
@@ -191,8 +240,10 @@ async function injectContentScripts(tabId, url) {
     });
 
     // JS 注入（順序維持）。
-    // 動的注入は「カスタムドメインの Azure DevOps」専用経路（verifyAzureDevOpsInTab で検証済み）。
-    // そのため GitHub/SharePoint 用 extractor は含めない（～55KB の無駄 parse 削減）。
+    // 動的注入の対象は「カスタムドメイン DevOps」（verifyAzureDevOpsInTab で検証済み）と
+    // 「CodeCommit 既知ドメインの SPA 遷移」のみ。サイト固有 extractor は URL から選ぶ
+    // （extractorFileForUrl）。GitHub/SharePoint/Teams 用 extractor は含めない（無駄 parse 削減 +
+    // 誤った extractor セットを __rfmd_initialized で正規注入より先に入れてしまう事故防止）。
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [
@@ -200,7 +251,7 @@ async function injectContentScripts(tabId, url) {
         'src/lib/markdown_builder.js',
         'src/lib/clipboard.js',
         'src/lib/fetch_utils.js',
-        'src/extractors/devops_extractor.js',
+        extractorFileForUrl(url),
         'src/ui/button_injector.js',
         'src/content_script.js',
       ],
@@ -245,6 +296,7 @@ const NAV_URL_FILTERS = {
     { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps PR 詳細
     { urlMatches: '.*/pulls(\\?.*)?$' },                // GitHub PR 一覧
     { urlMatches: '.*/_git/[^/]+/pullrequests(\\?.*)?$' }, // Azure DevOps PR 一覧
+    { urlMatches: '.*/codesuite/codecommit/repositories/[^/]+/pull-requests/\\d+.*' }, // AWS CodeCommit PR 詳細
     { urlMatches: '.*/[Ss]tream\\.aspx.*' },            // SharePoint Stream
   ],
 };
@@ -259,7 +311,14 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     try {
       await chrome.tabs.sendMessage(details.tabId, { type: 'rfmd:navigate' });
     } catch {
-      await injectContentScripts(details.tabId, details.url);
+      // メッセージ未達 = コンテンツスクリプト未ロード。
+      // injectContentScripts は URL に応じた extractor を選んで注入する（extractorFileForUrl）。
+      // DevOps 既知ドメイン、または別サービスから SPA 遷移してきた CodeCommit PR のみ対象。
+      // GitHub / SharePoint は manifest の静的注入に委ねる（誤った extractor セットを注入し
+      // __rfmd_initialized で正規注入を阻害しないため）。
+      if (isDevOpsKnownDomain(details.url) || isCodeCommitKnownDomain(details.url)) {
+        await injectContentScripts(details.tabId, details.url);
+      }
     }
   } else {
     // カスタムドメイン → 動的注入

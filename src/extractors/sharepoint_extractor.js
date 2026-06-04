@@ -25,6 +25,13 @@ var SharePointExtractor = SharePointExtractor || (() => {
   let _availabilityCache = null;
   let _availabilityCacheUrl = '';
 
+  /**
+   * 直近に checkAvailability を評価した URL。captured ID の「実ナビゲーション時クリア」判定に使う。
+   * no-ids 時は _availabilityCacheUrl を更新しないため、それを基準にすると毎回 URL 変化と誤判定して
+   * フック由来の captured ID を使う前に消してしまう。専用変数で実 URL 変化のみ検出する。
+   */
+  let _lastSeenUrl = '';
+
   // RfmdFetch.withTimeout と FETCH_TIMEOUT_MS は src/lib/fetch_utils.js の
   // RfmdFetch.withTimeout / RfmdFetch.TIMEOUT_MS に集約済み。
 
@@ -202,13 +209,17 @@ var SharePointExtractor = SharePointExtractor || (() => {
     // fetch フックは早めに仕込んでおく（動画再生で fetch される ID を捕捉する）
     _ensureFetchHookInjected();
 
-    // URL が変わっていたら fetch フック由来の ID も古い動画のものなのでクリアする。
+    // 実ナビゲーション（URL 変化）時のみ fetch フック由来の captured ID をクリアする。
     // SharePoint Stream は stream.aspx?id=A → ?id=B の SPA 遷移で動画切替が起きるため、
     // captured ID を残すと別動画のメタデータを誤取得しうる。
-    if (_availabilityCacheUrl !== location.href) {
+    // ⚠️ _availabilityCacheUrl は no-ids 時に更新されず空のまま進まないため、これを基準にすると
+    //    フック専用ページで毎回「URL 変化」と誤判定し、rfmd:sp-ids で届いた ID を _getIds() が
+    //    使う前に消してしまう（availability が永遠に true にならない）。専用の _lastSeenUrl で判定する。
+    if (_lastSeenUrl && _lastSeenUrl !== location.href) {
       _capturedDriveId = '';
       _capturedFileId = '';
     }
+    _lastSeenUrl = location.href;
 
     if (_availabilityCacheUrl === location.href && _availabilityCache !== null) {
       return _availabilityCache;
@@ -229,7 +240,9 @@ var SharePointExtractor = SharePointExtractor || (() => {
       _availabilityCache = result;
       return result;
     } catch (e) {
-      // メタデータ API エラーは非表示で扱う（権限・ネットワーク等）
+      // 権限切れ(401)/ネットワーク等。reason を残し、切り分け用にログも出す
+      // （popup 側は reason を見て「トランスクリプト無し」か「取得失敗」かを出し分ける）。
+      console.warn('[ReviewForMD][SP] availability チェック失敗:', e?.message || e);
       const result = { available: false, reason: `error: ${e?.message || e}` };
       _availabilityCacheUrl = location.href;
       _availabilityCache = result;
@@ -244,7 +257,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
    */
   async function downloadTranscript() {
     // URL が変わっていたら captured ID は古い動画のものなのでクリアして取り直す。
-    // _injectSharePoint() の URL 検出と二重防御。動画切替後に古い ID で
+    // checkAvailability() の URL 検出との二重防御。動画切替後に古い ID で
     // 別動画の VTT が落ちてくる事故を防ぐ。
     if (_availabilityCacheUrl !== location.href) {
       _capturedDriveId = '';
@@ -292,19 +305,18 @@ var SharePointExtractor = SharePointExtractor || (() => {
 
   /**
    * ページ遷移時に呼び出してキャッシュ・捕捉済み ID をリセットする。
-   * main world の fetch フックの closure 変数もクリアするため `rfmd:sp-reset` を発火。
-   * （isolated world の reset だけでは main world の古い ID が残る singleton バグ対策）
+   * 注: main world フック側の closure はここからはクリアしない。フックは「値が変わった時だけ
+   * 更新」する方式で、別動画の再生 fetch が来れば新 ID に追随する。加えて
+   * checkAvailability / downloadTranscript が URL 変化時に captured ID を破棄する二重防御がある。
+   * （`rfmd:sp-reset` のリスナーは DoS 攻撃面になるため hook 側で意図的に削除済み。
+   *   ここから発火しても受け手はいないので dispatch しない。）
    */
   function reset() {
     _capturedDriveId = '';
     _capturedFileId = '';
     _availabilityCache = null;
     _availabilityCacheUrl = '';
-    try {
-      window.dispatchEvent(new CustomEvent('rfmd:sp-reset'));
-    } catch {
-      // イベント発火失敗時は黙殺（拡張コンテキスト無効化時など）
-    }
+    _lastSeenUrl = '';
   }
 
   return { checkAvailability, downloadTranscript, reset };

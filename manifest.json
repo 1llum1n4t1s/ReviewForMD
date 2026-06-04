@@ -12,6 +12,7 @@
       }
     }
   },
+  "minimum_chrome_version": "121",
   "permissions": ["activeTab", "scripting", "webNavigation", "clipboardWrite"],
   "host_permissions": [
     "https://github.com/*",

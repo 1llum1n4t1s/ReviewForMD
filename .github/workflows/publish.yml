@@ -100,9 +100,12 @@ jobs:
           # パッチ固定: 供給チェーン対策（最新追随は手動 PR）。
           # 初回のみ AMO Developer Hub での add-on 登録が必要（listing 情報の事前登録）。
           # 登録後は本ジョブが新バージョンを listed channel に自動提出する。
+          # --approval-timeout=0: listed は審査が長い（数日〜手動）。承認完了を待つと
+          #   web-ext がタイムアウトして提出成功でも job が失敗扱いになるため、待たずに抜ける。
           npx --yes web-ext@10.3.0 sign \
             --source-dir=build-firefox \
             --channel=listed \
             --api-key="$AMO_JWT_ISSUER" \
-            --api-secret="$AMO_JWT_SECRET"
+            --api-secret="$AMO_JWT_SECRET" \
+            --approval-timeout=0
           echo "🦊 Firefox AMO への提出リクエストを送信したよ〜"

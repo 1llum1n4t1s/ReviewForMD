@@ -5,6 +5,8 @@ icons/icon-*.png
 temp-build/
 build-firefox/
 web-ext-artifacts/
+# update-amo-listing.mjs が webstore/*.txt + vava.config.json から毎回生成する中間物
+amo-metadata.json
 
 # webstore build dependencies
 webstore/node_modules/

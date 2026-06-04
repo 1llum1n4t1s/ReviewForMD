@@ -1,0 +1,44 @@
+============================================================
+Firefox AMO listing (en-US) / parsed by update-amo-listing.mjs
+  ■ Name / ■ Summary / ■ Description (everything after Description is merged into description)
+============================================================
+
+■ Name
+Iroiro MD Copy
+
+■ Summary
+Download GitHub / Azure DevOps / AWS CodeCommit pull requests as Markdown, Teams meeting captions (VTT) from SharePoint Stream, and Microsoft Teams chats as Markdown/ZIP — all in one click.
+
+■ Description
+A browser extension that downloads information from multiple sites as Markdown / VTT / ZIP files.
+Save pull request reviews from GitHub, Azure DevOps and AWS CodeCommit, meeting transcripts (VTT) from
+SharePoint Stream (Teams recordings), and even Microsoft Teams chat history — all with a single click.
+
+[What it does]
+
+Everything is done from the toolbar popup. The popup detects the current site and shows the buttons that fit it.
+
+- Download / Copy as Markdown (PR reviews)
+  On a GitHub / Azure DevOps / AWS CodeCommit pull request page, save the title, body and all review comments
+  as a single .md file, or copy them to the clipboard. On PR list pages (GitHub / Azure DevOps), each row also
+  has a button to download a PR directly without opening it.
+
+- Complete review comments
+  Comments are captured with author, timestamp, target file path and diff code. Inline comments, file-level
+  comments and general comments are all supported. Azure DevOps automatically falls back to the REST API when
+  the DOM is incomplete.
+
+- SharePoint Stream (Teams meeting recordings)
+  Save or copy the meeting transcript (captions) as a .vtt file — handy as a draft for meeting minutes.
+
+- Microsoft Teams chat
+  Collect the full history of a chat or channel via auto-scroll and save sender, timestamp, body, reactions and
+  attachment links as a single .md file. "Download as ZIP" also fetches the actual attachment files and images
+  and bundles transcript.md and an attachments/ folder into one ZIP.
+
+[Privacy]
+
+- No personal information is collected.
+- No data is sent to any external server.
+- It only reads the DOM / official APIs of the page you are viewing, writes to the clipboard and downloads files.
+- All code is contained within the extension package.

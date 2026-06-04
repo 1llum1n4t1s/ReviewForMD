@@ -1,4 +1,4 @@
-name: Publish to Chrome Web Store
+name: Publish to Web Stores (CWS + AMO)
 
 on:
   push:
@@ -61,3 +61,48 @@ jobs:
             --refresh-token "$CWS_REFRESH_TOKEN" \
             --auto-publish
           echo "🎉 Chrome Web Store への公開リクエストを送信したよ〜"
+
+  # CWS ジョブとは独立（needs なし）。片方のストアが失敗しても、もう片方の公開は止まらない。
+  publish-firefox:
+    name: Firefox AMO 公開
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        # SHA ピン留め: タグは mutable なため（タグ書き換え型の供給チェーン攻撃対策）。
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: ブランチ名とバージョンの整合性を確認
+        env:
+          BRANCH_VERSION: ${{ github.ref_name }}
+        run: |
+          version=$(grep -oP '(?<="version": ")[^"]+' manifest.json)
+          expected="release/${version}"
+          if [ "$BRANCH_VERSION" != "$expected" ]; then
+            echo "::error::ブランチ名 ($BRANCH_VERSION) と manifest.json のバージョン ($version) が一致しません。期待値: $expected"
+            exit 1
+          fi
+          echo "📦 公開対象バージョン: $version"
+
+      - name: Firefox 用ソースを準備
+        run: |
+          # 拡張本体だけを staging に集める（webstore/ docs/ .github/ 等は含めない）。
+          # manifest.json は Chrome と共有（browser_specific_settings.gecko を Firefox が読む）。
+          mkdir -p build-firefox
+          cp manifest.json build-firefox/
+          cp -r src icons build-firefox/
+          ls -R build-firefox | head -40
+
+      - name: AMO へ署名 & 提出（listed）
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          # パッチ固定: 供給チェーン対策（最新追随は手動 PR）。
+          # 初回のみ AMO Developer Hub での add-on 登録が必要（listing 情報の事前登録）。
+          # 登録後は本ジョブが新バージョンを listed channel に自動提出する。
+          npx --yes web-ext@10.3.0 sign \
+            --source-dir=build-firefox \
+            --channel=listed \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET"
+          echo "🦊 Firefox AMO への提出リクエストを送信したよ〜"

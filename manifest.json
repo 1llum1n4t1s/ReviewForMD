@@ -3,6 +3,15 @@
   "name": "いろいろMDコピー",
   "version": "1.0.46",
   "description": "PRレビュー・Teams会議録画(VTT)・Teamsチャットを Markdown / VTT / ZIP でダウンロードできるChrome拡張機能",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "review-for-md@1llum1n4t1s.github.io",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
   "permissions": ["activeTab", "scripting", "webNavigation", "clipboardWrite"],
   "host_permissions": [
     "https://github.com/*",
@@ -36,7 +45,8 @@
     }
   },
   "background": {
-    "service_worker": "src/service_worker.js"
+    "service_worker": "src/service_worker.js",
+    "scripts": ["src/service_worker.js"]
   },
   "content_scripts": [
     {

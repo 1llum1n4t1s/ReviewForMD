@@ -9,13 +9,13 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT/ZIP ファ
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
 - **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで全履歴収集し、Markdown（添付込みは ZIP）でダウンロード
 
-アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。
+アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — 単一の `manifest.json` を共有。Chrome は `browser_specific_settings` を無視、Firefox は `gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions` 対応）+ `data_collection_permissions: {required:["none"]}`（データ非収集宣言）を読む。`background` は **dual-key**（`service_worker` を Chrome、`scripts: ["src/service_worker.js"]` を Firefox が使う MDN 推奨のクロスブラウザパターン）— `service_worker.js` は `window`/`document` も SW 専用 API も使わないので両コンテキストで動く。`web-ext lint` は errors 0（残る warnings は dual-key の informational と data_collection の forward-compat のみ）。CWS/AMO とも同一 zip（manifest + src + icons）で公開する。
 
 ## Commands
 
 **Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成。Windows から npm 経由で実行したい場合は `npm run zip:win`。
 
-**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、Chrome Web Store API 経由で自動アップロード＆公開される。必要な GitHub Secrets: `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`。バージョンバンプは `/vava` スキルで一括実行可。
+**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、**2 つの独立ジョブ**で公開する: (1) Chrome Web Store（`chrome-webstore-upload-cli` で auto-publish）、(2) Firefox AMO（`web-ext sign --channel listed` で listed 提出）。ジョブは互いに `needs` を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要な GitHub Secrets: CWS は `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMO は `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMO は初回のみ Developer Hub での add-on 登録が必要**（listing 情報の事前登録。登録後は CI が新バージョンを listed channel に自動提出）。バージョンバンプ＋ストア listing 同期は `/vava` スキル（AMO listing は `vava.config.json` + `webstore/store-listing.firefox.{ja,en}.txt` を参照）。
 
 No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 
@@ -209,3 +209,4 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 - PR タイトルの取得: DOM 要素 → `document.title` フォールバック（両プラットフォーム共通）
 - GitHub REST API (`api.github.com`) は CORS 制約でCookie認証不可（`Access-Control-Allow-Origin: *` が `credentials: 'include'` をブロック）。代わりに同一オリジンの HTML fetch + DOMParser を使用
 - `_fetchHiddenConversations` の DOM 操作では、挿入先要素 (`el`) のスコープに注意 — `el.remove()` は `el` 自体とその子孫のみ削除されるが、`el` が意図より広い範囲を指すと既存コンテンツが失われる
+- **`innerHTML` 代入は使わない**（Firefox AMO の `web-ext lint` が `UNSAFE_VAR_ASSIGNMENT` 警告を static analysis で出すため。runtime で安全でも警告は消えない）。ボタン等の動的内容は DOM 構築で組む: `button_injector` の `_setButtonContent`（SVG アイコンは `_buildSvg` = `DOMParser('image/svg+xml')` + `importNode`）、`popup.js` の `_setPopBtnContent`（`createElement` + `textContent` + `replaceChildren`）。クリアは `el.replaceChildren()`。Firefox 固有 API（`offscreen` 等）は不使用なので strip マーカーは不要

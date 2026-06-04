@@ -1,0 +1,33 @@
+{
+  "cws": {
+    "extensionIdFile": ".cws-id"
+  },
+  "amo": {
+    "slug": "review-for-md",
+    "homepage": "https://github.com/1llum1n4t1s/ReviewForMD",
+    "supportUrl": "https://github.com/1llum1n4t1s/ReviewForMD/issues",
+    "categories": ["web-development", "other"],
+    "defaultName": {
+      "ja": "いろいろMDコピー",
+      "en-US": "Iroiro MD Copy"
+    },
+    "listingFiles": {
+      "ja": "webstore/store-listing.firefox.ja.txt",
+      "en-US": "webstore/store-listing.firefox.en.txt"
+    },
+    "privacyFiles": {
+      "ja": "docs/privacy-policy.md",
+      "en-US": "docs/privacy-policy-en.md"
+    }
+  },
+  "driftKeywords": {
+    "amo": {
+      "ja": ["CodeCommit", "SharePoint", "Teams"],
+      "en": ["CodeCommit", "SharePoint", "Teams"]
+    },
+    "cws": {
+      "ja": ["CodeCommit", "SharePoint", "Teams"],
+      "en": ["CodeCommit", "SharePoint", "Teams"]
+    }
+  }
+}

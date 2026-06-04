@@ -57,7 +57,21 @@ function _setNote(msg) {
 }
 
 function _clearActions() {
-  document.getElementById('actions').innerHTML = '';
+  document.getElementById('actions').replaceChildren();
+}
+
+/**
+ * pop ボタンの内容を「アイコン span + ラベル span」で DOM 構築する（innerHTML 不使用）。
+ * innerHTML 代入を避け、Firefox AMO の UNSAFE_VAR_ASSIGNMENT lint 警告を回避する。
+ */
+function _setPopBtnContent(btn, icon, label) {
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'pop-icon';
+  iconSpan.textContent = icon;
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'pop-label';
+  labelSpan.textContent = label;
+  btn.replaceChildren(iconSpan, labelSpan);
 }
 
 /**
@@ -68,8 +82,10 @@ function _addActionButton({ label, icon, kind, mode, primary }) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pop-btn' + (primary ? ' pop-btn--primary' : '');
-  btn.innerHTML = `<span class="pop-icon">${icon}</span><span class="pop-label">${label}</span>`;
-  btn._origHtml = btn.innerHTML;
+  // フィードバック後の復元用に元のアイコン/ラベルを保持してから構築する
+  btn._origIcon = icon;
+  btn._origLabel = label;
+  _setPopBtnContent(btn, icon, label);
   btn.addEventListener('click', () => _runAction(btn, kind, mode));
   document.getElementById('actions').appendChild(btn);
   return btn;
@@ -148,7 +164,7 @@ function _showFeedback(btn, success, errMsg, allBtns) {
 
   setTimeout(() => {
     btn.classList.remove('pop-btn--success', 'pop-btn--error');
-    btn.innerHTML = btn._origHtml;
+    _setPopBtnContent(btn, btn._origIcon, btn._origLabel);
     allBtns.forEach((b) => { b.disabled = false; });
   }, FEEDBACK_MS);
 }

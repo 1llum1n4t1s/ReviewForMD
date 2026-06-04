@@ -3,6 +3,8 @@ ReviewForMD.zip
 WebLoadingAssist.zip
 icons/icon-*.png
 temp-build/
+build-firefox/
+web-ext-artifacts/
 
 # webstore build dependencies
 webstore/node_modules/

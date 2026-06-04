@@ -13,10 +13,38 @@ var ButtonInjector = ButtonInjector || (() => {
   const CHECK_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
   const DOWNLOAD_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z"/></svg>`;
 
-  const DOWNLOAD_LABEL = `${DOWNLOAD_ICON_SVG} MDでダウンロード`;
+  /** ダウンロードボタンのラベルテキスト（アイコンは別途 DOM 構築）。 */
+  const DOWNLOAD_TEXT = 'MDでダウンロード';
 
   /** フィードバックアニメーション表示時間 (ms)。 */
   const FEEDBACK_DURATION_MS = 1500;
+
+  /**
+   * 静的な SVG 文字列を DOM 要素として構築する。
+   * innerHTML 代入を避けることで Firefox AMO の UNSAFE_VAR_ASSIGNMENT lint 警告を回避する
+   * （SVG はコード内の固定文字列で外部入力ではないが、AMO は static analysis なので回避する）。
+   * パース失敗時は null。
+   */
+  function _buildSvg(svgString) {
+    try {
+      const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+      const el = doc.documentElement;
+      if (el && el.nodeName.toLowerCase() === 'svg') {
+        return document.importNode(el, true);
+      }
+    } catch { /* フォールバック: null */ }
+    return null;
+  }
+
+  /** ボタン内容を「アイコン + テキスト」で DOM 構築する（innerHTML 不使用）。 */
+  function _setButtonContent(btn, svgString, text) {
+    btn.replaceChildren();
+    if (svgString) {
+      const svg = _buildSvg(svgString);
+      if (svg) btn.appendChild(svg);
+    }
+    if (text) btn.appendChild(document.createTextNode(text));
+  }
 
   /**
    * 一覧行ボタンのコピー/ダウンロード完了フィードバック表示。
@@ -28,15 +56,14 @@ var ButtonInjector = ButtonInjector || (() => {
       btn._rfmdTimer = null;
     }
 
-    const originalHtml = btn.dataset.rfmdOriginal;
     const isDownload = btn.dataset.rfmdAction === 'download';
     const cls = success ? 'rfmd-btn--success' : 'rfmd-btn--error';
-    const label = success
-      ? `${CHECK_ICON_SVG} ${isDownload ? 'ダウンロード完了' : 'コピー完了'}`
-      : `${isDownload ? 'ダウンロード失敗' : 'コピー失敗'}`;
+    const text = success
+      ? (isDownload ? 'ダウンロード完了' : 'コピー完了')
+      : (isDownload ? 'ダウンロード失敗' : 'コピー失敗');
 
     btn.classList.add(cls);
-    btn.innerHTML = label;
+    _setButtonContent(btn, success ? CHECK_ICON_SVG : null, text);
 
     btn._rfmdTimer = setTimeout(() => {
       if (!btn.isConnected) {
@@ -44,7 +71,8 @@ var ButtonInjector = ButtonInjector || (() => {
         return;
       }
       btn.classList.remove(cls);
-      btn.innerHTML = originalHtml;
+      // 生成時に保持した元のアイコン/テキストで復元する
+      _setButtonContent(btn, btn._rfmdIcon, btn._rfmdText);
       btn.dataset.rfmdBusy = '0';
       btn._rfmdTimer = null;
     }, FEEDBACK_DURATION_MS);
@@ -58,14 +86,16 @@ var ButtonInjector = ButtonInjector || (() => {
    *   - { blob, filename }            → Blob をそのまま保存（ZIP 等）
    * @returns {HTMLButtonElement}
    */
-  function _createButton({ className, dataRfmd, label, title, action = 'copy', extractFn }) {
+  function _createButton({ className, dataRfmd, iconSvg, text, title, action = 'copy', extractFn }) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = className;
     btn.setAttribute('data-rfmd', dataRfmd);
     btn.setAttribute('aria-label', title);
-    btn.innerHTML = label;
-    btn.dataset.rfmdOriginal = label;
+    // フィードバック後の復元用に元のアイコン/テキストを保持してから内容を構築する
+    btn._rfmdIcon = iconSvg;
+    btn._rfmdText = text;
+    _setButtonContent(btn, iconSvg, text);
     btn.dataset.rfmdBusy = '0';
     if (action === 'download') btn.dataset.rfmdAction = 'download';
     btn.title = title;
@@ -181,7 +211,8 @@ var ButtonInjector = ButtonInjector || (() => {
         className: 'rfmd-btn rfmd-btn--sm',
         dataRfmd: 'list-dl',
         action: 'download',
-        label: DOWNLOAD_LABEL,
+        iconSvg: DOWNLOAD_ICON_SVG,
+        text: DOWNLOAD_TEXT,
         title: 'この PR を Markdown ファイルでダウンロード',
         extractFn: () => GitHubExtractor.extractByPrUrl(prUrl),
       });
@@ -209,7 +240,8 @@ var ButtonInjector = ButtonInjector || (() => {
         className: 'rfmd-btn rfmd-btn--sm',
         dataRfmd: 'list-dl',
         action: 'download',
-        label: DOWNLOAD_LABEL,
+        iconSvg: DOWNLOAD_ICON_SVG,
+        text: DOWNLOAD_TEXT,
         title: 'この PR を Markdown ファイルでダウンロード',
         extractFn: () => DevOpsExtractor.extractByPrUrl(prUrl),
       });

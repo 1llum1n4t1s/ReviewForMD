@@ -158,6 +158,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) {
+      try { await res.body?.cancel(); } catch { /* 接続解放 */ }
       throw new Error(`metadata fetch failed: ${res.status}`);
     }
     const json = await res.json();
@@ -294,7 +295,11 @@ var SharePointExtractor = SharePointExtractor || (() => {
       cache: 'no-store',
     });
     if (!res.ok) {
-      throw new Error(`VTT download failed: ${res.status}`);
+      try { await res.body?.cancel(); } catch { /* 接続解放 */ }
+      const hint = (res.status === 401 || res.status === 403)
+        ? 'ログインし直してからページを再読み込みしてください'
+        : '';
+      throw new Error(`VTT の取得に失敗しました (HTTP ${res.status})${hint ? '。' + hint : ''}`);
     }
     const filename = _filenameFromContentDisposition(
       res.headers.get('Content-Disposition')

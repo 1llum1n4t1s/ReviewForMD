@@ -685,7 +685,6 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
   return {
     buildFullMarkdown,
     formatSingleComment,
-    formatThreadComments,
     htmlToMarkdown,
     formatTimestamp,
     deduplicateThreads,

@@ -99,8 +99,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
   const MAX_ITERATIONS = 1500;
   /** 自動スクロール全体の時間上限 (ms) */
   const MAX_DURATION_MS = 240000;
-  /** 収集メッセージ数の上限（暴走防止） */
-  const MAX_MESSAGES = 50000;
+  /** 収集メッセージ数の上限（暴走防止。50000 だとピーク ~180MB に達しうるため 15000 に縮小） */
+  const MAX_MESSAGES = 15000;
   /**
    * フォールバック sortKey のラウンド間ストライド。
    * 1 viewport 内のメッセージ数より十分大きくし、ラウンドをまたいだ順序が
@@ -516,6 +516,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
       iter++;
       if (Date.now() - start > MAX_DURATION_MS) break;
       if (map.size >= MAX_MESSAGES) break;
+      if (iter % 50 === 0) {
+        console.debug(`[ReviewForMD][Teams] 収集中: ${map.size} 件 / iter=${iter} / elapsed=${Date.now() - start}ms`);
+      }
       // ユーザーが別会話へ切替 / ページ遷移したら中断（誤会話の収集と DOM 奪い合いを防ぐ）
       if (location.href !== startHref) break;
 
@@ -591,6 +594,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
     s = s
       .replace(/[\x00-\x1f\x7f]/g, '')
       .replace(/[‎‏‪-‮⁦-⁩]/g, '')
+      .replace(/[﻿⁠]/g, '')
       .replace(/[\\/:*?"<>|]/g, '_')
       .replace(/\s+/g, ' ')
       .trim()

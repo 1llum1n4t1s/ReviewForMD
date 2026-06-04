@@ -445,7 +445,10 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     if (!_isSameOrigin(url)) return null;
     try {
       const res = await RfmdFetch.withTimeout(url, { credentials: 'include' });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        try { await res.body?.cancel(); } catch { /* 接続解放 */ }
+        return null;
+      }
       return await res.text();
     } catch {
       return null;
@@ -518,7 +521,10 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
           fileDiffParams: [{ path: filePath, originalPath: filePath }],
         }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        try { await res.body?.cancel(); } catch { /* 接続解放 */ }
+        return null;
+      }
       const data = await res.json();
       // レスポンスは FileDiff の配列（1ファイルのみリクエストしたので [0]）
       return data?.[0]?.lineDiffBlocks || null;
@@ -1232,8 +1238,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     getBody,
     getComments,
     extractAll,
-    extractSingleComment,
-    extractThreadComments,
     fetchViaApi,
     extractByPrUrl,
   };

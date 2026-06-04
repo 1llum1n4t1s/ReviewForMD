@@ -423,6 +423,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
       const prUrl = location.origin + location.pathname;
       const res = await RfmdFetch.withTimeout(prUrl, { credentials: 'include' });
       if (!res.ok) {
+        try { await res.body?.cancel(); } catch { /* 接続解放 */ }
         console.warn(`[ReviewForMD] HTML fetch 失敗: HTTP ${res.status}`);
         return [];
       }
@@ -602,5 +603,5 @@ var GitHubExtractor = GitHubExtractor || (() => {
     return MarkdownBuilder.deduplicateThreads(threads);
   }
 
-  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractSingleComment, isPRBodyComment: _isPRBodyComment, extractByPrUrl };
+  return { getTitle, getPRNumber, getBody, getComments, extractAll, extractByPrUrl };
 })();

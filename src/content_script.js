@@ -213,11 +213,12 @@
   /**
    * SPA ナビゲーション対応
    *
-   * 4 つの方法で検出する:
+   * 5 つの方法で検出する:
    * 1. Service Worker からの chrome.runtime.onMessage
    * 2. main world に注入した navigation_hook.js からのカスタムイベント
    * 3. popstate イベント（ブラウザの戻る/進む）
    * 4. GitHub 固有の turbo:load イベント
+   * 5. hashchange（Teams クラシックのハッシュルーティング会話切替）
    */
   function _watchNavigation() {
     let _reinitTimer = null;
@@ -237,6 +238,7 @@
         try {
           if (msg?.type === 'rfmd:navigate') {
             reinit();
+            sendResponse(); // port closed エラー防止
             return; // 同期
           }
           // Popup へ現在ページの状態（サイト種別/ページ種別/利用可否/タイトル）を返す

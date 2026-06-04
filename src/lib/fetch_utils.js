@@ -42,6 +42,7 @@ var RfmdFetch = RfmdFetch || (() => {
       try {
         const res = await withTimeout(url, options);
         if ((res.status === 429 || res.status === 503) && attempt < retries) {
+          try { await res.body?.cancel(); } catch { /* 既に閉じている等 */ }
           await new Promise((r) => setTimeout(r, 400 * (2 ** attempt)));
           continue;
         }

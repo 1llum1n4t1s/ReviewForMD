@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "いろいろMDコピー",
-  "version": "1.0.45",
+  "version": "1.0.46",
   "description": "PRレビュー・Teams会議録画(VTT)・Teamsチャットを Markdown / VTT / ZIP でダウンロードできるChrome拡張機能",
   "permissions": ["activeTab", "scripting", "webNavigation", "clipboardWrite"],
   "host_permissions": [

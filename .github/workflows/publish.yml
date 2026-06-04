@@ -40,9 +40,9 @@ jobs:
 
       - name: zip パッケージを作成
         run: |
-          zip -r ReviewForMD.zip manifest.json src icons \
-            -x "*.DS_Store" "*.swp" "*~"
-          ls -lh ReviewForMD.zip
+          # zip.sh を再利用して除外条件（hidden/.env 等）をローカルと一元化する
+          # （CI 独自に zip すると zip.sh とズレて将来 src 配下の隠しファイルを誤公開する経路が残る）。
+          bash zip.sh
 
       - name: Chrome Web Store にアップロード & 公開
         env:
@@ -85,11 +85,13 @@ jobs:
 
       - name: Firefox 用ソースを準備
         run: |
-          # 拡張本体だけを staging に集める（webstore/ docs/ .github/ 等は含めない）。
-          # manifest.json は Chrome と共有（browser_specific_settings.gecko を Firefox が読む）。
-          mkdir -p build-firefox
-          cp manifest.json build-firefox/
-          cp -r src icons build-firefox/
+          # CWS と同一の公開物にするため zip.sh で zip を作り、それを展開して staging にする。
+          # hidden/.env 等の除外条件を zip.sh に一元化（CWS ジョブと完全一致）。web-ext は
+          # source-dir を要求するので zip を展開する。manifest.json は Chrome と共有
+          # （browser_specific_settings.gecko を Firefox が読む / minimum_chrome_version は Firefox が無視）。
+          bash zip.sh
+          rm -rf build-firefox && mkdir -p build-firefox
+          unzip -q ReviewForMD.zip -d build-firefox
           ls -R build-firefox | head -40
 
       - name: AMO へ署名 & 提出（listed）

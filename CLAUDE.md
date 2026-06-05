@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT/ZIP ファイルでダウンロード:
+Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイルでダウンロード:
 - **PR レビュー**: GitHub・Azure DevOps（カスタムドメイン含む）・AWS CodeCommit の PR タイトル/本文/レビューコメントを Markdown でダウンロード（またはコピー）
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
-- **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで全履歴収集し、Markdown（添付込みは ZIP）でダウンロード
+- **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで全履歴収集し、Markdown でダウンロード
 
 アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — 単一の `manifest.json` を共有。Chrome は `browser_specific_settings` を無視、Firefox は `gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions` 対応）+ `data_collection_permissions: {required:["none"]}`（データ非収集宣言）を読む。`background` は **dual-key**（`service_worker` を Chrome、`scripts: ["src/service_worker.js"]` を Firefox が使う MDN 推奨のクロスブラウザパターン）— `service_worker.js` は `window`/`document` も SW 専用 API も使わないので両コンテキストで動く。⚠️ **Chrome 110-120 は MV3 で `background.scripts` を無視せず拒否する**（121+ で無視に変わった）ため、`minimum_chrome_version: "121"` で 121 未満を弾く（旧 Chrome に壊れたパッケージを配らない）。`web-ext lint` は errors 0（残る warnings は dual-key の informational と data_collection の forward-compat のみ）。CWS/AMO とも同一 zip（manifest + src + icons）で公開する。
 
@@ -19,11 +19,11 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT/ZIP ファ
 
 No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 
-**構文サニティチェック（テスト代替）:** テスト/リンタ/CI が無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。`zip_writer.js` 等の純関数は使い捨てスクリプト + 標準ツール（`tar`/`Expand-Archive`）で end-to-end 検証可能。
+**構文サニティチェック（テスト代替）:** テスト/リンタ/CI が無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
 
 ## Repo layout
 
-- `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`, `zip_writer`)
+- `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`)
 - `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `codecommit_extractor`, `sharepoint_extractor`, `teams_extractor`)
 - `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
 - `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
@@ -61,7 +61,7 @@ PR 一覧ページ（ページ側に残す）:
     → { title, markdown } → RfmdClipboard.download()
 ```
 
-**kind**: `pr`（GitHub/DevOps/CodeCommit 詳細）/ `vtt`（SharePoint）/ `teams-md` / `teams-zip`（zip は download のみ）。Teams 経路は抽出 0 件のとき `runAction` が `{ ok:false }` を返す（空ファイルの成功偽装防止）。**CodeCommit は詳細ページ専用**（PR 一覧の行ボタンは無し。コンソールがクライアントレンダリング SPA で `extractByPrUrl` の背景 fetch が不可能なため）。
+**kind**: `pr`（GitHub/DevOps/CodeCommit 詳細）/ `vtt`（SharePoint）/ `teams-md`。Teams 経路は抽出 0 件のとき `runAction` が `{ ok:false }` を返す（空ファイルの成功偽装防止）。**CodeCommit は詳細ページ専用**（PR 一覧の行ボタンは無し。コンソールがクライアントレンダリング SPA で `extractByPrUrl` の背景 fetch が不可能なため）。
 
 ### Content script load order matters
 
@@ -69,9 +69,9 @@ Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that
 
 `site_detector` → `markdown_builder` → `clipboard` → `fetch_utils` → **[site-specific extractor]** → `button_injector` → `content_script`
 
-Teams エントリは `teams_extractor` の前に `zip_writer.js` (`RfmdZip`) を追加でロードする（添付ごと ZIP 生成に使うため）。CodeCommit エントリは `*.console.aws.amazon.com/codesuite/codecommit/*` にマッチし、`codecommit_extractor.js` をロードする。
+CodeCommit エントリは `*.console.aws.amazon.com/codesuite/codecommit/*` にマッチし、`codecommit_extractor.js` をロードする。
 
-`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` / `teams_extractor` が使う `withTimeout` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用で fetch しない）。`zip_writer.js` (`RfmdZip`) は STORE 法の純 JS ZIP ライタで Teams 添付 ZIP 専用。
+`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `withTimeout` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用、Teams は MD 専用化で fetch しない）。
 
 **動的注入（カスタムドメイン DevOps 専用）**: `service_worker.js` は `chrome.scripting.executeScript` でカスタムドメインの DevOps ページのみ動的注入する。GitHub・SharePoint は静的注入のみ。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
 
@@ -150,23 +150,19 @@ ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcri
 3. **時系列整列 + 送信者補完** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前を 1 度しか出さないため、整列後に空 author を直前 author で前方補完
 4. **Markdown 生成** (`_buildMarkdown`) — 本文は `MarkdownBuilder.htmlToMarkdown`、日時は `formatTimestamp` を再利用。本文クローンから添付（画像・ファイルカード）を抜いてから変換し、二重化を防ぐ
 
-**2 つの出力**（どちらも `count`＝収集件数を返し、0 件は呼び出し側で成功扱いにしない＝空ファイルの偽装防止）:
+**出力**（`count`＝収集件数を返し、0 件は呼び出し側で成功扱いにしない＝空ファイルの偽装防止）:
 - `extractAll()` → `{ markdown, count }`。1 会話 = 1 Markdown 文字列（添付はリモート URL リンク）
-- `extractWithAttachments()` → `{ blob, filename, count }`。添付実バイトを取得し `RfmdZip.create` で `transcript.md` + `attachments/NNN_<name>` の ZIP
 
 **堅牢化（暴走・OOM・無言失敗の防止）**:
 - 再入ガード `_busy`（収集中の多重起動を弾く）＋ `_collectRecords` は開始時の `location.href` が変わったら中断（会話切替時の誤収集・DOM 奪い合い防止）
-- 添付取得は並列度 `ATTACH_CONCURRENCY` のプールで実行（直列だと添付数 × RTT）。同梱合計は `MAX_ATTACH_TOTAL_BYTES`（512MB）で打ち切り、超過分はリモート URL リンクのまま残す
 - 収集 0 件は `console.warn`（セレクタ全滅の切り分け用ログ）
-
-**添付取得のセキュリティ**: `_isAllowedAttachmentUrl` のホスト allowlist（**実配信ホストの `*.sharepoint.com` / `*.svc.ms` と Teams 系に限定**、`blob:` は同コンテキストなので許可）を通してから `credentials:'include'` で fetch（cookie 境界の最小化、`_isSharePointOrigin` と同型）。ログに出す URL は `_redactUrl` で SAS 等のクエリを落とす。⚠️ MV3 では content script の cross-origin fetch は CORS 制約を受けるため、許可外/CORS 非許可ホストの添付は取得失敗 → Markdown 側はリモート URL リンクのまま残す（best-effort）。取得できない添付が出たら実機 Network で配信ホストを採取して allowlist に追記する。
 
 **⚠️ セレクタの揮発性**: Teams の DOM クラス/属性は頻繁に変わる。**サイト固有セレクタの単一の真実の源は `teams_extractor.js` の `SELECTORS`**。`site_detector.js` の `_isTeamsChatByDom` は `TeamsExtractor.hasChatDom()` に委譲しているので、UI 変更で動かなくなったら `SELECTORS` だけを実機 DOM に合わせて調整すればよい（detect 側と extract 側でセレクタが分裂するのを防ぐ設計）。
 
 ### Button injection / popup actions
 
 `button_injector.js` は UI 注入とアクション実行の両方を担う:
-- **ページ埋め込み（残存）**: PR 一覧ページの各行ダウンロードボタン（`injectList` → `_injectGitHubList` / `_injectDevOpsList`）のみ。`_createButton` factory でクリックハンドラ・フィードバック（1.5s）・二重クリック防止（`data-rfmd-busy`）を構成。一覧行の `extractFn` は `{title, markdown}` を返し `.md` 保存する（ZIP/VTT 等の binary・text 保存は popup の `runAction` 経路が担う。`RfmdClipboard` には `download` / `downloadBlob` の両方がある）。
+- **ページ埋め込み（残存）**: PR 一覧ページの各行ダウンロードボタン（`injectList` → `_injectGitHubList` / `_injectDevOpsList`）のみ。`_createButton` factory でクリックハンドラ・フィードバック（1.5s）・二重クリック防止（`data-rfmd-busy`）を構成。一覧行の `extractFn` は `{title, markdown}` を返し `.md` 保存する（VTT 等の binary・text 保存は popup の `runAction` 経路が担う。`RfmdClipboard` には `download` / `downloadBlob` の両方がある）。
 - **popup 向け（詳細ページのアクションはこちら）**:
   - `getStatus()` — `SiteDetector.detect/detectList` ＋ SharePoint/Teams の `checkAvailability` で `{ siteType, pageType, available, title }` を返す
   - `runAction({ kind, mode })` — kind ごとに extractor を呼び、`mode='download'` はその場で保存して `{ok}`、`mode='copy'` は `{ok, text}` を返す（popup 側でクリップボードへ）
@@ -190,7 +186,7 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 
 ### Popup (`src/popup/`)
 
-`popup.html` + `popup.js`: ツールバーアイコンのポップアップ UI。**全アクションの実行起点**。起動時に `rfmd:status` で現在ページの状態を取得し、サイトに合うボタン（GitHub/DevOps/CodeCommit=MD DL+コピー、SharePoint=VTT DL+コピー、Teams=MD DL+コピー+添付ごとZIP、一覧=案内）を動的描画する。ボタンクリックで `rfmd:extract` を送信。**コピーは popup 側で `navigator.clipboard`（フォーカス必須のため）**、ダウンロードは content script 側で実行。content script に届かない場合（カスタムドメイン DevOps 未許可など）は URL ベースの許可フロー（`chrome.permissions.request` → DevOps シグナル検証 → service_worker 経由注入）にフォールバック。
+`popup.html` + `popup.js`: ツールバーアイコンのポップアップ UI。**全アクションの実行起点**。起動時に `rfmd:status` で現在ページの状態を取得し、サイトに合うボタン（GitHub/DevOps/CodeCommit=MD DL+コピー、SharePoint=VTT DL+コピー、Teams=MD DL+コピー、一覧=案内）を動的描画する。ボタンクリックで `rfmd:extract` を送信。**コピーは popup 側で `navigator.clipboard`（フォーカス必須のため）**、ダウンロードは content script 側で実行。content script に届かない場合（カスタムドメイン DevOps 未許可など）は URL ベースの許可フロー（`chrome.permissions.request` → DevOps シグナル検証 → service_worker 経由注入）にフォールバック。
 
 ### CSS / ダークモード
 

@@ -11,6 +11,9 @@ amo-metadata.json
 # webstore build dependencies
 webstore/node_modules/
 webstore/package.json
+webstore/package-lock.json
+webstore/pnpm-lock.yaml
+webstore/pnpm-workspace.yaml
 
 # OS files
 .DS_Store

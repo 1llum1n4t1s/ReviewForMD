@@ -8,7 +8,7 @@
 
 - Extract pull request titles, descriptions, and review comments from GitHub, Azure DevOps (including custom domains), and AWS CodeCommit, and either download them as Markdown files or copy them to the clipboard.
 - Download meeting transcripts (VTT subtitle files) from SharePoint Stream (Teams meeting recording) pages.
-- Extract chat/channel message history (sender, timestamp, body, reactions, attachments) from Microsoft Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft) and download it as a Markdown file (or a ZIP file when attachments are included).
+- Extract chat/channel message history (sender, timestamp, body, reactions, attachments) from Microsoft Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft) and download it as a Markdown file.
 
 This Extension is designed with maximum respect for user privacy.
 
@@ -56,19 +56,18 @@ Content scripts only operate on the following domains:
 - `https://*.sharepoint.com/*` (to fetch VTT transcripts from Teams meeting recording pages)
 - `https://teams.microsoft.com/*` / `https://*.teams.microsoft.com/*`
 - `https://teams.live.com/*`
-- `https://teams.cloud.microsoft/*` (to fetch Microsoft Teams chat history and attachments)
+- `https://teams.cloud.microsoft/*` (to fetch Microsoft Teams chat history)
 
 For custom domains (such as self-hosted Azure DevOps instances), `optional_host_permissions` is used. The Extension only operates on an origin if the user has explicitly clicked "Allow this site" for that origin. It does not operate on any domain the user has not explicitly approved.
 
 ## Data Processing
 
-Data accessed by this Extension (PR titles, body, review comments, SharePoint Stream VTT transcripts, and Microsoft Teams chat messages and attachments/images) is processed exclusively as follows:
+Data accessed by this Extension (PR titles, body, review comments, SharePoint Stream VTT transcripts, and Microsoft Teams chat messages) is processed exclusively as follows:
 
 - Converted/formatted to Markdown or VTT format in browser memory
-- For the Teams "Download as ZIP (with attachments)" action, attachment files and images are fetched from Microsoft's servers using the user's own existing logged-in session (limited to Microsoft-related domains) and bundled into a ZIP archive in browser memory
 - In response to an explicit user action (button click), one of the following is performed:
   - Copied to the clipboard ("Copy as MD" button)
-  - Downloaded as a `.md` / `.vtt` / `.zip` file ("Download as MD" / "Download VTT" / "Download as ZIP" button)
+  - Downloaded as a `.md` / `.vtt` file ("Download as MD" / "Download VTT" button)
 - Discarded from memory after processing
 - Never transmitted to any third-party server by the Extension
 
@@ -80,7 +79,7 @@ The Extension itself does not persist user data:
 - No IndexedDB / chrome.storage usage
 - No external server storage
 
-However, when the user clicks the "Download as MD", "Download VTT", or "Download as ZIP" button, the browser's native download mechanism saves a `.md` / `.vtt` / `.zip` file to the user's own Downloads folder. This is an explicit user-initiated save, and the Extension does not access the file after it is saved.
+However, when the user clicks the "Download as MD" or "Download VTT" button, the browser's native download mechanism saves a `.md` / `.vtt` file to the user's own Downloads folder. This is an explicit user-initiated save, and the Extension does not access the file after it is saved.
 
 ## Third-Party Sharing
 

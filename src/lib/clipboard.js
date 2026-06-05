@@ -67,7 +67,7 @@ var RfmdClipboard = RfmdClipboard || (() => {
   }
 
   /**
-   * Blob をファイルとしてダウンロードする（ZIP など binary 用）。
+   * Blob をファイルとしてダウンロードする（binary 用）。
    * @param {Blob} blob
    * @param {string} filename - ファイル名（拡張子付き）
    * @returns {boolean}

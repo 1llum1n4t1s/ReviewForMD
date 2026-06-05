@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "いろいろMDコピー",
-  "version": "1.0.46",
-  "description": "PRレビュー・Teams会議録画(VTT)・Teamsチャットを Markdown / VTT / ZIP でダウンロードできるChrome拡張機能",
+  "version": "1.0.47",
+  "description": "PRレビュー・Teams会議録画(VTT)・Teamsチャットを Markdown / VTT でダウンロードできるChrome拡張機能",
   "browser_specific_settings": {
     "gecko": {
       "id": "review-for-md@1llum1n4t1s.github.io",
@@ -141,8 +141,6 @@
         "src/lib/site_detector.js",
         "src/lib/markdown_builder.js",
         "src/lib/clipboard.js",
-        "src/lib/fetch_utils.js",
-        "src/lib/zip_writer.js",
         "src/extractors/teams_extractor.js",
         "src/ui/button_injector.js",
         "src/content_script.js"

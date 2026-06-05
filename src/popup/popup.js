@@ -36,8 +36,16 @@ const SITE_LABEL = {
   teams_chat: 'Microsoft Teams',
 };
 
-/** アクション定義（icon は装飾用の絵文字） */
-const ICON = { download: '⬇️', copy: '📋', zip: '🗜️' };
+/**
+ * アクションアイコン（Lucide 風の stroke SVG マークアップ）。
+ * stroke="currentColor" なので CSS の .pop-icon の color を継承する。
+ * 値は自前定義の固定文字列で外部入力を含まない（_buildSvg で安全に DOM 化する）。
+ */
+const ICON = {
+  download: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  copy: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+};
 
 let _currentTabId = null;
 
@@ -61,13 +69,33 @@ function _clearActions() {
 }
 
 /**
- * pop ボタンの内容を「アイコン span + ラベル span」で DOM 構築する（innerHTML 不使用）。
- * innerHTML 代入を避け、Firefox AMO の UNSAFE_VAR_ASSIGNMENT lint 警告を回避する。
+ * SVG マークアップ文字列を DOM ノード化する（innerHTML 不使用）。
+ * DOMParser('image/svg+xml') + importNode は button_injector.js の _buildSvg と同型の
+ * 確立パターン。innerHTML 代入を避けて Firefox AMO の UNSAFE_VAR_ASSIGNMENT lint を回避する。
+ * @param {string} svgString 自前定義の固定 SVG マークアップ
+ * @returns {SVGElement|null}
  */
-function _setPopBtnContent(btn, icon, label) {
+function _buildSvg(svgString) {
+  try {
+    const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) return null;
+    return document.importNode(doc.documentElement, true);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * pop ボタンの内容を「アイコン span（SVG）+ ラベル span」で DOM 構築する（innerHTML 不使用）。
+ * @param {HTMLButtonElement} btn
+ * @param {string} iconSvg ICON マップの SVG マークアップ
+ * @param {string} label
+ */
+function _setPopBtnContent(btn, iconSvg, label) {
   const iconSpan = document.createElement('span');
   iconSpan.className = 'pop-icon';
-  iconSpan.textContent = icon;
+  const svg = iconSvg ? _buildSvg(iconSvg) : null;
+  if (svg) iconSpan.appendChild(svg);
   const labelSpan = document.createElement('span');
   labelSpan.className = 'pop-label';
   labelSpan.textContent = label;
@@ -158,8 +186,9 @@ async function _runAction(btn, kind, mode) {
 
 function _showFeedback(btn, success, errMsg, allBtns) {
   btn.classList.add(success ? 'pop-btn--success' : 'pop-btn--error');
-  const labelEl = btn.querySelector('.pop-label');
-  if (labelEl) labelEl.textContent = success ? '完了' : '失敗';
+  // 成功時はアイコンをチェックに化けさせる（達成感のマイクロインタラクション）。
+  // 失敗時は元アイコンのまま色だけ警告色に。
+  _setPopBtnContent(btn, success ? ICON.check : btn._origIcon, success ? '完了' : '失敗');
   if (!success && errMsg) _setNote('エラー: ' + errMsg);
 
   setTimeout(() => {
@@ -227,7 +256,6 @@ function _renderForStatus(status) {
     _setNote('全履歴を自動スクロールで収集します。会話が長いと数十秒かかることがあります。');
     _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
     _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
-    _addActionButton({ label: '添付ごとZIP', icon: ICON.zip, kind: 'teams-zip', mode: 'download' });
     return;
   }
 

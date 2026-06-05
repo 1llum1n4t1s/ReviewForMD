@@ -83,7 +83,7 @@ var ButtonInjector = ButtonInjector || (() => {
    * action='download' の extractFn は次のいずれかを返す:
    *   - { title, markdown }           → {title}.md として保存
    *   - { text, filename, mimeType? } → filename そのままで保存
-   *   - { blob, filename }            → Blob をそのまま保存（ZIP 等）
+   *   - { blob, filename }            → Blob をそのまま保存（binary 等）
    * @returns {HTMLButtonElement}
    */
   function _createButton({ className, dataRfmd, iconSvg, text, title, action = 'copy', extractFn }) {
@@ -111,7 +111,7 @@ var ButtonInjector = ButtonInjector || (() => {
         let ok;
         if (action === 'download') {
           // 現状の唯一の利用箇所は PR 一覧の行ボタンで、extractFn は {title, markdown} を返す。
-          // ZIP/VTT 等の binary・text 保存は popup の runAction 経路が担うため、ここは .md 保存のみ。
+          // VTT 等の binary・text 保存は popup の runAction 経路が担うため、ここは .md 保存のみ。
           const filename = _sanitizeFilename(result.title) + '.md';
           ok = RfmdClipboard.download(result.markdown, filename);
         } else {
@@ -327,7 +327,7 @@ var ButtonInjector = ButtonInjector || (() => {
    * popup から依頼されたアクションを実行する。
    *   mode='download' → このページ側で保存し {ok} を返す
    *   mode='copy'     → 文字列を {ok, text} で返す（クリップボード書き込みは popup 側）
-   * @param {{kind:('pr'|'vtt'|'teams-md'|'teams-zip'), mode:('download'|'copy')}} req
+   * @param {{kind:('pr'|'vtt'|'teams-md'), mode:('download'|'copy')}} req
    * @returns {Promise<{ok:boolean, text?:string, error?:string}>}
    */
   async function runAction({ kind, mode }) {
@@ -369,17 +369,6 @@ var ButtonInjector = ButtonInjector || (() => {
         if (mode === 'copy') return { ok: true, text: markdown };
         const ok = RfmdClipboard.download(markdown, _sanitizeFilename(title) + '.md');
         return ok ? { ok: true } : { ok: false, error: 'ダウンロードに失敗しました' };
-      }
-
-      if (kind === 'teams-zip') {
-        const extractor = _getExtractor(SiteDetector.SiteType.TEAMS_CHAT);
-        if (!extractor) return { ok: false, error: 'Teams extractor が見つかりません' };
-        const { blob, filename, count } = await extractor.extractWithAttachments();
-        if (!count) {
-          return { ok: false, error: 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）' };
-        }
-        const ok = RfmdClipboard.downloadBlob(blob, _sanitizeDownloadFilename(filename, '.zip'));
-        return ok ? { ok: true } : { ok: false, error: 'ZIP の生成に失敗しました' };
       }
 
       return { ok: false, error: '未知のアクション: ' + kind };

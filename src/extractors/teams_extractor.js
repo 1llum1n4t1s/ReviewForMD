@@ -11,7 +11,7 @@
  *      逐次 Map に回収する（Teans Web は仮想スクロールで画面外要素が DOM から
  *      外れるため、スクロールしながら確保する必要がある）
  *   3. メッセージ id（または合成キー）で重複除去し時系列ソート
- *   4. Markdown を生成。ZIP 経路では添付実バイトも取得して同梱する
+ *   4. Markdown を生成
  *
  * ⚠️ Teams の DOM クラス/属性は頻繁に変わる。サイト固有セレクタは
  *    すべて SELECTORS に集約してあるので、UI 変更で動かなくなったら
@@ -107,59 +107,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * viewport 内 DOM 順（domIndex）で乱れないようにする。
    */
   const FALLBACK_ROUND_STRIDE = 1e6;
-  /** ZIP に同梱する添付の合計バイト上限（OOM 防止）。超過分はリモート URL リンクのまま残す。 */
-  const MAX_ATTACH_TOTAL_BYTES = 512 * 1024 * 1024;
-  /** 添付取得の並列度（直列だと添付数 × RTT で遅い） */
-  const ATTACH_CONCURRENCY = 4;
-  /**
-   * 添付 1 件あたりのバイト上限（OOM 防止）。
-   * 「並列度 × 単体上限 ≤ 合計上限」になるよう合計 / 並列度で決めることで、
-   * 同時にバッファされる添付のピークが合計上限を超えないようにする。
-   */
-  const MAX_ATTACH_SINGLE_BYTES = Math.floor(MAX_ATTACH_TOTAL_BYTES / ATTACH_CONCURRENCY);
 
   /** 抽出の再入ガード（同一ページで収集ループの多重起動・DOM 奪い合いを防ぐ） */
   let _busy = false;
-  /**
-   * 収集中に blob: 画像のバイト取得を先行開始するか（ZIP 経路のみ true）。
-   * 仮想スクロールで行が unmount されると blob URL が revoke されうるため、mounted のうちに
-   * fetch を開始しておく。MD 専用経路ではバイトを使わないので false（無駄取得を避ける）。
-   */
-  let _prefetchBlobs = false;
-  /**
-   * ZIP 全体で共有する残り合計バイト予算。収集中の blob prefetch も後段の worker fetch も
-   * この同じ予算から消費し、合計を MAX_ATTACH_TOTAL_BYTES 以内に束縛する（OOM 防止）。
-   * extractWithAttachments が収集前に初期化し、finally でクリアする。
-   */
-  let _attachBudget = null;
-
-  /** 認証付き取得を許可する添付ホスト（cookie 漏洩防止の allowlist） */
-  function _isAllowedAttachmentUrl(url) {
-    try {
-      const u = new URL(url, location.href);
-      if (u.protocol === 'blob:') return true; // 同コンテキストの blob は安全
-      if (u.protocol !== 'https:') return false;
-      const h = u.hostname;
-      return (
-        h === 'teams.microsoft.com' ||
-        h.endsWith('.teams.microsoft.com') ||
-        h === 'teams.cloud.microsoft' ||
-        h.endsWith('.teams.cloud.microsoft') ||
-        // consumer Teams（manifest / site_detector が対応している teams.live.com）。
-        // 同一オリジンの添付/画像なので CORS 制約を受けず取得できる。
-        h === 'teams.live.com' ||
-        h.endsWith('.teams.live.com') ||
-        // 添付/画像の実配信ホストに限定して cookie 境界を最小化する（SSRF/cookie 流出対策）。
-        // 取得できない添付が出たら、実機 Teams の Network から配信ホストを採取してここに追加する。
-        // （広域サフィックス .microsoft.com/.office.com/.live.com 等は送信者制御 URL での
-        //   クロスサービス cookie 送信を許すため意図的に除外）
-        h.endsWith('.sharepoint.com') ||
-        h.endsWith('.svc.ms')
-      );
-    } catch {
-      return false;
-    }
-  }
 
   /* ── 状態 ─────────────────────────────────────────── */
 
@@ -358,11 +308,6 @@ var TeamsExtractor = TeamsExtractor || (() => {
       }
       const alt = (img.getAttribute('alt') || '').trim();
       const att = { kind: 'image', name: alt || 'image', url: src };
-      // blob: は行が unmount されると revoke されうるため、ZIP 経路では mounted の今のうちに
-      // 取得を開始しておく（_pending に Promise を持たせ、extractWithAttachments で await する）。
-      if (_prefetchBlobs && /^blob:/i.test(src)) {
-        att._pending = _startBlobFetch(src);
-      }
       list.push(att);
       img.remove();
     });
@@ -607,27 +552,6 @@ var TeamsExtractor = TeamsExtractor || (() => {
     return s || fallback || 'item';
   }
 
-  /** URL のパス末尾から拡張子を推測する。 */
-  function _extFromUrl(url) {
-    try {
-      const u = new URL(url, location.href);
-      const m = u.pathname.match(/\.([A-Za-z0-9]{1,8})$/);
-      return m ? '.' + m[1].toLowerCase() : '';
-    } catch {
-      return '';
-    }
-  }
-
-  /** ログ用に URL から機微なクエリ（SAS トークン等）を落とし origin+pathname だけにする。 */
-  function _redactUrl(url) {
-    try {
-      const u = new URL(url, location.href);
-      return u.origin + u.pathname;
-    } catch {
-      return '(invalid url)';
-    }
-  }
-
   /**
    * Markdown のインライン構文位置（見出し・著者名等）に外部由来文字列を埋める前のエスケープ。
    * 改行除去 + raw HTML 無効化(<) + 構造文字の無害化（HTML 許容 MD ビューアでのインジェクション対策）。
@@ -671,9 +595,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * レコード配列から Markdown 本文を組み立てる。
    * @param {string} title 会話タイトル
    * @param {Array} records レコード
-   * @param {Map<string,string>|null} localPaths url→ZIP内ローカルパス（ZIP 経路のみ）
    */
-  function _buildMarkdown(title, records, localPaths) {
+  function _buildMarkdown(title, records) {
     const lines = [];
     lines.push(`# ${_escapeMdInline(title)}`);
     lines.push('');
@@ -696,9 +619,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       }
       if (r.attachments.length) {
         for (const att of r.attachments) {
-          const ref = localPaths && localPaths.has(att.url)
-            ? localPaths.get(att.url)
-            : att.url;
+          const ref = att.url;
           const icon = att.kind === 'image' ? '🖼' : '📎';
           // 添付名・URL は送信者が制御できるため、Markdown のリンク構文を壊す/注入する
           // メタ文字（]・) 等）を MarkdownBuilder と同じ規則でエスケープしてから埋め込む。
@@ -718,141 +639,6 @@ var TeamsExtractor = TeamsExtractor || (() => {
     }
 
     return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
-  }
-
-  /* ── 添付取得（ZIP 経路）─────────────────────────── */
-
-  /**
-   * Response を「上限バイト」を超えない範囲でストリーム読みして Uint8Array 化する。
-   * Content-Length が判明していれば全読み前に弾き、不明/虚偽でも running limit で
-   * 打ち切る。巨大ファイルを `arrayBuffer()` で丸ごとバッファしてからチェックする
-   * （＝上限が効く前に OOM する）のを防ぐ。
-   * @param {Response} res
-   * @param {number} maxBytes
-   * @returns {Promise<Uint8Array>}
-   */
-  async function _readBoundedBytes(res, maxBytes) {
-    if (!(maxBytes > 0)) throw new Error('添付合計上限に到達');
-    const len = Number(res.headers.get('content-length'));
-    if (Number.isFinite(len) && len > maxBytes) {
-      try { await res.body?.cancel(); } catch { /* 既に閉じている等 */ }
-      throw new Error(`添付がサイズ上限を超過: ${len} bytes`);
-    }
-    // ストリーム非対応環境では arrayBuffer にフォールバック（事後に上限チェック）
-    if (!res.body || typeof res.body.getReader !== 'function') {
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      if (bytes.length > maxBytes) throw new Error(`添付がサイズ上限を超過: ${bytes.length} bytes`);
-      return bytes;
-    }
-    // Content-Length 不明/虚偽でも、読みながら上限超過で即打ち切る
-    const reader = res.body.getReader();
-    const chunks = [];
-    let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > maxBytes) {
-        try { await reader.cancel(); } catch { /* 既に閉じている等 */ }
-        throw new Error(`添付がサイズ上限を超過: >${maxBytes} bytes`);
-      }
-      chunks.push(value);
-    }
-    const out = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.length; }
-    return out;
-  }
-
-  /**
-   * blob: 画像のバイト取得を「今」（行が mounted のうち）開始する Promise を返す。
-   * fetch 呼び出し時点で blob URL を解決するため、後で行が unmount されて URL が revoke されても
-   * in-flight の取得は完了できる。
-   *
-   * メモリ束縛: 共有予算 `_attachBudget` から **読む前にサイズで予約** する。blob は Content-Length
-   * が判明することが多いので、本体をバッファする前に「単体上限」と「残り合計予算」で弾ける。
-   * これにより、多数/大容量の blob 画像を収集中に一斉取得しても合計が MAX_ATTACH_TOTAL_BYTES を
-   * 超えない（worker fetch と同じ予算を共有）。失敗・予算超過時は null に解決する。
-   * @returns {Promise<Uint8Array|null>}
-   */
-  function _startBlobFetch(url) {
-    const budget = _attachBudget;
-    try {
-      return fetch(url, { cache: 'no-store' }).then(async (res) => {
-        if (!res.ok) return null;
-        const avail = budget ? Math.max(0, budget.remaining) : Infinity;
-        const cap = Math.min(MAX_ATTACH_SINGLE_BYTES, avail);
-        const len = Number(res.headers.get('content-length'));
-        if (Number.isFinite(len) && len > 0) {
-          // Content-Length 既知: 読む前にサイズで弾き、予算から予約する。
-          // check→reserve の間に await が無いため、並列 prefetch でも予約は競合しない（単一スレッド）。
-          if (len > cap) { try { await res.body?.cancel(); } catch { /* 既に閉じている等 */ } return null; }
-          if (budget) budget.remaining -= len;
-          try {
-            const bytes = await _readBoundedBytes(res, len);
-            if (budget) budget.remaining += len - bytes.length; // 実サイズ差を返金
-            return bytes;
-          } catch {
-            if (budget) budget.remaining += len; // 失敗時は予約全額返金
-            return null;
-          }
-        }
-        // Content-Length 不明（稀）: 単体上限で読み、実サイズを事後減算
-        try {
-          const bytes = await _readBoundedBytes(res, cap);
-          if (budget) budget.remaining -= bytes.length;
-          return bytes;
-        } catch {
-          return null;
-        }
-      }).catch(() => null);
-    } catch {
-      return Promise.resolve(null);
-    }
-  }
-
-  /**
-   * 添付 1 件の実バイトを取得する。
-   * 単体上限と「残り合計予算」の小さい方を上限にストリーム読みするため、
-   * 巨大ファイル 1 件でも、複数大容量ファイルでも、バッファ前にサイズで弾ける。
-   * @param {string} url
-   * @param {{remaining:number}} [budget] ZIP 全体で共有する残り合計バイト予算
-   * @returns {Promise<Uint8Array>}
-   */
-  async function _fetchAttachmentBytes(url, budget) {
-    if (!_isAllowedAttachmentUrl(url)) {
-      throw new Error('許可されていない添付オリジンです');
-    }
-    const u = new URL(url, location.href);
-    const opts =
-      u.protocol === 'blob:'
-        ? { cache: 'no-store' }
-        : { credentials: 'include', cache: 'no-store' };
-
-    // 予算は「読み込み前に予約」する。読み込み後に消費する方式だと、4 並列が同時に
-    // 各 MAX_ATTACH_SINGLE_BYTES を確保してから減算するため、ピークが合計上限を超えうる
-    // （Codex 指摘: 約 640MB まで膨らむ）。予約方式なら同時に確保できるバッファの総和が
-    // 常に予算（=合計上限）以内に収まる。
-    let reserved = MAX_ATTACH_SINGLE_BYTES;
-    if (budget) {
-      reserved = Math.min(MAX_ATTACH_SINGLE_BYTES, Math.max(0, budget.remaining));
-      if (reserved <= 0) throw new Error('添付合計上限に到達');
-      budget.remaining -= reserved;
-    }
-    try {
-      // 429/503/一時障害は 1 回までリトライ（添付の取りこぼし低減）
-      const res = await RfmdFetch.withRetry(u.href, opts, 1);
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const bytes = await _readBoundedBytes(res, reserved);
-      if (budget) {
-        budget.remaining += reserved - bytes.length; // 予約超過分（未使用枠）を返金
-        reserved = 0; // 返金済み → finally での二重返金を防ぐ
-      }
-      return bytes;
-    } finally {
-      // 取得失敗・サイズ超過時は予約を全額返金して後続ワーカーへ回す
-      if (budget && reserved > 0) budget.remaining += reserved;
-    }
   }
 
   /* ── 公開 API ─────────────────────────────────── */
@@ -909,111 +695,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
     _busy = true;
     try {
       const records = await _collectRecords();
-      return { markdown: _buildMarkdown(getTitle(), records, null), count: records.length };
+      return { markdown: _buildMarkdown(getTitle(), records), count: records.length };
     } finally {
-      _busy = false;
-    }
-  }
-
-  /**
-   * 全履歴 + 添付実バイトを収集し、ZIP（transcript.md + attachments/）を返す。
-   * @returns {Promise<{blob: Blob, filename: string}>}
-   */
-  async function extractWithAttachments() {
-    if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
-    _busy = true;
-    _prefetchBlobs = true; // 収集中、mounted のうちに blob: 画像の取得を先行開始する
-    // 収集中の blob prefetch と後段の worker fetch が同じ予算を共有する（合計上限を一元管理）
-    _attachBudget = { remaining: MAX_ATTACH_TOTAL_BYTES };
-    try {
-      const title = getTitle();
-      const records = await _collectRecords();
-
-      // 添付タスクを平坦化（同一 URL は 1 度だけ）。収集順を保持し採番を決定的にする。
-      const seen = new Set();
-      const tasks = [];
-      for (const r of records) {
-        for (const att of r.attachments) {
-          if (seen.has(att.url)) continue;
-          seen.add(att.url);
-          tasks.push(att);
-        }
-      }
-
-      // 並列度制限プールでバイト取得（直列だと添付数 × RTT で遅い）。
-      // 予算は _attachBudget（収集中の blob prefetch と共有）。複数大容量でも合計上限を
-      // 超える前に取得を打ち切ってバッファ蓄積による OOM を防ぐ。
-      const budget = _attachBudget;
-      const bytesByIndex = new Array(tasks.length).fill(null);
-      let cursor = 0;
-      async function _worker() {
-        while (true) {
-          const i = cursor++;
-          if (i >= tasks.length) break;
-          const task = tasks[i];
-          try {
-            if (task._pending) {
-              // 収集中に開始済みの blob 取得（revoke 前に in-flight 化済み）。
-              // バイトは既に _attachBudget から予約・消費済みなので、ここで再減算しない。
-              bytesByIndex[i] = await task._pending;
-            } else {
-              bytesByIndex[i] = await _fetchAttachmentBytes(task.url, budget);
-            }
-          } catch (e) {
-            bytesByIndex[i] = null;
-            // SAS トークンを含みうる URL はそのまま出さず redact する
-            console.debug('[ReviewForMD][Teams] 添付取得失敗:', _redactUrl(task.url), e?.message || e);
-          }
-        }
-      }
-      await Promise.all(
-        Array.from({ length: Math.min(ATTACH_CONCURRENCY, tasks.length) }, _worker)
-      );
-
-      /** url → ZIP 内ローカルパス */
-      const localPaths = new Map();
-      /** @type {Array<{name:string, data:Uint8Array}>} */
-      const files = [];
-      const usedNames = new Set();
-      let counter = 0;
-      let totalBytes = 0;
-
-      // 採番・同梱はインデックス順で決定的に行う
-      for (let i = 0; i < tasks.length; i++) {
-        const att = tasks[i];
-        const bytes = bytesByIndex[i];
-        if (!bytes) continue; // 取得失敗 → リモート URL リンクのまま残す
-        // 合計バイト上限を超えたら同梱せずリンクのまま残す（OOM 防止）
-        if (totalBytes + bytes.length > MAX_ATTACH_TOTAL_BYTES) continue;
-        totalBytes += bytes.length;
-        counter++;
-        let base = _safeName(att.name, att.kind);
-        // 拡張子が無ければ URL から補う（_extFromUrl は英数字のみ抽出＝安全）
-        if (!/\.[A-Za-z0-9]{1,8}$/.test(base)) {
-          base += _extFromUrl(att.url) || (att.kind === 'image' ? '.png' : '');
-        }
-        // 衝突回避
-        let name = base;
-        let n = 1;
-        while (usedNames.has(name.toLowerCase())) {
-          const dot = base.lastIndexOf('.');
-          name = dot > 0 ? `${base.slice(0, dot)}_${n}${base.slice(dot)}` : `${base}_${n}`;
-          n++;
-        }
-        usedNames.add(name.toLowerCase());
-        const path = `attachments/${String(counter).padStart(3, '0')}_${name}`;
-        files.push({ name: path, data: bytes });
-        localPaths.set(att.url, path);
-      }
-
-      const markdown = _buildMarkdown(title, records, localPaths);
-      const entries = [{ name: 'transcript.md', data: markdown }, ...files];
-      const blob = RfmdZip.create(entries);
-      const filename = _safeName(title, 'teams-chat') + '.zip';
-      return { blob, filename, count: records.length };
-    } finally {
-      _prefetchBlobs = false;
-      _attachBudget = null;
       _busy = false;
     }
   }
@@ -1024,5 +707,5 @@ var TeamsExtractor = TeamsExtractor || (() => {
     _availabilityCacheUrl = '';
   }
 
-  return { checkAvailability, hasChatDom, getTitle, extractAll, extractWithAttachments, reset };
+  return { checkAvailability, hasChatDom, getTitle, extractAll, reset };
 })();

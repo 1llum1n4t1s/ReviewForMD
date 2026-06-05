@@ -9,11 +9,11 @@ Chrome Web Store 掲載情報（コピペ用）
 いろいろMDコピー
 
 ■ 概要（132文字以内）
-GitHub / Azure DevOps / AWS CodeCommit の PR を Markdown、SharePoint の会議録画から VTT 字幕、Teams チャットを Markdown/ZIP でワンクリック取得できる Chrome 拡張。
+GitHub / Azure DevOps / AWS CodeCommit の PR を Markdown、SharePoint の会議録画から VTT 字幕、Teams チャットを Markdown でワンクリック取得できる Chrome 拡張。
 
 ■ 説明（16,000文字以内）
 
-複数サイトの情報を Markdown / VTT / ZIP でダウンロードできる Chrome 拡張機能です。
+複数サイトの情報を Markdown / VTT でダウンロードできる Chrome 拡張機能です。
 GitHub・Azure DevOps の PR レビュー、SharePoint Stream の Teams 会議録画字幕（VTT）、
 そして Microsoft Teams のチャット履歴まで、ワンクリックで手元に保存できます。
 
@@ -51,8 +51,6 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 アイコンをクリックすると、ポップアップに次のボタンが出ます。
 ・「MDでダウンロード」「MDコピー」: 自動スクロールで全履歴を収集し、送信者・日時・本文・
   リアクション・添付リンクを 1つの .md ファイルで保存／コピー。
-・「添付ごとZIP」: さらに添付ファイルや画像の実データもまとめて取得し、transcript.md と
-  attachments/ フォルダを 1つの ZIP にまとめて保存します。
 
 【こんな場面で役立ちます】
 ・コードレビューの記録をチームで共有したい
@@ -60,7 +58,7 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 ・レビューの振り返り資料を作りたい
 ・複数の PR をまとめて Markdown ファイルで保存したい
 ・Teams 会議の内容を字幕データから議事録に起こしたい
-・Teams のチャット履歴を添付ごとバックアップ・記録として残したい
+・Teams のチャット履歴をバックアップ・記録として残したい
 
 【使い方】
 1. Chrome Web Store からインストール
@@ -69,9 +67,9 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 3. ツールバーの拡張機能アイコンをクリック → ポップアップにそのサイト用のボタンが表示されます
    - PR: 「MDでダウンロード」「MDコピー」
    - SharePoint 会議録画: 「VTTでダウンロード」「VTTコピー」
-   - Teams チャット: 「MDでダウンロード」「MDコピー」「添付ごとZIP」
+   - Teams チャット: 「MDでダウンロード」「MDコピー」
    ※ PR 一覧ページでは各行のダウンロードボタンからも直接保存できます
-4. ボタンをクリック → .md / .vtt / .zip ファイルが保存（またはコピー）されます
+4. ボタンをクリック → .md / .vtt ファイルが保存（またはコピー）されます
 
 【プライバシーについて】
 ・個人情報の収集は一切行いません
@@ -116,7 +114,7 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 はい
 
 ■ 単一の目的の説明
-閲覧中のページ（PR レビュー / Teams 会議録画 / Teams チャット）の内容を Markdown・VTT・ZIP 形式でダウンロードまたはコピーする
+閲覧中のページ（PR レビュー / Teams 会議録画 / Teams チャット）の内容を Markdown・VTT 形式でダウンロードまたはコピーする
 
 ■ データの使用に関する開示
 
@@ -161,7 +159,6 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 
   host_permissions (teams.microsoft.com / *.teams.microsoft.com / teams.live.com / teams.cloud.microsoft):
   Microsoft Teams のチャット/チャネルでメッセージ履歴を読み取り、Markdown に整形するために使用します。
-  「添付ごとZIP」では、ユーザー自身の既存ログインセッションで添付ファイル・画像を取得します。
 
   optional_host_permissions (カスタムドメイン):
   社内ホストされた Azure DevOps などのカスタムドメインを個別に許可していただくために、

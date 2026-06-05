@@ -7,10 +7,10 @@ Firefox AMO listing (en-US) / parsed by update-amo-listing.mjs
 Iroiro MD Copy
 
 ■ Summary
-Download GitHub / Azure DevOps / AWS CodeCommit pull requests as Markdown, Teams meeting captions (VTT) from SharePoint Stream, and Microsoft Teams chats as Markdown/ZIP — all in one click.
+Download GitHub / Azure DevOps / AWS CodeCommit pull requests as Markdown, Teams meeting captions (VTT) from SharePoint Stream, and Microsoft Teams chats as Markdown — all in one click.
 
 ■ Description
-A browser extension that downloads information from multiple sites as Markdown / VTT / ZIP files.
+A browser extension that downloads information from multiple sites as Markdown / VTT files.
 Save pull request reviews from GitHub, Azure DevOps and AWS CodeCommit, meeting transcripts (VTT) from
 SharePoint Stream (Teams recordings), and even Microsoft Teams chat history — all with a single click.
 
@@ -33,8 +33,7 @@ Everything is done from the toolbar popup. The popup detects the current site an
 
 - Microsoft Teams chat
   Collect the full history of a chat or channel via auto-scroll and save sender, timestamp, body, reactions and
-  attachment links as a single .md file. "Download as ZIP" also fetches the actual attachment files and images
-  and bundles transcript.md and an attachments/ folder into one ZIP.
+  attachment links as a single .md file.
 
 [Privacy]
 

@@ -1,10 +1,10 @@
 # いろいろMDコピー (Review For MD)
 
-複数サイトの情報を **Markdown / VTT / ZIP ファイルでダウンロード**できる **Chrome / Firefox** 拡張機能です。
+複数サイトの情報を **Markdown / VTT ファイルでダウンロード**できる **Chrome / Firefox** 拡張機能です。
 
 - **PR レビュー**: GitHub / Azure DevOps（カスタムドメイン含む）/ AWS CodeCommit の PR タイトル・本文・レビューコメントを Markdown でダウンロード
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから字幕（VTT）をダウンロード
-- **Teams チャット**: Microsoft Teams のチャット/チャネルの全履歴を自動スクロールで収集し、Markdown（添付込みは ZIP）でダウンロード
+- **Teams チャット**: Microsoft Teams のチャット/チャネルの全履歴を自動スクロールで収集し、Markdown でダウンロード
 
 ## 機能
 
@@ -33,7 +33,6 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 - **「MDでダウンロード」** — チャットを自動スクロールして**全履歴**を収集し、送信者・日時・本文・リアクション・添付リンクを 1 つの `.md` ファイルとして保存。
 - **「MDコピー」** — 同じ内容をクリップボードにコピー。
-- **「添付ごとZIP」** — 添付ファイルや画像の実データもまとめて取得し、`transcript.md` と `attachments/` フォルダを 1 つの ZIP アーカイブで保存。
 
 > 全履歴の収集は自動スクロールで行うため、会話が長いと数十秒かかることがあります。取得が終わるまでポップアップは開いたままにしてください。
 
@@ -71,7 +70,7 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 | Azure DevOps（カスタムドメイン） | ✅ | Markdown |
 | AWS CodeCommit (`*.console.aws.amazon.com`、詳細ページのみ) | ✅ | Markdown |
 | SharePoint Stream (`*.sharepoint.com/.../stream.aspx`) | ✅ | VTT |
-| Microsoft Teams チャット (`teams.microsoft.com` / `teams.live.com` / `teams.cloud.microsoft`) | ✅ | Markdown / ZIP |
+| Microsoft Teams チャット (`teams.microsoft.com` / `teams.live.com` / `teams.cloud.microsoft`) | ✅ | Markdown |
 
 ### カスタムドメインの Azure DevOps 対応
 
@@ -129,14 +128,13 @@ src/
 │   ├── site_detector.js       # GitHub / Azure DevOps / CodeCommit / SharePoint / Teams 判定
 │   ├── markdown_builder.js    # HTML → Markdown 変換・テキスト組み立て
 │   ├── clipboard.js           # クリップボードコピー・ファイル/Blob ダウンロード
-│   ├── fetch_utils.js         # タイムアウト付き fetch（全 Extractor 共有）
-│   └── zip_writer.js          # 純 JS ZIP ライタ（STORE 法・Teams 添付 ZIP 用）
+│   └── fetch_utils.js         # タイムアウト付き fetch（全 Extractor 共有）
 ├── extractors/
 │   ├── github_extractor.js    # GitHub PR データ抽出
 │   ├── devops_extractor.js    # Azure DevOps PR データ抽出（REST API フォールバック付き）
 │   ├── codecommit_extractor.js # AWS CodeCommit PR データ抽出（DOM ベース・詳細ページ専用）
 │   ├── sharepoint_extractor.js # SharePoint Stream トランスクリプト(VTT)取得
-│   └── teams_extractor.js     # Teams チャット抽出（自動スクロール・添付収集）
+│   └── teams_extractor.js     # Teams チャット抽出（自動スクロール・全履歴収集）
 ├── inject/
 │   ├── navigation_hook.js     # main world 注入（SPA 遷移検出用）
 │   └── sharepoint_fetch_hook.js # main world 注入（fetch をフックして Drive/File ID を捕捉）

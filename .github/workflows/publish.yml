@@ -9,15 +9,24 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Chrome Web Store 公開
+  package:
+    name: ZIP パッケージ作成
     runs-on: ubuntu-latest
+    outputs:
+      # version を後続 job (publish / publish-firefox) の pre-flight check に渡す。
+      # 同 version が既に CWS / AMO に存在する場合、publish step を skip して
+      # 「同 version 重複 push 拒否」エラーを未然に防ぐ。
+      version: ${{ steps.version.outputs.version }}
     steps:
+      # サプライチェーン攻撃対策で SHA ピン留め。タグは指すコミットを書き換え可能なため
+      # 信頼境界として弱い。バージョン更新時は SHA を取り直してタグコメントも合わせる。
       - name: リポジトリをチェックアウト
-        # SHA ピン留め: タグは mutable なため（タグ書き換え型の供給チェーン攻撃対策）。
-        # SHA 取得手順: `gh api repos/actions/checkout/git/ref/tags/v5`
-        # バージョン更新時は SHA を取り直して追記コメントも合わせる。
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.0
+        # persist-credentials を明示的に無効化。本 workflow では GITHUB_TOKEN を使った
+        # git push を行わないので、.git/config に書き残さない方が防御深層として安全
+        # (script injection 経由の token 漏洩経路を完全に閉じる)。
+        with:
+          persist-credentials: false
 
       - name: バージョンを取得
         id: version
@@ -43,58 +52,252 @@ jobs:
           # zip.sh を再利用して除外条件（hidden/.env 等）をローカルと一元化する
           # （CI 独自に zip すると zip.sh とズレて将来 src 配下の隠しファイルを誤公開する経路が残る）。
           bash zip.sh
+          ls -lh ReviewForMD.zip
 
-      - name: Chrome Web Store にアップロード & 公開
+      - name: ZIP artifact を保存
+        # CWS / AMO の publish 系 job は checkout/zip を再実行せず、この artifact だけを
+        # fresh runner で受け取る → Secrets を持つ job が zip 生成ロジックに触れない構成にし、
+        # secrets 露出経路を最小化する。
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reviewformd-zip
+          path: ReviewForMD.zip
+          if-no-files-found: error
+
+  publish:
+    name: Chrome Web Store にアップロード + Submit for review
+    runs-on: ubuntu-latest
+    needs: package
+    environment: chrome-web-store
+    steps:
+      - name: ZIP artifact を取得
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewformd-zip
+          path: .
+
+      - name: バージョン pre-flight check (CWS / 既存 version と一致なら skip)
+        # 同 version 再 push は CWS API が INVALID_ARGUMENT 等で拒否するため、Items.get API で
+        # **draft の crxVersion** を取得して manifest version と一致したら publish を skip する。
+        #
+        # ⚠️ `crxVersion` は CWS Items API 公式ドキュメント未記載の **未文書フィールド**だが、
+        # 実機検証 (`?projection=DRAFT`) で返ることを確認済み (PlasmoHQ 等の publish ツールでも
+        # 事実上の標準)。将来 API 変更で消えたら draft_version が空になり skip=false 側 (publish 実行)
+        # に倒れるので安全。
+        #
+        # ⚠️ uploadState: publish 済み clean draft は `NOT_FOUND` (= 保留中アップロード操作なし) を返す。
+        # FAILURE のときのみ「直近アップロード失敗 → 再 upload したい」ので skip しない。
+        # それ以外は crxVersion 一致で skip。
+        id: cws-preflight
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          MANIFEST_VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit
+          # OAuth refresh (publish step と同じ流れ、token はマスク登録)
+          token_response=$(curl -fsS \
+            -X POST "https://oauth2.googleapis.com/token" \
+            --data-urlencode "client_id=${CWS_CLIENT_ID}" \
+            --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
+            --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
+            --data-urlencode "grant_type=refresh_token")
+          # python が非 JSON で exit 1 しても inherit_errexit で step ごと落ちないよう `|| echo ""`
+          # でフォールバックさせ、直後の空チェック分岐で warning 降格させる。
+          access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
+          if [ -z "${access_token:-}" ]; then
+            echo "::warning::CWS pre-flight: OAuth token 取得失敗 → publish step に判定を委ねる"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::add-mask::${token_response}"
+          echo "::add-mask::${access_token}"
+          # Items.get で draft の crxVersion + uploadState を取得
+          draft_response=$(curl -fsS \
+            -H "Authorization: Bearer ${access_token}" \
+            -H "x-goog-api-version: 2" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}?projection=DRAFT") || draft_response=""
+          if [ -z "$draft_response" ]; then
+            echo "::warning::CWS pre-flight: Items.get 失敗 → publish step に判定を委ねる"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          draft_version=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("crxVersion",""))' 2>/dev/null <<< "$draft_response" || echo "")
+          draft_state=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("uploadState",""))' 2>/dev/null <<< "$draft_response" || echo "")
+          echo "📊 CWS draft: version=${draft_version:-(unknown)} state=${draft_state:-(unknown)} / manifest: ${MANIFEST_VERSION}"
+          if [ -n "$draft_version" ] && [ "$draft_version" = "$MANIFEST_VERSION" ] && [ "$draft_state" != "FAILURE" ]; then
+            echo "::notice::CWS は既に v${MANIFEST_VERSION} を保持 (crxVersion 一致, uploadState=${draft_state})。CWS publish step を skip (同 version 重複 push 防止)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Chrome Web Store にアップロード + Publish API で Submit for review
+        if: ${{ steps.cws-preflight.outputs.skip != 'true' }}
         env:
           CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: |
-          # パッチ固定: npm maintainer アカウント侵害でも CWS 秘密情報を守るため、
-          # メジャータグ (`@3`) ではなくパッチ固定する。最新版への追随は手動 PR で。
-          npx --yes chrome-webstore-upload-cli@3.5.0 upload \
-            --source ReviewForMD.zip \
-            --extension-id "$CWS_EXTENSION_ID" \
-            --client-id "$CWS_CLIENT_ID" \
-            --client-secret "$CWS_CLIENT_SECRET" \
-            --refresh-token "$CWS_REFRESH_TOKEN" \
-            --auto-publish
-          echo "🎉 Chrome Web Store への公開リクエストを送信したよ〜"
-
-  # CWS ジョブとは独立（needs なし）。片方のストアが失敗しても、もう片方の公開は止まらない。
-  publish-firefox:
-    name: Firefox AMO 公開
-    runs-on: ubuntu-latest
-    steps:
-      - name: リポジトリをチェックアウト
-        # SHA ピン留め: タグは mutable なため（タグ書き換え型の供給チェーン攻撃対策）。
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-
-      - name: ブランチ名とバージョンの整合性を確認
-        env:
-          BRANCH_VERSION: ${{ github.ref_name }}
-        run: |
-          version=$(grep -oP '(?<="version": ")[^"]+' manifest.json)
-          expected="release/${version}"
-          if [ "$BRANCH_VERSION" != "$expected" ]; then
-            echo "::error::ブランチ名 ($BRANCH_VERSION) と manifest.json のバージョン ($version) が一致しません。期待値: $expected"
+          # フルオート申請フロー:
+          # 1) ZIP を Draft としてアップロード
+          # 2) Publish API (publishTarget=default) で Submit for review まで自動化
+          #
+          # **listing 変更時の運用注意**: 説明文 / スクリーンショット / カテゴリ / 権限の正当性などの
+          # CWS listing 項目は API に更新エンドポイントが無い (v2 API discovery で確認済み)。
+          # listing を変更したいリリースでは push 前後に Dashboard で listing を整えてから
+          # release ブランチを push する (Submit for review は Draft の最新コミット + 最新 listing で行う)。
+          #
+          # この job は checkout/npm を行わず、Secrets を第三者 npm lifecycle の後段に置かない。
+          # package job が作った ZIP artifact だけを fresh runner で受け取り、CWS API へ直接アップロードする。
+          #
+          # **stdout/stderr は直接ストリームする**: 変数に取り込んで echo すると、CLI が OAuth Bearer
+          # Token をエラーに混ぜたとき GitHub Actions の自動マスキングが効かず平文残存しうる。
+          # 直接ストリームすればランナー側マスキングが各シークレットを *** に置換できる。
+          set -euo pipefail
+          shopt -s inherit_errexit
+          # ⚠️ このブロックでは `set -x` を絶対に有効化しない (token が add-mask 登録前に平文ログに出る)。
+          token_response=$(curl -fsS \
+            -X POST "https://oauth2.googleapis.com/token" \
+            --data-urlencode "client_id=${CWS_CLIENT_ID}" \
+            --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
+            --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
+            --data-urlencode "grant_type=refresh_token")
+          access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
+          if [ -z "${access_token:-}" ]; then
+            echo "::error::access_token のパースに失敗しました (OAuth refresh response が想定形式でない可能性)"
             exit 1
           fi
-          echo "📦 公開対象バージョン: $version"
+          # 動的取得した access_token は GitHub Actions の自動マスキング対象外のため、
+          # add-mask で明示登録して以降のログ出力でも漏洩しないようにする。
+          echo "::add-mask::${token_response}"
+          echo "::add-mask::${access_token}"
 
-      - name: Firefox 用ソースを準備
+          # ----- ステップ 1: ZIP を Draft としてアップロード -----
+          echo "📤 Step 1/2: Chrome Web Store に ZIP をアップロード中..."
+          upload_response=$(curl -fsS \
+            -X PUT \
+            -H "Authorization: Bearer ${access_token}" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Type: application/zip" \
+            --data-binary @ReviewForMD.zip \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}")
+          echo "✅ アップロード完了"
+          upload_state=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("uploadState","UNKNOWN"))' 2>/dev/null <<< "$upload_response")
+          echo "📊 uploadState: ${upload_state}"
+          if [ "$upload_state" != "SUCCESS" ]; then
+            echo "::error::アップロードが SUCCESS ではないため publish を中止します (state=${upload_state})"
+            echo "Response: $upload_response"
+            exit 1
+          fi
+
+          # ----- ステップ 2: Publish API で Submit for review -----
+          echo "📨 Step 2/2: Publish API で Submit for review..."
+          publish_response=$(curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer ${access_token}" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Length: 0" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}/publish?publishTarget=default")
+          publish_status=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(d.get("status",[])))' 2>/dev/null <<< "$publish_response")
+          echo "📊 Publish status: ${publish_status}"
+          case "$publish_status" in
+            *OK*|*ITEM_PENDING_REVIEW*)
+              echo "🎉 Submit for review 完了！Chrome Web Store のレビューキューに入りました"
+              echo "🔗 Dashboard: https://chrome.google.com/webstore/devconsole"
+              echo "⏰ レビュー結果は通常 1〜数日でメール通知"
+              ;;
+            *)
+              echo "::error::予期しない publish status: ${publish_status}"
+              echo "Response: $publish_response"
+              exit 1
+              ;;
+          esac
+
+  publish-firefox:
+    name: Firefox AMO に submission
+    runs-on: ubuntu-latest
+    needs: package
+    # Chrome publish が失敗 (同 version 重複 upload 等) しても Firefox AMO は独立 submit する。
+    # `if: success() || failure()` がないと「Chrome 失敗 → Firefox 連鎖 skip」でリカバリーが
+    # 機能しなくなる (cancelled() 時のみ skip)。
+    if: ${{ success() || failure() }}
+    steps:
+      - name: リポジトリをチェックアウト
+        # update-amo-listing.mjs / webstore/*.txt / vava.config.json / package.json が必要なので checkout。
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - name: ZIP artifact を取得して Firefox source を展開
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewformd-zip
+          path: .
+
+      - name: Firefox source ディレクトリを構築
         run: |
-          # CWS と同一の公開物にするため zip.sh で zip を作り、それを展開して staging にする。
-          # hidden/.env 等の除外条件を zip.sh に一元化（CWS ジョブと完全一致）。web-ext は
-          # source-dir を要求するので zip を展開する。manifest.json は Chrome と共有
-          # （browser_specific_settings.gecko を Firefox が読む / minimum_chrome_version は Firefox が無視）。
-          bash zip.sh
+          # ReviewForMD は Chrome/Firefox で manifest を共有 (単一 manifest.json) のため、
+          # CWS と同一の ZIP を展開すれば Firefox source になる。
+          # (manifest.firefox.json 分離 / Firefox strip は不要 — offscreen 等の未対応 API を使ってない)
           rm -rf build-firefox && mkdir -p build-firefox
           unzip -q ReviewForMD.zip -d build-firefox
           ls -R build-firefox | head -40
 
+      - name: Node セットアップ
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+        with:
+          node-version: '20'
+
+      - name: バージョン pre-flight check (AMO / 既 submission 済み version なら skip)
+        # 同 version 重複 submission は AMO が "Version already exists" で拒否するため、
+        # AMO API v5 versions list (anonymous GET 可) で manifest version の存在を確認して skip。
+        # 注意: `/versions/` は public listed (= 承認済み) のみ返し、pending / awaiting_review な
+        # submission は検知できない。pre-flight pass → web-ext sign 失敗のケースは、submit step 側で
+        # "version already exists" を warning 化する fallback 経路で救済する。
+        #
+        # AMO_SLUG はワークフロー側ハードコードを避け、`vava.config.json` から jq で抽出して SSOT 化。
+        id: amo-preflight
+        env:
+          MANIFEST_VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit
+          # jq が vava.config.json 不在 / パース失敗で非ゼロ終了しても inherit_errexit で step ごと
+          # hard fail させず、空文字 → 警告 + skip=false 分岐に倒す (publish step に判定を委ねる)。
+          AMO_SLUG=$(jq -r '.amo.slug // empty' vava.config.json 2>/dev/null || echo "")
+          if [ -z "${AMO_SLUG:-}" ]; then
+            echo "::warning::vava.config.json の amo.slug が取得できないため AMO pre-flight を skip (publish step に委ねる)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 初回 AMO 登録 (add-on 未作成 → HTTP 404) や AMO 一時障害 (5xx / 429 / DNS) で curl -fsS が
+          # 非ゼロ終了したとき、空文字に倒して warning + skip=false で publish step に判定を委ねる。
+          versions_response=$(curl -fsS \
+            -H "Accept: application/json" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            "https://addons.mozilla.org/api/v5/addons/addon/${AMO_SLUG}/versions/") || versions_response=""
+          if [ -z "$versions_response" ]; then
+            echo "::warning::AMO pre-flight: versions list 取得失敗 (初回登録 / 一時障害) → publish step に判定を委ねる"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # MANIFEST_VERSION は環境変数経由で渡す (heredoc だと stdin 二重 redirect になり JSON と衝突)。
+          exists=$(MANIFEST_VERSION="$MANIFEST_VERSION" python3 -c 'import json,sys,os; target=os.environ["MANIFEST_VERSION"]; data=json.load(sys.stdin); print("1" if any(v.get("version")==target for v in data.get("results",[])) else "0")' 2>/dev/null <<< "$versions_response" || echo "")
+          echo "📊 AMO versions check: target=${MANIFEST_VERSION} / exists=${exists:-(parse失敗)}"
+          if [ "$exists" = "1" ]; then
+            echo "::notice::AMO に既に v${MANIFEST_VERSION} の submission が存在するため AMO publish step を skip (同 version 重複 submission 防止)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: AMO listing メタデータを生成
+        if: ${{ steps.amo-preflight.outputs.skip != 'true' }}
         run: |
           # webstore/*.txt + vava.config.json + package.json を single source として
           # amo-metadata.json（名前/概要/説明/カテゴリ/homepage/support_url/version.license）を生成。
@@ -103,19 +306,46 @@ jobs:
           node update-amo-listing.mjs
 
       - name: AMO へ署名 & 提出（listed）
+        if: ${{ steps.amo-preflight.outputs.skip != 'true' }}
         env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          # AMO API キー (JWT issuer / secret)。GitHub Secrets に gh secret set で登録。
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
+          if [ -z "$WEB_EXT_API_KEY" ] || [ -z "$WEB_EXT_API_SECRET" ]; then
+            echo "::error::AMO_JWT_ISSUER / AMO_JWT_SECRET の GitHub Secrets が未設定です"
+            echo "  JWT 発行: https://addons.mozilla.org/ja/developers/addon/api/key/"
+            exit 1
+          fi
           # パッチ固定: 供給チェーン対策（最新追随は手動 PR）。
           # listing 情報は --amo-metadata=amo-metadata.json で毎回同期する（手動 Developer Hub 入力不要）。
-          # --approval-timeout=0: listed は審査が長い（数日〜手動）。承認完了を待つと
-          #   web-ext がタイムアウトして提出成功でも job が失敗扱いになるため、待たずに抜ける。
+          # --approval-timeout=0: listed は審査が長い（数日〜手動）。承認完了を待つと web-ext が
+          #   timeout exceeded で exit 1 になり提出成功でも job が失敗扱いになるため、待たずに抜ける。
+          #
+          # ただし AMO pre-flight (/versions/) は pending / awaiting_review を検知できないため、
+          # release ブランチ force-push 後の再 push 等で「pre-flight pass → version conflict で fail」
+          # になりうる。version conflict / timeout exceeded を検出したら warning 降格して CI を
+          # green 化する（pre-flight の取りこぼし救済）。それ以外の exit 1 はそのまま fail。
+          set +e
           npx --yes web-ext@10.3.0 sign \
             --source-dir=build-firefox \
             --channel=listed \
             --amo-metadata=amo-metadata.json \
-            --api-key="$AMO_JWT_ISSUER" \
-            --api-secret="$AMO_JWT_SECRET" \
-            --approval-timeout=0
-          echo "🦊 Firefox AMO への提出リクエストを送信したよ〜"
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET" \
+            --approval-timeout=0 2>&1 | tee /tmp/web-ext.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            if grep -qiE "version (already exists|conflict)" /tmp/web-ext.log; then
+              echo "::warning::AMO に既に同 version が存在するため web-ext sign が version conflict で fail (pre-flight が pending submission を検知できないケース)。CI green 化のため exit 0 扱いに変換します"
+            elif grep -q "Approval: timeout exceeded" /tmp/web-ext.log; then
+              echo "::warning::web-ext sign が timeout exceeded で exit 1 を返したが submission は AMO に受理済み。CI green 化のため exit 0 扱いに変換します"
+            else
+              echo "::error::web-ext sign が version conflict / timeout exceeded 以外の理由で失敗しました (rc=$rc)。ログ確認要"
+              exit "$rc"
+            fi
+          fi
+          echo "🦊 Firefox AMO への submission 送信完了 (レビュー待ち)"
+          echo "🔗 AMO Developer Hub: https://addons.mozilla.org/developers/"
+          echo "⏰ レビュー結果は通常 1〜数日でメール通知"

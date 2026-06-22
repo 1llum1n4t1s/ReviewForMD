@@ -111,10 +111,26 @@ var TeamsExtractor = TeamsExtractor || (() => {
   /** 抽出の再入ガード（同一ページで収集ループの多重起動・DOM 奪い合いを防ぐ） */
   let _busy = false;
 
+  /**
+   * 中断フラグ。オーバーレイの「ここまでで保存」で立てる。
+   * 収集ループが次のチェックで break し、それまでに集めた分で finalize → 保存/コピーする。
+   */
+  let _cancelRequested = false;
+  /**
+   * 破棄フラグ。オーバーレイの「中止」やページ遷移（reset）で立てる。
+   * 収集ループを止めたうえで、完了処理で保存もコピーもせずオーバーレイを閉じる。
+   */
+  let _discarded = false;
+
   /* ── 状態 ─────────────────────────────────────────── */
 
   let _availabilityCache = null;
   let _availabilityCacheUrl = '';
+
+  /** 進捗オーバーレイ（収集中にページ右下へ出すパネル）の DOM 参照 */
+  let _overlayEl = null;
+  let _overlayProgressEl = null;
+  let _overlayActionsEl = null;
 
   /* ── DOM 探索ヘルパ ─────────────────────────────── */
 
@@ -229,12 +245,20 @@ var TeamsExtractor = TeamsExtractor || (() => {
     return _qsFirst(el, SELECTORS.body) || el;
   }
 
+  /**
+   * メッセージの送信日時を取る。
+   * @returns {{raw:string, ms:number, precise:boolean}}
+   *   precise=true は `time[datetime]` 由来でパース成功＝送信時刻として信頼できることを示す。
+   *   title フォールバックは添付ファイルの更新日や引用ブロックの日付など「送信時刻ではない
+   *   日付」を拾う恐れがあるため precise=false とし、期間打ち切り/フィルタの判定には使わない
+   *   （誤った古い日付で期間内メッセージを取りこぼすのを防ぐ。ソート用には引き続き使う）。
+   */
   function _getTimestamp(el) {
     const t = el.querySelector('time[datetime]');
     if (t) {
       const dt = t.getAttribute('datetime') || '';
       const ms = Date.parse(dt);
-      return { raw: dt, ms: Number.isNaN(ms) ? NaN : ms };
+      if (!Number.isNaN(ms)) return { raw: dt, ms, precise: true };
     }
     // title 属性に日時が入るケース。row スコープでは添付カードのファイル名等、非日時の title が
     // 先に来ることがあるため、最初の 1 件で諦めず、パース可能な title が見つかるまで走査する。
@@ -242,9 +266,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
     for (const node of titled) {
       const raw = node.getAttribute('title') || '';
       const ms = Date.parse(raw);
-      if (!Number.isNaN(ms)) return { raw, ms };
+      if (!Number.isNaN(ms)) return { raw, ms, precise: false };
     }
-    return { raw: '', ms: NaN };
+    return { raw: '', ms: NaN, precise: false };
   }
 
   function _getReactions(el) {
@@ -392,6 +416,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
       id,
       sortKey,
       seqKey, // sortKey 同値（粗いタイムスタンプで複数メッセージが同分など）のタイブレーカ
+      tsMs: ts.ms, // ソート/期間判定用の epoch ms（取れなければ NaN）
+      tsPrecise: ts.precise, // tsMs が time[datetime] 由来で信頼できるか（期間打ち切り判定に使う条件）
       author,
       tsRaw: ts.raw,
       bodyMd,
@@ -406,10 +432,18 @@ var TeamsExtractor = TeamsExtractor || (() => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  function _captureInto(map, roundRef) {
-    // 1 回の _captureInto = 1 ラウンド。下端から上へ進むので round が大きいほど古い viewport。
+  /**
+   * 現在の viewport の可視メッセージを map に回収する（1 回 = 1 ラウンド）。
+   * @param {Map} map 収集 Map
+   * @param {{value:number}} roundRef ラウンドカウンタ
+   * @param {number|null} sinceMs 期間打ち切り基準（これより古い ts を見たら遡り終了）
+   * @returns {boolean} このラウンドで sinceMs より古いメッセージを見たか（＝もう十分遡った）
+   */
+  function _captureInto(map, roundRef, sinceMs) {
+    // 下端から上へ進むので round が大きいほど古い viewport。
     const round = roundRef.value++;
     const els = _findMessages();
+    let reachedCutoff = false;
     for (let i = 0; i < els.length; i++) {
       const el = els[i];
       // 安定 id があり既に収集済みなら、重い _parseMessage（cloneNode + htmlToMarkdown）を省く。
@@ -423,23 +457,46 @@ var TeamsExtractor = TeamsExtractor || (() => {
       if (!map.has(rec.id)) {
         map.set(rec.id, rec);
       }
+      // 信頼できる送信時刻（time[datetime] 由来）が期間基準より古ければ、ここより上は全部
+      // 期間外（時系列）→ 遡り終了。title 由来の粗い/疑わしい日付では打ち切らない（誤った
+      // 古い日付で期間内メッセージを取りこぼすのを防ぐ）。既収集分（早期 continue した分）は
+      // 前ラウンドで判定済みなので、新規分だけ見れば十分。
+      if (sinceMs && rec.tsPrecise && !Number.isNaN(rec.tsMs) && rec.tsMs < sinceMs) {
+        reachedCutoff = true;
+      }
     }
+    return reachedCutoff;
   }
 
   /**
-   * 下端から上端まで段階的にスクロールしながら全メッセージを収集する。
-   * @returns {Promise<Array>} 時系列ソート済みレコード配列
+   * 下端から上端まで段階的にスクロールしながらメッセージを収集する。
+   * 中止（_cancelRequested / _discarded）・期間打ち切り（sinceMs）・進捗通知（onProgress）に対応。
+   * @param {{sinceMs?:number|null, onProgress?:(info:{count:number, elapsedMs:number})=>void}} [options]
+   * @returns {Promise<{records:Array, rawCount:number}>}
+   *   records=期間フィルタ＋時系列ソート済み、rawCount=フィルタ前の生収集件数（0件判定の切り分け用）
    */
-  async function _collectRecords() {
+  async function _collectRecords(options = {}) {
+    const { sinceMs = null, onProgress = null } = options;
     const scroller = _findScroller();
     const map = new Map();
     const roundRef = { value: 0 };
     const startHref = location.href; // 収集中にページ/会話が変わったら中断する基準
+    const start = Date.now();
+
+    const reportProgress = () => {
+      if (!onProgress) return;
+      try {
+        onProgress({ count: map.size, elapsedMs: Date.now() - start });
+      } catch {
+        /* 進捗コールバックの失敗は収集本体に波及させない */
+      }
+    };
 
     if (!scroller) {
       // スクローラ不明: 現在表示分だけでも回収して返す
-      _captureInto(map, roundRef);
-      return _finalizeWithWarn(map, scroller);
+      _captureInto(map, roundRef, sinceMs);
+      reportProgress();
+      return _finalizeResult(map, sinceMs, scroller);
     }
 
     // まず下端（最新）に寄せて初回キャプチャ
@@ -451,9 +508,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
     await _delay(STEP_WAIT_MS);
     // wait 中に会話切替が起きたら初回 capture もスキップ（ループ内 wait の guard と同様。
     // スキップ後は直後の while 先頭 guard が startHref 不一致で即 break する）。
-    if (location.href === startHref) _captureInto(map, roundRef);
+    if (location.href === startHref && !_discarded) {
+      const hit = _captureInto(map, roundRef, sinceMs);
+      reportProgress();
+      if (hit) return _finalizeResult(map, sinceMs, scroller); // 最新分が既に期間外
+    }
 
-    const start = Date.now();
     let stagnant = 0;
     let iter = 0;
 
@@ -461,6 +521,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
       iter++;
       if (Date.now() - start > MAX_DURATION_MS) break;
       if (map.size >= MAX_MESSAGES) break;
+      // ユーザーが「ここまでで保存」/「中止」を押したら停止（それまでの分は呼び出し側で処理）
+      if (_cancelRequested || _discarded) break;
       if (iter % 50 === 0) {
         console.debug(`[ReviewForMD][Teams] 収集中: ${map.size} 件 / iter=${iter} / elapsed=${Date.now() - start}ms`);
       }
@@ -474,9 +536,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
         // 上端: 古いメッセージの読み込みを待つ
         scroller.scrollTop = 0;
         await _delay(LOAD_WAIT_MS);
-        // wait 中に会話切替が起きると新会話の DOM を現 transcript に混入するため、capture 前に再チェック
-        if (location.href !== startHref) break;
-        _captureInto(map, roundRef);
+        // wait 中に会話切替/中止が起きると新会話の DOM 混入や無駄処理になるため、capture 前に再チェック
+        if (location.href !== startHref || _discarded) break;
+        const hit = _captureInto(map, roundRef, sinceMs);
+        reportProgress();
+        if (hit) break; // 期間基準に到達 → 遡り終了
         if (scroller.scrollHeight > prevHeight + 4) {
           stagnant = 0; // 古い分が読み込まれた → 継続
         } else {
@@ -488,25 +552,37 @@ var TeamsExtractor = TeamsExtractor || (() => {
         const step = Math.max(200, Math.floor(scroller.clientHeight * 0.8));
         scroller.scrollTop = Math.max(0, prevTop - step);
         await _delay(STEP_WAIT_MS);
-        // wait 中に会話切替が起きると新会話の DOM を現 transcript に混入するため、capture 前に再チェック
-        if (location.href !== startHref) break;
-        _captureInto(map, roundRef);
+        // wait 中に会話切替/中止が起きると新会話の DOM 混入や無駄処理になるため、capture 前に再チェック
+        if (location.href !== startHref || _discarded) break;
+        const hit = _captureInto(map, roundRef, sinceMs);
+        reportProgress();
+        if (hit) break; // 期間基準に到達 → 遡り終了
         stagnant = 0;
       }
     }
 
-    return _finalizeWithWarn(map, scroller);
+    return _finalizeResult(map, sinceMs, scroller);
   }
 
-  /** Map → 時系列ソート → 送信者の前方補完（グループ化された継続メッセージ対策）。 */
-  function _finalize(map) {
+  /**
+   * Map → 時系列ソート → 送信者の前方補完 → 期間フィルタ。
+   *
+   * 補完を「フィルタより前・全レコード」で行うのが要点: Teams は同一送信者の連投で名前を
+   * 先頭 1 件にしか出さない。先にフィルタすると「著者名を持つグループ先頭（期間外）」が落ち、
+   * 期間内の継続分の補完シードが失われて著者『不明』になる。先に全件で補完してからフィルタ
+   * すれば境界グループにも正しい著者が引き継がれる（tsMs は補完で変わらず期間整合も保てる）。
+   *
+   * @param {Map} map
+   * @param {number|null} sinceMs これより古い「信頼できる ts（time[datetime] 由来）」を持つ
+   *   レコードのみ除外。title 由来の粗い ts / ts 不明は残す（誤った古い日付での除外を防ぐ）。
+   */
+  function _finalize(map, sinceMs) {
     const records = Array.from(map.values());
     // 主キー sortKey、同値時は seqKey（収集順から復元した時系列）でタイブレーク。
     // 粗いタイムスタンプ（分単位）で複数メッセージが同じ ts.ms を持つとき、収集が下→上のため
     // 同分内が newest-before-oldest にならないよう、seqKey で chronological に整える。
     records.sort((a, b) => (a.sortKey - b.sortKey) || (a.seqKey - b.seqKey));
-    // Teams は同一送信者の連投で名前を 1 度しか出さない。
-    // 時系列順に並べた後、空の送信者を直前の送信者で補完する。
+    // 空の送信者を直前の送信者で補完（フィルタ前の全件で行う＝上記コメント参照）。
     let lastAuthor = '';
     for (const r of records) {
       if (r.author) {
@@ -515,20 +591,29 @@ var TeamsExtractor = TeamsExtractor || (() => {
         r.author = lastAuthor;
       }
     }
+    // 期間フィルタ: 信頼できる ts が基準より古いものだけ落とす。
+    if (sinceMs) {
+      return records.filter((r) => !(r.tsPrecise && !Number.isNaN(r.tsMs) && r.tsMs < sinceMs));
+    }
     return records;
   }
 
-  /** _finalize に加え、0 件のときは切り分け用に必ず警告ログを残す。 */
-  function _finalizeWithWarn(map, scroller) {
-    const records = _finalize(map);
-    if (records.length === 0) {
-      // 0 件は最も壊れやすい「Teams DOM 変更でセレクタ全滅」のサイン。無言にしない。
+  /**
+   * _finalize に加え、生収集 0 件のときは切り分け用に必ず警告ログを残す。
+   * @returns {{records:Array, rawCount:number}}
+   */
+  function _finalizeResult(map, sinceMs, scroller) {
+    const rawCount = map.size;
+    const records = _finalize(map, sinceMs);
+    if (rawCount === 0) {
+      // 生 0 件は最も壊れやすい「Teams DOM 変更でセレクタ全滅」のサイン。無言にしない。
+      // （期間フィルタで 0 件になったケースは rawCount>0 なので区別できる）
       console.warn(
         '[ReviewForMD][Teams] 収集メッセージ 0 件 / scroller=', !!scroller,
         'msgEls=', _findMessages().length
       );
     }
-    return records;
+    return { records, rawCount };
   }
 
   /* ── Markdown 生成 ─────────────────────────────── */
@@ -641,6 +726,181 @@ var TeamsExtractor = TeamsExtractor || (() => {
     return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
   }
 
+  /* ── 進捗オーバーレイ（収集中にページ右下へ出すパネル）──────────── */
+  /*
+   * 設計メモ: Teams 収集は長時間（数十秒〜数分）かかり、その間 popup は閉じられ得る。
+   * そのため進捗表示・中止操作・保存/コピーまでを popup ではなくページ側オーバーレイで
+   * 完結させる（popup は startCollection を呼ぶ「開始トリガー」のみ）。これで
+   *   - popup を閉じても進捗が見え、いつでも中止できる
+   *   - copy も収集完了後にオーバーレイのボタン（ユーザー操作）から実行でき、
+   *     「popup を閉じると copy が失敗する」問題を回避できる
+   * となる。innerHTML 不使用（CLAUDE.md 方針）で DOM 構築する。
+   */
+
+  /** 要素を作る小ヘルパ（tag / class / textContent）。 */
+  function _el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  /** オーバーレイ用ボタンを作る。 */
+  function _overlayButton(label, variant, onClick) {
+    const cls =
+      'rfmd-teams-overlay__btn ' +
+      (variant === 'primary' ? 'rfmd-teams-overlay__btn--primary' : 'rfmd-teams-overlay__btn--ghost');
+    const b = _el('button', cls, label);
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  /** RfmdClipboard を安全に取得（未ロード時は null）。 */
+  function _clip() {
+    return typeof RfmdClipboard !== 'undefined' ? RfmdClipboard : null;
+  }
+
+  /** 「ここまでで保存」: 中止フラグを立てて、それまでの分で保存/コピーへ。 */
+  function _onClickSave() {
+    if (_discarded || _cancelRequested) return;
+    _cancelRequested = true;
+    if (_overlayActionsEl) {
+      _overlayActionsEl.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    }
+    if (_overlayProgressEl) _overlayProgressEl.textContent = '停止して書き出しています…';
+  }
+
+  /** 「中止」: 破棄フラグを立てて、保存せずオーバーレイを閉じる。 */
+  function _onClickDiscard() {
+    _discarded = true;
+    _removeOverlay();
+  }
+
+  /** 収集中オーバーレイを作って表示する。 */
+  function _buildOverlay({ title }) {
+    _removeOverlay();
+    const root = _el('div', 'rfmd-teams-overlay');
+
+    const head = _el('div', 'rfmd-teams-overlay__head');
+    const spinner = _el('span', 'rfmd-teams-overlay__spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    head.append(spinner, _el('span', 'rfmd-teams-overlay__title', 'Teams チャットを収集中'));
+
+    const sub = _el('div', 'rfmd-teams-overlay__sub', title || '');
+    // ライブリージョンは進捗テキストだけに限定する（操作ボタンをライブ領域に含めない）。
+    const progress = _el('div', 'rfmd-teams-overlay__progress', '0 件 · 0 秒');
+    progress.setAttribute('role', 'status');
+    progress.setAttribute('aria-live', 'polite');
+
+    const actions = _el('div', 'rfmd-teams-overlay__actions');
+    actions.append(
+      _overlayButton('ここまでで保存', 'primary', _onClickSave),
+      _overlayButton('中止', 'ghost', _onClickDiscard)
+    );
+
+    root.append(head, sub, progress, actions);
+    (document.body || document.documentElement).appendChild(root);
+    _overlayEl = root;
+    _overlayProgressEl = progress;
+    _overlayActionsEl = actions;
+  }
+
+  /** 進捗テキストを更新する（停止中ラベルは上書きしない）。 */
+  function _updateOverlayProgress(info) {
+    if (!_overlayProgressEl || _cancelRequested) return;
+    const sec = Math.floor((info.elapsedMs || 0) / 1000);
+    _overlayProgressEl.textContent = `${info.count} 件 · ${sec} 秒`;
+  }
+
+  /** spinner を止めて完了/エラー見た目にする。 */
+  function _markOverlayDone(isError) {
+    if (!_overlayEl) return;
+    _overlayEl.classList.add(isError ? 'rfmd-teams-overlay--error' : 'rfmd-teams-overlay--done');
+  }
+
+  /** 完了後、一定時間で自動的に閉じる。 */
+  function _autoClose(ms = 6000) {
+    const target = _overlayEl;
+    setTimeout(() => {
+      if (_overlayEl === target) _removeOverlay();
+    }, ms);
+  }
+
+  /**
+   * 収集完了時の表示。download はその場で保存、copy は操作ボタンを出す
+   * （copy は user 操作起点が必要なため、オーバーレイのボタンクリックで実行する）。
+   */
+  function _overlayComplete({ markdown, count, mode, title }) {
+    if (!_overlayEl || !_overlayActionsEl || !_overlayProgressEl) return;
+    _markOverlayDone(false);
+    _overlayProgressEl.textContent = `✓ ${count} 件を収集しました`;
+    _overlayActionsEl.replaceChildren();
+
+    const clip = _clip();
+    const filename = _safeName(title, 'teams-chat') + '.md';
+
+    if (mode === 'copy') {
+      const copyBtn = _overlayButton('クリップボードにコピー', 'primary', async () => {
+        // await 中にユーザーが「閉じる」/会話切替で _removeOverlay が走ると参照が null 化される。
+        // 進捗要素はローカルに退避し、解決後に生存（isConnected）を確認してから触る。
+        const progressEl = _overlayProgressEl;
+        const ok = clip ? await clip.copy(markdown) : false;
+        if (!progressEl || !progressEl.isConnected) return;
+        progressEl.textContent = ok ? `✓ コピーしました（${count} 件）` : 'コピーに失敗しました';
+        if (ok) { copyBtn.disabled = true; _autoClose(); }
+      });
+      _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
+      return;
+    }
+
+    // download
+    const ok = clip ? clip.download(markdown, filename) : false;
+    if (ok) {
+      _overlayProgressEl.textContent = `✓ ${count} 件をダウンロードしました`;
+      _overlayActionsEl.append(_overlayButton('閉じる', 'ghost', _removeOverlay));
+      _autoClose();
+    } else {
+      // 保存失敗時はコピーで救済できる手段を出す
+      _overlayProgressEl.textContent = 'ダウンロードに失敗しました';
+      const copyBtn = _overlayButton('コピーで保存', 'primary', async () => {
+        const progressEl = _overlayProgressEl; // copy 分岐と同様、await 後の null 参照を防ぐ
+        const c = clip ? await clip.copy(markdown) : false;
+        if (!progressEl || !progressEl.isConnected) return;
+        progressEl.textContent = c ? `✓ コピーしました（${count} 件）` : 'コピーにも失敗しました';
+        if (c) copyBtn.disabled = true;
+      });
+      _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
+    }
+  }
+
+  /** エラー表示（収集失敗・期間内 0 件など）。 */
+  function _overlayError(msg) {
+    if (!_overlayEl) return;
+    _markOverlayDone(true);
+    if (_overlayProgressEl) _overlayProgressEl.textContent = msg;
+    if (_overlayActionsEl) {
+      _overlayActionsEl.replaceChildren();
+      _overlayActionsEl.append(_overlayButton('閉じる', 'ghost', _removeOverlay));
+    }
+  }
+
+  /** 既に収集中に再度押されたとき、既存オーバーレイへ注意を引く。 */
+  function _flashOverlay() {
+    if (!_overlayEl) return;
+    _overlayEl.classList.remove('rfmd-teams-overlay--flash');
+    void _overlayEl.offsetWidth; // reflow でアニメーション再生
+    _overlayEl.classList.add('rfmd-teams-overlay--flash');
+  }
+
+  /** オーバーレイを除去して参照を解放する（冪等）。 */
+  function _removeOverlay() {
+    if (_overlayEl) _overlayEl.remove();
+    _overlayEl = null;
+    _overlayProgressEl = null;
+    _overlayActionsEl = null;
+  }
+
   /* ── 公開 API ─────────────────────────────────── */
 
   /**
@@ -687,25 +947,80 @@ var TeamsExtractor = TeamsExtractor || (() => {
   }
 
   /**
-   * 全履歴を収集して Markdown 文字列を返す（MD ダウンロード用）。
-   * @returns {Promise<string>}
+   * メッセージ収集を開始する（fire-and-forget）。
+   *
+   * 収集・進捗表示・中止・保存/コピーはすべてページ側オーバーレイで完結する。
+   * popup には「開始した」ことだけを即返すので、popup を閉じても収集は継続でき、
+   * いつでもオーバーレイから中止・保存できる。
+   *
+   * @param {{sinceDays?:number, mode?:('download'|'copy')}} [opts]
+   *   sinceDays: この日数より古いメッセージは遡らない（未指定/0 以下なら無制限）
+   *   mode: 完了時の既定動作（download=その場保存 / copy=コピー操作ボタンを提示）
+   * @returns {{ok:boolean, started?:boolean, error?:string}}
    */
-  async function extractAll() {
-    if (_busy) throw new Error('別の収集処理が実行中です。完了までお待ちください');
-    _busy = true;
-    try {
-      const records = await _collectRecords();
-      return { markdown: _buildMarkdown(getTitle(), records), count: records.length };
-    } finally {
-      _busy = false;
+  function startCollection(opts = {}) {
+    if (_busy) {
+      _flashOverlay();
+      return { ok: false, error: 'すでに収集中です。完了するか中止してからお試しください' };
     }
+    _busy = true;
+    _cancelRequested = false;
+    _discarded = false;
+
+    const days = Number(opts.sinceDays);
+    const sinceMs = Number.isFinite(days) && days > 0 ? Date.now() - days * 86400000 : null;
+    const mode = opts.mode === 'copy' ? 'copy' : 'download';
+    const title = getTitle();
+    const startHref = location.href; // 完了時に会話が切り替わっていないか確認する基準
+
+    _buildOverlay({ title });
+
+    // 非同期で収集を走らせ、完了/中止/エラーをオーバーレイに反映する。
+    (async () => {
+      try {
+        const { records, rawCount } = await _collectRecords({
+          sinceMs,
+          onProgress: _updateOverlayProgress,
+        });
+        // 破棄指示、または収集中に別会話/ページへ切り替わったら部分データを保存しない
+        // （ループは startHref 変化で中断済みだが、念のため完了処理でも弾く）。
+        if (_discarded || location.href !== startHref) {
+          _removeOverlay();
+          return;
+        }
+        if (records.length === 0) {
+          _overlayError(
+            rawCount > 0
+              ? '選択した期間内にメッセージがありませんでした。期間を広げてお試しください。'
+              : 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）。'
+          );
+          return;
+        }
+        const markdown = _buildMarkdown(title, records);
+        _overlayComplete({ markdown, count: records.length, mode, title });
+      } catch (e) {
+        if (_discarded) {
+          _removeOverlay();
+          return;
+        }
+        _overlayError('収集中にエラーが発生しました: ' + (e?.message || e));
+      } finally {
+        _busy = false;
+      }
+    })();
+
+    return { ok: true, started: true };
   }
 
-  /** ページ遷移時にキャッシュをクリアする。 */
+  /** ページ遷移時にキャッシュをクリアする。進行中の収集があれば破棄してオーバーレイも閉じる。 */
   function reset() {
     _availabilityCache = null;
     _availabilityCacheUrl = '';
+    // 会話切替/ページ離脱で進行中の収集を保存してしまわないよう破棄に倒す
+    // （収集ループは startHref 変化でも break するが、完了処理の保存を確実に止める）。
+    _discarded = true;
+    _removeOverlay();
   }
 
-  return { checkAvailability, hasChatDom, getTitle, extractAll, reset };
+  return { checkAvailability, hasChatDom, getTitle, startCollection, reset };
 })();

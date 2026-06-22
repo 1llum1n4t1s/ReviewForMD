@@ -303,6 +303,43 @@
     .pop-btn--error .pop-icon { background: transparent; color: var(--warn); }
     .pop-btn--success::after, .pop-btn--error::after { content: ""; }
 
+    /* ── Teams 収集期間ドロップダウン ── */
+    .pop-period {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 2px;
+      animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: 0.08s;
+    }
+    .pop-period__label {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.3px;
+      color: var(--fg-dim);
+    }
+    .pop-period__select {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: var(--bg-elev);
+      color: var(--fg);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--shadow-btn);
+      color-scheme: light dark; /* option リストの配色を OS テーマに追従させる */
+      transition: border-color 0.16s, box-shadow 0.16s;
+    }
+    .pop-period__select:hover { border-color: var(--accent); }
+    .pop-period__select:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: var(--shadow-btn), 0 0 0 2px var(--accent-soft);
+    }
+
     /* ── note（補足）── */
     .note {
       margin-top: 11px;

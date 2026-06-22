@@ -119,6 +119,33 @@ function _addActionButton({ label, icon, kind, mode, primary }) {
   return btn;
 }
 
+/**
+ * Teams 用の収集期間ドロップダウン（過去 1/2/3 か月）を actions の先頭に追加する。
+ * 値は日数（30/60/90）。_runAction が teams-md のときこの値を sinceDays として送る。
+ */
+function _addTeamsPeriodControl() {
+  const wrap = document.createElement('div');
+  wrap.className = 'pop-period';
+
+  const label = document.createElement('label');
+  label.className = 'pop-period__label';
+  label.setAttribute('for', 'teams-period');
+  label.textContent = '収集する期間（さかのぼり）';
+
+  const select = document.createElement('select');
+  select.id = 'teams-period';
+  select.className = 'pop-period__select';
+  [['30', '過去1か月'], ['60', '過去2か月'], ['90', '過去3か月']].forEach(([value, text]) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = text;
+    select.appendChild(opt);
+  });
+
+  wrap.append(label, select);
+  document.getElementById('actions').appendChild(wrap);
+}
+
 /* ── クリップボード（popup 側で実行）─────────────── */
 
 async function _copyToClipboard(text) {
@@ -150,23 +177,35 @@ async function _copyToClipboard(text) {
 
 async function _runAction(btn, kind, mode) {
   if (btn.disabled || _currentTabId == null) return;
-  const allBtns = document.querySelectorAll('#actions .pop-btn');
+  // 実行中はボタンに加えて期間 select も無効化する（操作の一貫性）。復帰も同じ集合を使う。
+  const allBtns = document.querySelectorAll('#actions .pop-btn, #actions .pop-period__select');
   allBtns.forEach((b) => { b.disabled = true; });
   _setNote('');
 
+  const isTeams = kind === 'teams-md';
   const labelEl = btn.querySelector('.pop-label');
   if (labelEl) {
-    labelEl.textContent = kind.startsWith('teams')
-      ? '取得中…（時間がかかる場合があります）'
-      : '取得中…';
+    labelEl.textContent = isTeams ? '開始しています…' : '取得中…';
+  }
+
+  // Teams は収集期間（過去 N 日）をドロップダウンから受け取って渡す
+  let sinceDays;
+  if (isTeams) {
+    const sel = document.getElementById('teams-period');
+    const v = sel ? parseInt(sel.value, 10) : NaN;
+    sinceDays = Number.isFinite(v) ? v : 30;
   }
 
   let success = false;
   let errMsg = '';
   try {
-    const res = await chrome.tabs.sendMessage(_currentTabId, { type: 'rfmd:extract', kind, mode });
+    const res = await chrome.tabs.sendMessage(_currentTabId, { type: 'rfmd:extract', kind, mode, sinceDays });
     if (!res || !res.ok) {
       errMsg = res?.error || '実行に失敗しました';
+    } else if (res.started) {
+      // Teams: 収集はページ側オーバーレイで継続する。popup は用済み（閉じても継続・中止可）。
+      _showStartedFeedback(btn, allBtns);
+      return;
     } else if (mode === 'copy') {
       success = await _copyToClipboard(res.text || '');
       if (!success) errMsg = 'クリップボードにコピーできませんでした';
@@ -182,6 +221,21 @@ async function _runAction(btn, kind, mode) {
   }
 
   _showFeedback(btn, success, errMsg, allBtns);
+}
+
+/**
+ * Teams 収集の「開始しました」フィードバック。
+ * 実際の収集・進捗・中止・保存はページ側オーバーレイが担うため、popup は案内だけ出す。
+ */
+function _showStartedFeedback(btn, allBtns) {
+  btn.classList.add('pop-btn--success');
+  _setPopBtnContent(btn, ICON.check, 'ページで収集開始');
+  _setNote('ページ右下のパネルに進捗が出ます。そこで「ここまでで保存」や「中止」ができます。このポップアップは閉じても大丈夫です。');
+  setTimeout(() => {
+    btn.classList.remove('pop-btn--success');
+    _setPopBtnContent(btn, btn._origIcon, btn._origLabel);
+    allBtns.forEach((b) => { b.disabled = false; });
+  }, FEEDBACK_MS);
 }
 
 function _showFeedback(btn, success, errMsg, allBtns) {
@@ -253,9 +307,10 @@ function _renderForStatus(status) {
       return;
     }
     _setActive(`Teams${title ? '：' + title : ' チャット'}`);
-    _setNote('全履歴を自動スクロールで収集します。会話が長いと数十秒かかることがあります。');
+    _addTeamsPeriodControl();
     _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
     _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
+    _setNote('選んだ期間まで遡って収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
     return;
   }
 

@@ -327,10 +327,11 @@ var ButtonInjector = ButtonInjector || (() => {
    * popup から依頼されたアクションを実行する。
    *   mode='download' → このページ側で保存し {ok} を返す
    *   mode='copy'     → 文字列を {ok, text} で返す（クリップボード書き込みは popup 側）
-   * @param {{kind:('pr'|'vtt'|'teams-md'), mode:('download'|'copy')}} req
-   * @returns {Promise<{ok:boolean, text?:string, error?:string}>}
+   *   ※ teams-md は例外: 長時間処理のためページ側オーバーレイで完結させ、{ok, started} を即返す
+   * @param {{kind:('pr'|'vtt'|'teams-md'), mode:('download'|'copy'), sinceDays?:number}} req
+   * @returns {Promise<{ok:boolean, text?:string, started?:boolean, error?:string}>}
    */
-  async function runAction({ kind, mode }) {
+  async function runAction({ kind, mode, sinceDays }) {
     try {
       if (kind === 'pr') {
         // 現在の PR ページ（GitHub or Azure DevOps）を判定して抽出
@@ -359,16 +360,13 @@ var ButtonInjector = ButtonInjector || (() => {
 
       if (kind === 'teams-md') {
         const extractor = _getExtractor(SiteDetector.SiteType.TEAMS_CHAT);
-        if (!extractor) return { ok: false, error: 'Teams extractor が見つかりません' };
-        const title = extractor.getTitle();
-        const { markdown, count } = await extractor.extractAll();
-        // 0 件成功偽装の防止: メッセージが取れなかったら成功扱いにしない
-        if (!count) {
-          return { ok: false, error: 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）' };
+        if (!extractor || typeof extractor.startCollection !== 'function') {
+          return { ok: false, error: 'Teams extractor が見つかりません' };
         }
-        if (mode === 'copy') return { ok: true, text: markdown };
-        const ok = RfmdClipboard.download(markdown, _sanitizeFilename(title) + '.md');
-        return ok ? { ok: true } : { ok: false, error: 'ダウンロードに失敗しました' };
+        // Teams は全履歴の自動スクロール収集で長時間（数十秒〜数分）かかる。収集・進捗表示・
+        // 中止・保存/コピーはページ側オーバーレイで完結させ、ここでは開始だけして即返す
+        // （popup を閉じても収集を継続でき、いつでも中止・保存できるようにするため）。
+        return extractor.startCollection({ sinceDays, mode });
       }
 
       return { ok: false, error: '未知のアクション: ' + kind };

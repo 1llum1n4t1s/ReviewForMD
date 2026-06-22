@@ -120,8 +120,9 @@ function _addActionButton({ label, icon, kind, mode, primary }) {
 }
 
 /**
- * Teams 用の収集期間ドロップダウン（過去 1/2/3 か月）を actions の先頭に追加する。
- * 値は日数（30/60/90）。_runAction が teams-md のときこの値を sinceDays として送る。
+ * Teams 用の収集対象月ドロップダウン（今月 / 先月 / 2か月前 / 3か月前）を actions の先頭に追加する。
+ * 値はカレンダー月オフセット（0/1/2/3）。_runAction が teams-md のときこの値を monthsAgo として送る。
+ * 今月は月初〜現在、それ以外はその月の 1 日〜末日に絞られる。
  */
 function _addTeamsPeriodControl() {
   const wrap = document.createElement('div');
@@ -130,12 +131,12 @@ function _addTeamsPeriodControl() {
   const label = document.createElement('label');
   label.className = 'pop-period__label';
   label.setAttribute('for', 'teams-period');
-  label.textContent = '収集する期間（さかのぼり）';
+  label.textContent = '収集する月';
 
   const select = document.createElement('select');
   select.id = 'teams-period';
   select.className = 'pop-period__select';
-  [['30', '過去1か月'], ['60', '過去2か月'], ['90', '過去3か月']].forEach(([value, text]) => {
+  [['0', '今月'], ['1', '先月'], ['2', '2か月前'], ['3', '3か月前']].forEach(([value, text]) => {
     const opt = document.createElement('option');
     opt.value = value;
     opt.textContent = text;
@@ -188,18 +189,18 @@ async function _runAction(btn, kind, mode) {
     labelEl.textContent = isTeams ? '開始しています…' : '取得中…';
   }
 
-  // Teams は収集期間（過去 N 日）をドロップダウンから受け取って渡す
-  let sinceDays;
+  // Teams は収集対象のカレンダー月（0=今月 / 1=先月 / 2=2か月前 / 3=3か月前）をドロップダウンから渡す
+  let monthsAgo;
   if (isTeams) {
     const sel = document.getElementById('teams-period');
     const v = sel ? parseInt(sel.value, 10) : NaN;
-    sinceDays = Number.isFinite(v) ? v : 30;
+    monthsAgo = Number.isFinite(v) ? v : 0;
   }
 
   let success = false;
   let errMsg = '';
   try {
-    const res = await chrome.tabs.sendMessage(_currentTabId, { type: 'rfmd:extract', kind, mode, sinceDays });
+    const res = await chrome.tabs.sendMessage(_currentTabId, { type: 'rfmd:extract', kind, mode, monthsAgo });
     if (!res || !res.ok) {
       errMsg = res?.error || '実行に失敗しました';
     } else if (res.started) {
@@ -310,7 +311,7 @@ function _renderForStatus(status) {
     _addTeamsPeriodControl();
     _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
     _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
-    _setNote('選んだ期間まで遡って収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
+    _setNote('選んだ月のメッセージを収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
     return;
   }
 

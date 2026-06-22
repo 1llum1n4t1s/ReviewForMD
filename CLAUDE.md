@@ -146,18 +146,18 @@ ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcri
 `teams_extractor.js` は Teams チャット/チャネルの全履歴を **DOM 自動スクロール方式** で収集する（公開機能仕様からのクリーンルーム実装。内部 chatsvc API は未使用）。Teams Web は仮想スクロールで画面外メッセージが DOM から外れるため、スクロールしながら逐次回収する必要がある。
 
 1. **スクローラ特定** — `SELECTORS.scroller` 候補 → 外れたら最初のメッセージ要素から `_findScrollableAncestor` でスクロール可能祖先を探索
-2. **段階スクロール収集** (`_collectRecords`) — 下端（最新）から上へ `clientHeight * 0.8` ずつ移動し、各 viewport の可視メッセージを id キーの Map に確保（**全メッセージを viewport に通す**ためジャンプではなく段階移動）。上端では `LOAD_WAIT_MS` 待って古い分の prepend を待ち、`scrollHeight` が増えなくなる状態が `STABLE_ROUNDS` 連続したら終了。**毎ラウンド中止フラグ（`_cancelRequested` / `_discarded`）と期間 cutoff（`sinceMs`）を確認して途中終了でき、`onProgress` でオーバーレイへ進捗を通知する**。`MAX_ITERATIONS` / `MAX_DURATION_MS` / `MAX_MESSAGES` はセーフティネットとして維持
-3. **時系列整列 + 送信者補完 + 期間フィルタ** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前を 1 度しか出さないため、整列後に空 author を直前 author で前方補完する。**補完はフィルタより前・全レコードで行う**（期間フィルタで著者名を持つグループ先頭が落ちても継続分の著者を失わないため）。期間フィルタは **`time[datetime]` 由来の信頼できる ts（`tsPrecise`）が `sinceMs` より古いものだけ除外**し、title 由来の粗い ts / ts 不明は残す
+2. **段階スクロール収集** (`_collectRecords`) — 下端（最新）から上へ `clientHeight * 0.8` ずつ移動し、各 viewport の可視メッセージを id キーの Map に確保（**全メッセージを viewport に通す**ためジャンプではなく段階移動）。上端では `LOAD_WAIT_MS` 待って古い分の prepend を待ち、`scrollHeight` が増えなくなる状態が `STABLE_ROUNDS` 連続したら終了。**毎ラウンド中止フラグ（`_cancelRequested` / `_discarded`）と遡り下限 cutoff（`sinceMs`＝対象月の月初）を確認して途中終了でき、`onProgress` でオーバーレイへ進捗を通知する**。上限 `untilMs`（翌月初）は収集の停止には使わず `_finalize` のフィルタで適用する（収集は常に最新から始まるため、上限超は集めてから絞る）。`MAX_ITERATIONS` / `MAX_DURATION_MS` / `MAX_MESSAGES` はセーフティネットとして維持
+3. **時系列整列 + 送信者/ts 補完 + 月レンジフィルタ** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前も time も 1 度しか出さないため、整列後に空 author と「判定用 ts(`_effTs`)」を直前の値で前方補完する（継続メッセージを先頭と同じ月に分類）。**補完はフィルタより前・全レコードで行う**（フィルタで先頭が落ちても継続分の著者/月分類を失わないため）。フィルタは **カレンダー月レンジ `[sinceMs, untilMs)`** で絞り、判定は **`time[datetime]` 由来の信頼できる ts の前方補完値**で行う（title 由来の粗い ts は判定に使わず、補完値が無いものは安全側で残す）
 4. **Markdown 生成** (`_buildMarkdown`) — 本文は `MarkdownBuilder.htmlToMarkdown`、日時は `formatTimestamp` を再利用。本文クローンから添付（画像・ファイルカード）を抜いてから変換し、二重化を防ぐ
 
 **起動 / 出力**（長時間処理のため popup ではなくページ側オーバーレイで完結させる）:
-- `startCollection({ sinceDays, mode })` — fire-and-forget で収集を開始し `{ ok, started }` を即返す。収集・進捗表示・中止・保存/コピーは content script 側の **進捗オーバーレイ**（ページ右下のパネル）で完結する。これにより popup を閉じても収集を継続でき、いつでも「ここまでで保存」/「中止」できる（`mode='download'` は完了時にその場保存、`mode='copy'` は完了オーバーレイの操作ボタンから user 操作起点でコピー＝「popup を閉じると copy が失敗する」問題を回避）
-- 期間は popup の期間ドロップダウン（過去 1/2/3 か月＝`sinceDays` 30/60/90）で事前制限する。`count`＝収集件数で 0 件は成功扱いにしない（空ファイルの偽装防止。生 0 件＝セレクタ全滅と、期間フィルタ後 0 件＝期間内に無し、を `rawCount` で区別して文言を出し分ける）
+- `startCollection({ monthsAgo, mode })` — fire-and-forget で収集を開始し `{ ok, started }` を即返す。収集・進捗表示・中止・保存/コピーは content script 側の **進捗オーバーレイ**（ページ右下のパネル）で完結する。これにより popup を閉じても収集を継続でき、いつでも「ここまでで保存」/「中止」できる（`mode='download'` は完了時にその場保存、`mode='copy'` は完了オーバーレイの操作ボタンから user 操作起点でコピー＝「popup を閉じると copy が失敗する」問題を回避）
+- 収集対象は popup の月ドロップダウン（**今月 / 先月 / 2か月前 / 3か月前**＝`monthsAgo` 0/1/2/3）で選ぶ。`startCollection` が `monthsAgo` をカレンダー月レンジ `[sinceMs, untilMs)` に変換する（今月＝月初〜現在で `untilMs=null`、それ以外＝その月の 1 日〜末日）。`count`＝収集件数で 0 件は成功扱いにしない（空ファイルの偽装防止。生 0 件＝セレクタ全滅と、レンジフィルタ後 0 件＝その月に無し、を `rawCount` で区別して文言を出し分ける）
 
 **堅牢化（暴走・OOM・取りこぼし・無言失敗の防止）**:
 - 再入ガード `_busy`（収集中の多重起動を弾く）＋ 中止フラグ `_cancelRequested`（ここまでで保存）/ `_discarded`（破棄）でいつでも安全に停止できる
 - `_collectRecords` は開始時の `location.href` が変わったら中断、`startCollection` も完了時に href を再確認して会話切替時は保存しない。`reset()`（会話切替/離脱で content_script が呼ぶ）は進行中収集を破棄しオーバーレイを閉じる（誤会話の収集・DOM 奪い合い・部分データの誤保存を防ぐ）
-- 期間 cutoff は **信頼できる `time[datetime]` 由来 ts のみで打ち切る**（title 由来の誤日付＝添付の更新日等で期間内メッセージを取りこぼさない）
+- 遡り下限 cutoff（`sinceMs`）は **信頼できる `time[datetime]` 由来 ts のみで打ち切る**（title 由来の誤日付＝添付の更新日等で対象月のメッセージを取りこぼさない）。上限 `untilMs` 側も同じく前方補完した信頼 ts で判定する
 - 生収集 0 件は `console.warn`（セレクタ全滅の切り分け用ログ）
 
 **⚠️ セレクタの揮発性**: Teams の DOM クラス/属性は頻繁に変わる。**サイト固有セレクタの単一の真実の源は `teams_extractor.js` の `SELECTORS`**。`site_detector.js` の `_isTeamsChatByDom` は `TeamsExtractor.hasChatDom()` に委譲しているので、UI 変更で動かなくなったら `SELECTORS` だけを実機 DOM に合わせて調整すればよい（detect 側と extract 側でセレクタが分裂するのを防ぐ設計）。

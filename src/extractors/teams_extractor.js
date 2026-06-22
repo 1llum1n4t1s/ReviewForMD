@@ -470,13 +470,15 @@ var TeamsExtractor = TeamsExtractor || (() => {
 
   /**
    * 下端から上端まで段階的にスクロールしながらメッセージを収集する。
-   * 中止（_cancelRequested / _discarded）・期間打ち切り（sinceMs）・進捗通知（onProgress）に対応。
-   * @param {{sinceMs?:number|null, onProgress?:(info:{count:number, elapsedMs:number})=>void}} [options]
+   * 中止（_cancelRequested / _discarded）・遡り打ち切り（sinceMs）・進捗通知（onProgress）に対応。
+   * 遡り（スクロール）は sinceMs まで。untilMs（レンジ上限）は収集の停止には使わず _finalize の
+   * フィルタでのみ適用する（収集は常に下端＝最新から始まるため、上限超のメッセージは集めてから絞る）。
+   * @param {{sinceMs?:number|null, untilMs?:number|null, onProgress?:(info:{count:number, elapsedMs:number})=>void}} [options]
    * @returns {Promise<{records:Array, rawCount:number}>}
-   *   records=期間フィルタ＋時系列ソート済み、rawCount=フィルタ前の生収集件数（0件判定の切り分け用）
+   *   records=月レンジフィルタ＋時系列ソート済み、rawCount=フィルタ前の生収集件数（0件判定の切り分け用）
    */
   async function _collectRecords(options = {}) {
-    const { sinceMs = null, onProgress = null } = options;
+    const { sinceMs = null, untilMs = null, onProgress = null } = options;
     const scroller = _findScroller();
     const map = new Map();
     const roundRef = { value: 0 };
@@ -496,7 +498,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       // スクローラ不明: 現在表示分だけでも回収して返す
       _captureInto(map, roundRef, sinceMs);
       reportProgress();
-      return _finalizeResult(map, sinceMs, scroller);
+      return _finalizeResult(map, sinceMs, untilMs, scroller);
     }
 
     // まず下端（最新）に寄せて初回キャプチャ
@@ -511,7 +513,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
     if (location.href === startHref && !_discarded) {
       const hit = _captureInto(map, roundRef, sinceMs);
       reportProgress();
-      if (hit) return _finalizeResult(map, sinceMs, scroller); // 最新分が既に期間外
+      if (hit) return _finalizeResult(map, sinceMs, untilMs, scroller); // 最新分が既に期間外
     }
 
     let stagnant = 0;
@@ -561,50 +563,61 @@ var TeamsExtractor = TeamsExtractor || (() => {
       }
     }
 
-    return _finalizeResult(map, sinceMs, scroller);
+    return _finalizeResult(map, sinceMs, untilMs, scroller);
   }
 
   /**
-   * Map → 時系列ソート → 送信者の前方補完 → 期間フィルタ。
+   * Map → 時系列ソート → 送信者と判定用 ts の前方補完 → カレンダー月レンジフィルタ。
    *
-   * 補完を「フィルタより前・全レコード」で行うのが要点: Teams は同一送信者の連投で名前を
-   * 先頭 1 件にしか出さない。先にフィルタすると「著者名を持つグループ先頭（期間外）」が落ち、
-   * 期間内の継続分の補完シードが失われて著者『不明』になる。先に全件で補完してからフィルタ
-   * すれば境界グループにも正しい著者が引き継がれる（tsMs は補完で変わらず期間整合も保てる）。
+   * 補完を「フィルタより前・全レコード」で行うのが要点: Teams は同一送信者の連投で名前も
+   * time[datetime] も先頭 1 件にしか出さない。先にフィルタすると「著者・ts を持つグループ先頭
+   * （範囲外）」が落ち、継続分の補完シードが失われて著者『不明』や ts 不明での誤振り分けになる。
+   * 先に全件で補完してからフィルタすれば、継続メッセージも先頭と同じ月に正しく分類される。
    *
    * @param {Map} map
-   * @param {number|null} sinceMs これより古い「信頼できる ts（time[datetime] 由来）」を持つ
-   *   レコードのみ除外。title 由来の粗い ts / ts 不明は残す（誤った古い日付での除外を防ぐ）。
+   * @param {number|null} sinceMs レンジ下限（含む）。判定用 ts がこれ未満なら除外。null で下限なし。
+   * @param {number|null} untilMs レンジ上限（含まない＝翌月初）。判定用 ts がこれ以上なら除外。null で上限なし（＝現在まで）。
+   *   判定は「信頼できる ts（time[datetime] 由来）の前方補完値」で行い、補完値が無い（先頭側で
+   *   信頼できる ts に未到達）レコードは残す（誤って落とすと取りこぼしになるため安全側）。
    */
-  function _finalize(map, sinceMs) {
+  function _finalize(map, sinceMs, untilMs) {
     const records = Array.from(map.values());
     // 主キー sortKey、同値時は seqKey（収集順から復元した時系列）でタイブレーク。
     // 粗いタイムスタンプ（分単位）で複数メッセージが同じ ts.ms を持つとき、収集が下→上のため
     // 同分内が newest-before-oldest にならないよう、seqKey で chronological に整える。
     records.sort((a, b) => (a.sortKey - b.sortKey) || (a.seqKey - b.seqKey));
-    // 空の送信者を直前の送信者で補完（フィルタ前の全件で行う＝上記コメント参照）。
+    // 送信者と「判定用 ts(_effTs)」を時系列順に前方補完する。
+    // _effTs は直前の信頼できる ts(time[datetime] 由来) を引き継ぐ＝連投の継続メッセージ
+    // （名前も time も無い行）は先頭と同じ月に分類される。粗い title 由来 ts は判定に使わない。
     let lastAuthor = '';
+    let lastPreciseTs = NaN;
     for (const r of records) {
       if (r.author) {
         lastAuthor = r.author;
       } else if (lastAuthor) {
         r.author = lastAuthor;
       }
+      if (r.tsPrecise && !Number.isNaN(r.tsMs)) lastPreciseTs = r.tsMs;
+      r._effTs = (r.tsPrecise && !Number.isNaN(r.tsMs)) ? r.tsMs : lastPreciseTs;
     }
-    // 期間フィルタ: 信頼できる ts が基準より古いものだけ落とす。
-    if (sinceMs) {
-      return records.filter((r) => !(r.tsPrecise && !Number.isNaN(r.tsMs) && r.tsMs < sinceMs));
-    }
-    return records;
+    // カレンダー月レンジ [sinceMs, untilMs) で絞る。判定用 ts 不明（先頭側で未到達）は残す。
+    if (sinceMs == null && untilMs == null) return records;
+    return records.filter((r) => {
+      const ts = r._effTs;
+      if (Number.isNaN(ts)) return true;
+      if (sinceMs != null && ts < sinceMs) return false;
+      if (untilMs != null && ts >= untilMs) return false;
+      return true;
+    });
   }
 
   /**
    * _finalize に加え、生収集 0 件のときは切り分け用に必ず警告ログを残す。
    * @returns {{records:Array, rawCount:number}}
    */
-  function _finalizeResult(map, sinceMs, scroller) {
+  function _finalizeResult(map, sinceMs, untilMs, scroller) {
     const rawCount = map.size;
-    const records = _finalize(map, sinceMs);
+    const records = _finalize(map, sinceMs, untilMs);
     if (rawCount === 0) {
       // 生 0 件は最も壊れやすい「Teams DOM 変更でセレクタ全滅」のサイン。無言にしない。
       // （期間フィルタで 0 件になったケースは rawCount>0 なので区別できる）
@@ -953,8 +966,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * popup には「開始した」ことだけを即返すので、popup を閉じても収集は継続でき、
    * いつでもオーバーレイから中止・保存できる。
    *
-   * @param {{sinceDays?:number, mode?:('download'|'copy')}} [opts]
-   *   sinceDays: この日数より古いメッセージは遡らない（未指定/0 以下なら無制限）
+   * @param {{monthsAgo?:number, mode?:('download'|'copy')}} [opts]
+   *   monthsAgo: 収集対象のカレンダー月オフセット（0=今月 / 1=先月 / 2=2か月前 / 3=3か月前）。
+   *     今月は月初〜現在、それ以外はその月の 1 日〜末日（翌月初の直前）に絞る。
    *   mode: 完了時の既定動作（download=その場保存 / copy=コピー操作ボタンを提示）
    * @returns {{ok:boolean, started?:boolean, error?:string}}
    */
@@ -967,8 +981,16 @@ var TeamsExtractor = TeamsExtractor || (() => {
     _cancelRequested = false;
     _discarded = false;
 
-    const days = Number(opts.sinceDays);
-    const sinceMs = Number.isFinite(days) && days > 0 ? Date.now() - days * 86400000 : null;
+    // 収集対象のカレンダー月レンジ [sinceMs, untilMs) を算出する。
+    // 例: 5/10 に monthsAgo=0（今月）→ [5/1 00:00, null)（現在まで）/ monthsAgo=1（先月）→ [4/1, 5/1)。
+    const ma = Number(opts.monthsAgo);
+    const monthsAgo = Number.isFinite(ma) && ma > 0 ? Math.floor(ma) : 0;
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = now.getMonth();
+    const sinceMs = new Date(y, mo - monthsAgo, 1, 0, 0, 0, 0).getTime(); // 対象月の 1 日 0 時
+    // 今月は上限なし（＝現在まで）。それ以外は翌月 1 日 0 時を上限（含まない）にしてその月だけに絞る。
+    const untilMs = monthsAgo === 0 ? null : new Date(y, mo - monthsAgo + 1, 1, 0, 0, 0, 0).getTime();
     const mode = opts.mode === 'copy' ? 'copy' : 'download';
     const title = getTitle();
     const startHref = location.href; // 完了時に会話が切り替わっていないか確認する基準
@@ -980,6 +1002,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       try {
         const { records, rawCount } = await _collectRecords({
           sinceMs,
+          untilMs,
           onProgress: _updateOverlayProgress,
         });
         // 破棄指示、または収集中に別会話/ページへ切り替わったら部分データを保存しない
@@ -991,7 +1014,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
         if (records.length === 0) {
           _overlayError(
             rawCount > 0
-              ? '選択した期間内にメッセージがありませんでした。期間を広げてお試しください。'
+              ? '選択した月にメッセージがありませんでした。別の月でお試しください。'
               : 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）。'
           );
           return;

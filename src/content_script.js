@@ -256,7 +256,7 @@
           }
           // Popup からのアクション実行依頼（抽出 + ダウンロード/コピー）
           if (msg?.type === 'rfmd:extract') {
-            Promise.resolve(ButtonInjector.runAction({ kind: msg.kind, mode: msg.mode, sinceDays: msg.sinceDays }))
+            Promise.resolve(ButtonInjector.runAction({ kind: msg.kind, mode: msg.mode, monthsAgo: msg.monthsAgo }))
               .then((r) => sendResponse(r))
               .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
             return true; // 非同期 sendResponse

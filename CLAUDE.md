@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code and other coding agents working in this repository.
 
 ## Overview
 
@@ -208,4 +208,4 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 - PR タイトルの取得: DOM 要素 → `document.title` フォールバック（両プラットフォーム共通）
 - GitHub REST API (`api.github.com`) は CORS 制約でCookie認証不可（`Access-Control-Allow-Origin: *` が `credentials: 'include'` をブロック）。代わりに同一オリジンの HTML fetch + DOMParser を使用
 - `_fetchHiddenConversations` の DOM 操作では、挿入先要素 (`el`) のスコープに注意 — `el.remove()` は `el` 自体とその子孫のみ削除されるが、`el` が意図より広い範囲を指すと既存コンテンツが失われる
-- **`innerHTML` 代入は使わない**（Firefox AMO の `web-ext lint` が `UNSAFE_VAR_ASSIGNMENT` 警告を static analysis で出すため。runtime で安全でも警告は消えない）。ボタン等の動的内容は DOM 構築で組む: `button_injector` の `_setButtonContent`（SVG アイコンは `_buildSvg` = `DOMParser('image/svg+xml')` + `importNode`）、`popup.js` の `_setPopBtnContent`（`createElement` + `textContent` + `replaceChildren`）。クリアは `el.replaceChildren()`。Firefox 固有 API（`offscreen` 等）は不使用なので strip マーカーは不要
+- **`innerHTML` 代入は使わない**（Firefox AMO の `web-ext lint` が `UNSAFE_VAR_ASSIGNMENT` 警告を static analysis で出すため。runtime で安全でも警告は消えない）。代わりにボタン等の動的内容は DOM 構築で組む: `button_injector` の `_setButtonContent`（SVG アイコンは `_buildSvg` = `DOMParser('image/svg+xml')` + `importNode`）、`popup.js` の `_setPopBtnContent`（`createElement` + `textContent` + `replaceChildren`）。クリアは `el.replaceChildren()`。Firefox 固有 API（`offscreen` 等）は不使用なので strip マーカーは不要

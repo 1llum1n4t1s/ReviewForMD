@@ -104,16 +104,19 @@ jobs:
             --data-urlencode "client_id=${CWS_CLIENT_ID}" \
             --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
             --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
-            --data-urlencode "grant_type=refresh_token")
+            --data-urlencode "grant_type=refresh_token") || token_response=""
           # python が非 JSON で exit 1 しても inherit_errexit で step ごと落ちないよう `|| echo ""`
-          # でフォールバックさせ、直後の空チェック分岐で warning 降格させる。
+          # でフォールバックさせ、直後の空チェック分岐で warning 降格させる。curl 側にも `|| token_response=""`
+          # が要る（無いと set -e + curl -fsS で step ごと即死し、この分岐が死にコードになる）。
           access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
           if [ -z "${access_token:-}" ]; then
             echo "::warning::CWS pre-flight: OAuth token 取得失敗 → publish step に判定を委ねる"
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "::add-mask::${token_response}"
+          # ⚠️ token_response（複数行 JSON）を add-mask に渡してはいけない。ワークフローコマンドは
+          #    行単位で解釈されるため 1 行目 "{" だけがマスク値として消費され、残りの行
+          #    （access_token を含む）が平文でログに出る。単一行の access_token だけをマスクする。
           echo "::add-mask::${access_token}"
           # Items.get で draft の crxVersion + uploadState を取得
           draft_response=$(curl -fsS \
@@ -166,15 +169,17 @@ jobs:
             --data-urlencode "client_id=${CWS_CLIENT_ID}" \
             --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
             --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
-            --data-urlencode "grant_type=refresh_token")
+            --data-urlencode "grant_type=refresh_token") || token_response=""
           access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
           if [ -z "${access_token:-}" ]; then
-            echo "::error::access_token のパースに失敗しました (OAuth refresh response が想定形式でない可能性)"
+            echo "::error::access_token の取得に失敗しました (OAuth refresh が拒否されたか、応答が想定形式でない)"
             exit 1
           fi
           # 動的取得した access_token は GitHub Actions の自動マスキング対象外のため、
           # add-mask で明示登録して以降のログ出力でも漏洩しないようにする。
-          echo "::add-mask::${token_response}"
+          # ⚠️ token_response（複数行 JSON）は渡してはいけない。ワークフローコマンドは行単位で
+          #    解釈されるため 1 行目 "{" だけがマスク値として消費され、残りの行（access_token を
+          #    含む）が平文でログに出る。単一行の access_token だけをマスクする。
           echo "::add-mask::${access_token}"
 
           # ----- ステップ 1: ZIP を Draft としてアップロード -----

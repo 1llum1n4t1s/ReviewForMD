@@ -73,7 +73,7 @@ CodeCommit エントリは `*.console.aws.amazon.com/codesuite/codecommit/*` に
 
 `fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `withTimeout` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用、Teams は MD 専用化で fetch しない）。
 
-**動的注入（カスタムドメイン DevOps 専用）**: `service_worker.js` は `chrome.scripting.executeScript` でカスタムドメインの DevOps ページのみ動的注入する。GitHub・SharePoint は静的注入のみ。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
+**動的注入（DevOps カスタムドメイン + CodeCommit の 2 経路のみ）**: `service_worker.js` は `chrome.scripting.executeScript` で (1) カスタムドメインの DevOps ページ、(2) 他サービスから SPA 遷移してきた CodeCommit PR ページ、の 2 つだけを動的注入する。GitHub・SharePoint・Teams は静的注入に委ねる。サイト固有 extractor は `extractorFileForUrl(url)` が URL から 1 本だけ選ぶ（CodeCommit 既知ドメインなら `codecommit_extractor.js`、それ以外は `devops_extractor.js`）。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
 
 ### Module pattern
 
@@ -85,7 +85,9 @@ IIFE returning public API object. Private functions prefixed with `_`. No ES mod
 
 ### Service worker (`service_worker.js`)
 
-Monitors `webNavigation.onHistoryStateUpdated` / `onCompleted`. For known domains (github.com / *.github.com / dev.azure.com / *.visualstudio.com / console.aws.amazon.com / *.console.aws.amazon.com / *.sharepoint.com), sends `rfmd:navigate` to the content script. **`injectContentScripts` のファイルリストは DevOps 用 extractor のみ**なので、メッセージ未達時のフォールバック動的注入は **DevOps 既知ドメイン (`isDevOpsKnownDomain`) に限定**する（GitHub/SharePoint は静的注入に委ね、誤った extractor セットを注入して `__rfmd_initialized` で正規注入を阻害しないため）。カスタムドメインは `verifyAzureDevOpsInTab` で DevOps シグナル検証後に `chrome.scripting.executeScript` で動的注入。Teams は SW 非関与（content script が自前で SPA 遷移を処理）。
+Monitors `webNavigation.onHistoryStateUpdated` / `onCompleted`. For known domains (github.com / *.github.com / dev.azure.com / *.visualstudio.com / console.aws.amazon.com / *.console.aws.amazon.com / *.sharepoint.com), sends `rfmd:navigate` to the content script. **`injectContentScripts` は `extractorFileForUrl` で extractor を 1 本だけ選ぶ**ので、メッセージ未達時のフォールバック動的注入は **`isDevOpsKnownDomain(url) || isCodeCommitKnownDomain(url)` に限定**する（GitHub/SharePoint/Teams は静的注入に委ね、誤った extractor セットを注入して `__rfmd_initialized` で正規注入を阻害しないため）。カスタムドメインは `verifyAzureDevOpsInTab` で DevOps シグナル検証後に `chrome.scripting.executeScript` で動的注入。Teams は SW 非関与（content script が自前で SPA 遷移を処理）。
+
+**⚠️ `verifyAzureDevOpsInTab` は `service_worker.js` と `popup/popup.js` の意図的な二重定義**（MV3 で SW と popup はモジュール共有できないため）。**`service_worker.js` を正として変更し、`popup.js` へ転記する**。片方だけ直すとセキュリティ検証が一方で緩くなる。判定は「シグナル 1 つでも真」で意図的に緩く、これは**オンプレ Azure DevOps Server（カスタムドメイン）で検出漏れを起こさないため**。閾値を上げると機能が止まる側に倒れるので、上げる前にオンプレ環境での影響を確認すること（注入先は content script の isolated world で、ページ側からは触れない）。
 
 ### DevOps extraction strategy (3 tiers)
 
@@ -128,7 +130,7 @@ Two extraction entry points exist:
 
 ### Site detection
 
-`site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc.). AWS CodeCommit by console host (`*.console.aws.amazon.com`) + URL path (`/codesuite/codecommit/repositories/{repo}/pull-requests/{id}`)。コンソールは Cloudscape の React SPA で DOM クラスがハッシュ化され揮発性が高いため、検出は安定した URL ベース（DOM 非依存）。SharePoint Stream by `*.sharepoint.com` domain + `stream.aspx` path. Microsoft Teams chat by Teams domain (teams.microsoft.com / teams.live.com / teams.cloud.microsoft) + message-list DOM signals（Teams はハッシュ/SPA ルーティングで URL から会話判定しづらいため DOM ベース）。
+`site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc. — `THRESHOLD = 2` で、軽いシグナルから順に評価して閾値到達で早期 return する）。ただし **PR 一覧の `detectList` 側はシグナル 1 つ**（`.repos-pr-list` または `bolt-header`）で、詳細ページより緩い。 AWS CodeCommit by console host (`*.console.aws.amazon.com`) + URL path (`/codesuite/codecommit/repositories/{repo}/pull-requests/{id}`)。コンソールは Cloudscape の React SPA で DOM クラスがハッシュ化され揮発性が高いため、検出は安定した URL ベース（DOM 非依存）。SharePoint Stream by `*.sharepoint.com` domain + `stream.aspx` path. Microsoft Teams chat by Teams domain (teams.microsoft.com / teams.live.com / teams.cloud.microsoft) + message-list DOM signals（Teams はハッシュ/SPA ルーティングで URL から会話判定しづらいため DOM ベース）。
 
 ### SharePoint Stream extraction strategy
 
@@ -137,7 +139,9 @@ Two extraction entry points exist:
 1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から `drives/b!XXX` と `items/YYY` を正規表現抽出（同期）
 2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — `<script>` から取れない場合に備え、main world に注入したフックが `window.fetch` を監視し、`/_api/v2.1/drives/` を含む URL から ID をキャプチャして CustomEvent `rfmd:sp-ids` で content script に通知
 
-ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'omit'`（temporaryDownloadUrl は SAS トークン埋め込み型のため cookie 不要）で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+
+**⚠️ `credentials` を `'omit'` に変えてはいけない（実機で 401 になった実績あり）**: `_normalizeStreamUrl` は元 URL のクエリ文字列を `?is=1&applymediaedits=false` で**上書き**するため、`temporaryDownloadUrl` に SAS トークンが含まれていても剥がれる。よって認証は SharePoint のセッション cookie 依存になる。v1.0.44 (`3c4dc7f`) で「SAS 埋め込み型だから cookie 不要」と判断して `'omit'` にしたところ VTT が 401 になり、v1.0.45 (`aeaf6d4`) で `'include'` へロールバックしている。cookie 漏洩の懸念は `_isSharePointOrigin` ガード（`*.sharepoint.com` の HTTPS 限定）＋ cookie のドメインスコープで塞いでいる。「SAS を保持して `'omit'` にすべき」というレビュー指摘は繰り返し出るが、**この履歴を確認してから判断すること**。
 
 `checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更で別動画に遷移した際、`_capturedDriveId/_capturedFileId` も自動でクリアされる（古い動画の ID で API を叩かないため）。
 
@@ -203,6 +207,7 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 - Extension context invalidation errors (`Extension context invalidated`) silently caught throughout — this is expected when extension is updated while page is open
 - `window.__rfmd_initialized` / `window.__rfmd_nav_hooked__` flags prevent double initialization from dynamic injection
 - DevOps API URLs are constructed from URL parsing (`_parseDevOpsUrl`), not hardcoded — supports custom domains
+- DevOps REST のクエリ値（Items API の `path` 等）は **`encodeURIComponent`** で組む。`encodeURI` は `&` `?` `#` `+` を素通しするため、それらを含むファイル名（`foo&bar.cs` / `foo+bar.cs`）でクエリ構造が壊れて別ファイル取得や 404 になる。区切りの `/` が `%2F` になっても Items API はクエリ値デコード後にパスとして解釈するので問題ない
 - Markdown output uses Japanese labels: `本文`, `レビューコメント`, `コメント N`, `投稿者`, `日時`, `ファイル`, `対象行`, `↩ 返信`
 - グローバル変数名は `Rfmd` プレフィックス（例: `RfmdClipboard`）でブラウザ組み込みオブジェクトとの名前衝突を回避
 - PR タイトルの取得: DOM 要素 → `document.title` フォールバック（両プラットフォーム共通）

@@ -21,7 +21,7 @@ jobs:
       # サプライチェーン攻撃対策で SHA ピン留め。タグは指すコミットを書き換え可能なため
       # 信頼境界として弱い。バージョン更新時は SHA を取り直してタグコメントも合わせる。
       - name: リポジトリをチェックアウト
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # persist-credentials を明示的に無効化。本 workflow では GITHUB_TOKEN を使った
         # git push を行わないので、.git/config に書き残さない方が防御深層として安全
         # (script injection 経由の token 漏洩経路を完全に閉じる)。
@@ -234,7 +234,7 @@ jobs:
     steps:
       - name: リポジトリをチェックアウト
         # update-amo-listing.mjs / webstore/*.txt / vava.config.json / package.json が必要なので checkout。
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -254,7 +254,7 @@ jobs:
           ls -R build-firefox | head -40
 
       - name: Node セットアップ
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
 

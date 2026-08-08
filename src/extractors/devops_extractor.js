@@ -488,9 +488,12 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @returns {Promise<string|null>} ファイル内容テキスト。404（削除/移動済み）は null
    */
   async function _fetchFileContent(urlInfo, filePath, commitId) {
-    // path パラメータはパス区切り (/) を含むためそのまま渡す（encodeURIComponent 不可）
+    // path はクエリ値なので encodeURIComponent で完全にエスケープする。
+    // encodeURI だと & ? # + が素通しになり、それらを含むファイル名
+    // （例: `foo&bar.cs` / `foo+bar.cs`）でクエリ構造が壊れて別ファイルの取得や 404 になる。
+    // 区切りの / は %2F になるが、Items API はクエリ値のデコード後にパスとして解釈するため問題ない。
     const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/items`
-      + `?path=${encodeURI(filePath)}&version=${commitId}&versionType=commit&api-version=7.1`;
+      + `?path=${encodeURIComponent(filePath)}&version=${commitId}&versionType=commit&api-version=7.1`;
     return _fetchText(url);
   }
 

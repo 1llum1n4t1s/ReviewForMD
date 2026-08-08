@@ -277,7 +277,13 @@ var SharePointExtractor = SharePointExtractor || (() => {
     if (transcripts.length === 0) {
       throw new Error('トランスクリプトが見つかりません');
     }
-    const streamUrl = _normalizeStreamUrl(transcripts[0].temporaryDownloadUrl);
+    // temporaryDownloadUrl が欠落しているケース（権限不足でメタデータだけ返る等）で
+    // _normalizeStreamUrl が TypeError になると、ユーザーに切り分け不能な例外が出る。
+    const rawUrl = transcripts[0].temporaryDownloadUrl;
+    if (typeof rawUrl !== 'string' || rawUrl === '') {
+      throw new Error('トランスクリプトのダウンロード URL が取得できませんでした');
+    }
+    const streamUrl = _normalizeStreamUrl(rawUrl);
     // サーバー応答 (temporaryDownloadUrl) をそのまま credentials 付きで叩くと、
     // サーバー側で URL を差し替えられたときに cookie が外部オリジンへ流出しうる。
     // 必ず *.sharepoint.com ドメインに限定してから fetch する。

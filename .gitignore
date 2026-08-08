@@ -8,6 +8,10 @@ web-ext-artifacts/
 # update-amo-listing.mjs が webstore/*.txt + vava.config.json から毎回生成する中間物
 amo-metadata.json
 
+# ルートは package.json に依存が無く node_modules が生成される想定は無いが、
+# 誤って pnpm install 等を実行した際の巨大 blob 混入を防ぐため念のため除外
+node_modules/
+
 # webstore build dependencies
 webstore/node_modules/
 webstore/package.json

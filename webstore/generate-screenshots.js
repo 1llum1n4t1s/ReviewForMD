@@ -1,10 +1,13 @@
 // Chrome Web Store用のスクリーンショット画像を自動生成するスクリプト
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
+// puppeteer 25 で ESM 専用パッケージになったため、このスクリプトも ESM 化した
+// （package.json に "type": "module" を追加。webstore/ 内で require() する他ファイルは無いため影響範囲はこの1本のみ）。
+import puppeteer from 'puppeteer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const TEMPLATE_DIR = __dirname;
-const OUTPUT_DIR = path.join(__dirname, 'images');
+const TEMPLATE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const OUTPUT_DIR = path.join(TEMPLATE_DIR, 'images');
 
 const HTML_CONFIGS = [
   // スクリーンショット：1280x800

@@ -8,13 +8,14 @@
       "id": "review-for-md@1llum1n4t1s.github.io",
       "strict_min_version": "128.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": ["personallyIdentifyingInfo", "authenticationInfo"]
       }
     }
   },
   "minimum_chrome_version": "121",
   "permissions": ["activeTab", "scripting", "webNavigation", "clipboardWrite"],
   "host_permissions": [
+    "https://support.kagayoi.com/*",
     "https://github.com/*",
     "https://*.github.com/*",
     "https://dev.azure.com/*",

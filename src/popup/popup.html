@@ -425,6 +425,17 @@
       0%, 100% { box-shadow: 0 0 0 3px var(--ok-soft); }
       50%      { box-shadow: 0 0 0 5px transparent; }
     }
+
+    /* ── お問い合わせ / 評価 ───────────────────────────────────────
+       Kagayoi.Support の共通部品 <kagayoi-support-footer> が描画する。
+       ここは置き場所と配色の受け渡しだけを持つ。 */
+    .support-footer { margin-top: 12px; }
+
+    kagayoi-support-footer {
+      --kgs-surface: var(--bg-elev);
+      --kgs-border: var(--border);
+      --kgs-accent: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -462,6 +473,12 @@
     </ul>
   </section>
 
+  <div class="support-footer">
+    <kagayoi-support-footer product-id="review-for-md"></kagayoi-support-footer>
+  </div>
+
   <script src="popup.js"></script>
+  <script type="module" src="../shared/kagayoi-support-popup.js"></script>
+  <script type="module" src="../shared/kagayoi-support-footer.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Privacy Policy — いろいろMDコピー (Review For MD)
 
-**Last Updated: June 3, 2026**
+**Last Updated: August 27, 2026**
 
 ## Overview
 
@@ -14,13 +14,13 @@ This Extension is designed with maximum respect for user privacy.
 
 ## Information We Collect
 
-**This Extension does not collect, transmit, or store any personal information.**
+**Except for a contact form you submit yourself, this Extension does not collect, transmit, or store any personal information.**
 
 Specifically:
 
-- No personal data (name, email, etc.) is collected
+- Personal data (name, email, etc.) is received only when you type it into the contact form and submit it; it is never collected any other way
 - No cookies or tracking technologies are used
-- No data is sent to external servers
+- Data is sent to an external server only when you submit the contact form (the sole destination is Kagayoi Support; see "Contact form" below)
 - No analytics tools or advertising SDKs are included
 - No browsing history is accessed
 
@@ -57,6 +57,7 @@ Content scripts only operate on the following domains:
 - `https://teams.microsoft.com/*` / `https://*.teams.microsoft.com/*`
 - `https://teams.live.com/*`
 - `https://teams.cloud.microsoft/*` (to fetch Microsoft Teams chat history)
+- `https://support.kagayoi.com/*` (to verify the contact email, submit inquiries, and receive the submission result; no request is made unless you submit the form)
 
 For custom domains (such as self-hosted Azure DevOps instances), `optional_host_permissions` is used. The Extension only operates on an origin if the user has explicitly clicked "Allow this site" for that origin. It does not operate on any domain the user has not explicitly approved.
 
@@ -69,7 +70,7 @@ Data accessed by this Extension (PR titles, body, review comments, SharePoint St
   - Copied to the clipboard ("Copy as MD" button)
   - Downloaded as a `.md` / `.vtt` file ("Download as MD" / "Download VTT" button)
 - Discarded from memory after processing
-- Never transmitted to any third-party server by the Extension
+- PR content, transcripts, and chat messages are never transmitted to any external server
 
 ## Data Storage
 
@@ -77,17 +78,28 @@ The Extension itself does not persist user data:
 
 - No localStorage usage
 - No IndexedDB / chrome.storage usage
-- No external server storage
+- No external server storage (only what you submit through the contact form is stored by Kagayoi Support so it can be answered)
+
+In addition, the contact authentication session (the access token, email address, and expiry returned by Kagayoi Support) is saved in the extension's `localStorage`, but only if you use the contact form. It stops working once it expires or the extension is removed, and the verification code itself is never stored.
 
 However, when the user clicks the "Download as MD" or "Download VTT" button, the browser's native download mechanism saves a `.md` / `.vtt` file to the user's own Downloads folder. This is an explicit user-initiated save, and the Extension does not access the file after it is saved.
 
+## Contact form
+
+Only when you press "Contact support" in the settings popup and submit the form does the extension send the following to Kagayoi Support (`https://support.kagayoi.com`). No such request happens unless you press the button.
+
+- The email address, optional name, inquiry category, subject, and message you entered
+- Product ID, extension version, and locale
+
+On first use, the six-digit code delivered by email is sent to Kagayoi Support to verify you. After verification, Kagayoi Support stores the inquiry and replies so that you and support staff can access them. PR content, transcripts, chat messages, and the content of pages you browse are never sent.
+
 ## Third-Party Sharing
 
-Since this Extension does not collect data, no third-party data sharing occurs.
+This Extension does not share data taken from pages with any third party. What you submit through the contact form is handled solely by the developer's (Kagayoi) support desk in order to reply to you.
 
 ## Children's Privacy
 
-This Extension is available for all ages and does not collect personal information from any user.
+This Extension is available for all ages. Unless you submit the contact form, it collects no personal information from any user.
 
 ## Open Source
 

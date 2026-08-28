@@ -1,21 +1,23 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code and other coding agents working in this repository.
+
+利用方法は [README.md](README.md)、現在の構造・責務・データフロー・設計判断は [DESIGN.md](DESIGN.md) を正本とする。このファイルは作業規約、必須コマンド、変更時に守る制約を扱う。構造や責務を変更するときは、実装と同じ変更内で `DESIGN.md` も更新する。
 
 ## Overview
 
 Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイルでダウンロード:
 - **PR レビュー**: GitHub・Azure DevOps（カスタムドメイン含む）・AWS CodeCommit の PR タイトル/本文/レビューコメントを Markdown でダウンロード（またはコピー）
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
-- **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで全履歴収集し、Markdown でダウンロード
+- **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで選択月まで収集し、Markdown でダウンロード
 
-アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — 単一の `manifest.json` を共有。Chrome は `browser_specific_settings` を無視、Firefox は `gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions` 対応）+ `data_collection_permissions: {required:["none"]}`（データ非収集宣言）を読む。`background` は **dual-key**（`service_worker` を Chrome、`scripts: ["src/service_worker.js"]` を Firefox が使う MDN 推奨のクロスブラウザパターン）— `service_worker.js` は `window`/`document` も SW 専用 API も使わないので両コンテキストで動く。⚠️ **Chrome 110-120 は MV3 で `background.scripts` を無視せず拒否する**（121+ で無視に変わった）ため、`minimum_chrome_version: "121"` で 121 未満を弾く（旧 Chrome に壊れたパッケージを配らない）。`web-ext lint` は errors 0（残る warnings は dual-key の informational と data_collection の forward-compat のみ）。CWS/AMO とも同一 zip（manifest + src + icons）で公開する。
+アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — 単一の `manifest.json` を共有。Chrome は `browser_specific_settings` を無視、Firefox は `gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions` 対応）+ `data_collection_permissions: {required:["personallyIdentifyingInfo", "authenticationInfo"]}`（お問い合わせフォームで扱うメールアドレスと認証セッションの申告）を読む。`background` は **dual-key**（`service_worker` を Chrome、`scripts: ["src/service_worker.js"]` を Firefox が使う MDN 推奨のクロスブラウザパターン）— `service_worker.js` は `window`/`document` も SW 専用 API も使わないので両コンテキストで動く。⚠️ **Chrome 110-120 は MV3 で `background.scripts` を無視せず拒否する**（121+ で無視に変わった）ため、`minimum_chrome_version: "121"` で 121 未満を弾く（旧 Chrome に壊れたパッケージを配らない）。`web-ext lint` は errors 0（残る warnings は dual-key の informational と data_collection の forward-compat のみ）。CWS/AMO とも同一 zip（manifest + src + icons）で公開する。
 
 ## Commands
 
 **Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成。Windows から npm 経由で実行したい場合は `npm run zip:win`。
 
-**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、**2 つの独立ジョブ**で公開する: (1) Chrome Web Store（`chrome-webstore-upload-cli` で auto-publish）、(2) Firefox AMO（`web-ext sign --channel listed` で listed 提出）。ジョブは互いに `needs` を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要な GitHub Secrets: CWS は `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMO は `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMO は初回のみ Developer Hub での add-on 登録が必要**（listing 情報の事前登録。登録後は CI が新バージョンを listed channel に自動提出）。バージョンバンプ＋ストア listing 同期は `/vava` スキル（AMO listing は `vava.config.json` + `webstore/store-listing.firefox.{ja,en}.txt` を参照）。
+**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、**2 つの独立ジョブ**で公開する: (1) Chrome Web Store APIへZIPを直接アップロードし、Publish APIで審査提出、(2) Firefox AMO（`web-ext sign --channel listed` で listed 提出）。ジョブは互いに `needs` を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要な GitHub Secrets: CWS は `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMO は `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMO は初回のみ Developer Hub での add-on 登録が必要**（listing 情報の事前登録。登録後は CI が新バージョンを listed channel に自動提出）。バージョンバンプ＋ストア listing 同期は `/vava` スキル（AMO listing は `vava.config.json` + `webstore/store-listing.firefox.{ja,en}.txt` を参照）。
 
 No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 
@@ -26,6 +28,7 @@ No tests, no linter. Install via `chrome://extensions` → Load unpacked → リ
 - `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`)
 - `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `codecommit_extractor`, `sharepoint_extractor`, `teams_extractor`)
 - `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
+- `src/shared/` — Kagayoi Support の問い合わせフォームとフッターを提供する共通 Web Components
 - `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
 - `src/popup/` — ツールバーアイコンのポップアップ UI
 - `src/content_script.js` / `src/service_worker.js` — エントリポイント
@@ -193,7 +196,7 @@ key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
 
 ### Popup (`src/popup/`)
 
-`popup.html` + `popup.js`: ツールバーアイコンのポップアップ UI。**全アクションの実行起点**。起動時に `rfmd:status` で現在ページの状態を取得し、サイトに合うボタン（GitHub/DevOps/CodeCommit=MD DL+コピー、SharePoint=VTT DL+コピー、Teams=MD DL+コピー、一覧=案内）を動的描画する。ボタンクリックで `rfmd:extract` を送信。**コピーは popup 側で `navigator.clipboard`（フォーカス必須のため）**、ダウンロードは content script 側で実行。content script に届かない場合（カスタムドメイン DevOps 未許可など）は URL ベースの許可フロー（`chrome.permissions.request` → DevOps シグナル検証 → service_worker 経由注入）にフォールバック。
+`popup.html` + `popup.js`: ツールバーアイコンのポップアップ UI。**全アクションの実行起点**。起動時に `rfmd:status` で現在ページの状態を取得し、サイトに合うボタン（GitHub/DevOps/CodeCommit=MD DL+コピー、SharePoint=VTT DL+コピー、Teams=MD DL+コピー、一覧=案内）を動的描画する。ボタンクリックで `rfmd:extract` を送信。**コピーは popup 側で `navigator.clipboard`（フォーカス必須のため）**、ダウンロードは content script 側で実行。content script に届かない場合（カスタムドメイン DevOps 未許可など）は URL ベースの許可フロー（`chrome.permissions.request` → DevOps シグナル検証 → service_worker 経由注入）にフォールバック。下部の `kagayoi-support-footer` は、抽出処理から独立した利用者操作としてKagayoi Support問い合わせフォームを開く。
 
 ### CSS / ダークモード
 

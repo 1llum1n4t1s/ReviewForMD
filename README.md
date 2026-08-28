@@ -134,16 +134,19 @@ src/
 │   ├── devops_extractor.js    # Azure DevOps PR データ抽出（REST API フォールバック付き）
 │   ├── codecommit_extractor.js # AWS CodeCommit PR データ抽出（DOM ベース・詳細ページ専用）
 │   ├── sharepoint_extractor.js # SharePoint Stream トランスクリプト(VTT)取得
-│   └── teams_extractor.js     # Teams チャット抽出（自動スクロール・全履歴収集）
+│   └── teams_extractor.js     # Teams チャット抽出（自動スクロール・月範囲収集）
 ├── inject/
 │   ├── navigation_hook.js     # main world 注入（SPA 遷移検出用）
 │   └── sharepoint_fetch_hook.js # main world 注入（fetch をフックして Drive/File ID を捕捉）
+├── shared/
+│   ├── kagayoi-support-popup.js # Kagayoi Support 問い合わせフォーム
+│   └── kagayoi-support-footer.js # 問い合わせ・評価導線の共通フッター
 ├── ui/
-│   ├── button_injector.js     # ボタン注入ロジック（詳細ページ・一覧ページ・Teams）
-│   └── styles.css             # ボタンスタイル（GitHub / DevOps / SharePoint / Teams テーマ・ダークモード対応）
+│   ├── button_injector.js     # popupアクション実行・PR一覧行ボタン注入
+│   └── styles.css             # PR一覧行ボタンのスタイル・ダークモード対応
 └── popup/
     ├── popup.html             # ポップアップ UI
-    └── popup.js               # PR ページ検出ステータス表示
+    └── popup.js               # サイト状態取得・アクション表示と実行
 ```
 
 ### データフロー
@@ -152,7 +155,7 @@ src/
 ポップアップ↔コンテンツスクリプト間のメッセージで実行します。
 
 ```
-詳細ページ（GitHub/DevOps/SharePoint/Teams）:
+詳細ページ（GitHub/DevOps/CodeCommit/SharePoint/Teams）:
   ポップアップ起動 → rfmd:status でサイト状態を取得 → サイトに合うボタンを描画
   ボタンクリック → rfmd:extract { kind, mode }
     → コンテンツスクリプトが Extractor で抽出

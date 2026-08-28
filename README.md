@@ -36,6 +36,10 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 > 収集中はページ右下に進捗パネルが出て、そこで **「ここまでで保存」**（それまでの分を書き出し）や **「中止」** がいつでも行えます。収集はページ側で動くので、**ポップアップは閉じても大丈夫**です（長い会話でも途中で止められます）。
 
+### お問い合わせ
+
+ツールバーポップアップ下部の **「お問い合わせ」** から、Kagayoi Support へ不具合や要望を送信できます。初回のみメールで届く確認コードによる本人確認が必要です。送信内容と認証情報の取り扱いは [プライバシーポリシー](docs/privacy-policy.md) をご確認ください。
+
 ### 出力例
 
 ```markdown
@@ -80,11 +84,11 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 ### Chrome Web Store
 
-[Chrome Web Store からインストール](https://chrome.google.com/webstore)（公開後にリンクを更新）
+[Chrome Web Store からインストール](https://chromewebstore.google.com/detail/hmkmbahfdmkiccipfpajkjjefabcnjao)
 
 ### Firefox Add-ons (AMO)
 
-[Firefox Add-ons からインストール](https://addons.mozilla.org/firefox/addon/review-for-md/)（公開後にリンクを更新）
+[Firefox Add-ons からインストール](https://addons.mozilla.org/ja/firefox/addon/iroiro-md-copy/)
 
 ### 開発版（ローカル読み込み）
 

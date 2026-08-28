@@ -74,7 +74,7 @@ Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that
 
 CodeCommit エントリは `*.console.aws.amazon.com/codesuite/codecommit/*` にマッチし、`codecommit_extractor.js` をロードする。
 
-`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `withTimeout` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用、Teams は MD 専用化で fetch しない）。
+`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `withTimeout` / `withText` / `withJson` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用、Teams は MD 専用化で fetch しない）。本文を読む通信は、本文消費まで30秒制限を維持する `withText` / `withJson` を使う。
 
 **動的注入（DevOps カスタムドメイン + CodeCommit の 2 経路のみ）**: `service_worker.js` は `chrome.scripting.executeScript` で (1) カスタムドメインの DevOps ページ、(2) 他サービスから SPA 遷移してきた CodeCommit PR ページ、の 2 つだけを動的注入する。GitHub・SharePoint・Teams は静的注入に委ねる。サイト固有 extractor は `extractorFileForUrl(url)` が URL から 1 本だけ選ぶ（CodeCommit 既知ドメインなら `codecommit_extractor.js`、それ以外は `devops_extractor.js`）。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
 
@@ -139,14 +139,16 @@ Two extraction entry points exist:
 
 `sharepoint_extractor.js` は Teams 会議録画ページから VTT トランスクリプトを取得する。Drive ID と File ID の取得には2層構造を採用:
 
-1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から `drives/b!XXX` と `items/YYY` を正規表現抽出（同期）
-2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — `<script>` から取れない場合に備え、main world に注入したフックが `window.fetch` を監視し、`/_api/v2.1/drives/` を含む URL から ID をキャプチャして CustomEvent `rfmd:sp-ids` で content script に通知
+1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から、同じ `/_api/v2.1/drives/{driveId}/items/{fileId}` URL に含まれる ID 組を正規表現抽出（同期）。初期 script は SPA 切替後も DOM に残るため、content script 読み込み時と同じ URL でだけ候補にする
+2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — main world に注入したフックが `window.fetch` の文字列 / URL / Request 入力を監視し、`/_api/v2.1/drives/{driveId}/items/{fileId}` の完全な組と発生時の `location.href` を CustomEvent `rfmd:sp-ids` で通知。`media/transcripts` を明示する URL を優先しつつ、その他の Drives item URL も候補として保持する
 
-ID 取得後、`/_api/v2.1/drives/{driveId}/items/{fileId}?select=media/transcripts&$expand=media/transcripts` でメタデータ取得 → `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+現在のページ URL に属する候補を信頼度順に同 API で検証し、実際に transcript がある ID 組を確定する。その後 `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
+
+Drive ID / File ID は必ず同じ script URL または同じ fetch URL 由来の完全な組だけを使う。script と fetch フック、または別リクエストの片方ずつを混ぜてはならない。
 
 **⚠️ `credentials` を `'omit'` に変えてはいけない（実機で 401 になった実績あり）**: `_normalizeStreamUrl` は元 URL のクエリ文字列を `?is=1&applymediaedits=false` で**上書き**するため、`temporaryDownloadUrl` に SAS トークンが含まれていても剥がれる。よって認証は SharePoint のセッション cookie 依存になる。v1.0.44 (`3c4dc7f`) で「SAS 埋め込み型だから cookie 不要」と判断して `'omit'` にしたところ VTT が 401 になり、v1.0.45 (`aeaf6d4`) で `'include'` へロールバックしている。cookie 漏洩の懸念は `_isSharePointOrigin` ガード（`*.sharepoint.com` の HTTPS 限定）＋ cookie のドメインスコープで塞いでいる。「SAS を保持して `'omit'` にすべき」というレビュー指摘は繰り返し出るが、**この履歴を確認してから判断すること**。
 
-`checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更で別動画に遷移した際、`_capturedDriveId/_capturedFileId` も自動でクリアされる（古い動画の ID で API を叩かないため）。
+`checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更では前 URL の候補と選択済み ID を破棄する。ただし navigation 検出より先に新 URL の fetch イベントが届く競合を考慮し、現在 URL に結び付いた候補は保持する。
 
 ### Teams chat extraction strategy
 

@@ -43,7 +43,7 @@ content scriptがGitHub / DevOpsの各行へ小型ボタンを注入し、対象
 
 ### SharePointトランスクリプト
 
-初期scriptからDrive ID / File IDを抽出し、取得できない場合はmain worldのfetchフックで補います。SharePoint APIからトランスクリプトURLを得てVTTを取得します。認証Cookieが必要なため `credentials: 'include'` を使いますが、送信先はHTTPSの `*.sharepoint.com` に限定します。
+初期文書ではscriptから同じAPI URLに含まれるDrive ID / File IDの組を抽出します。main worldのfetchフックは文字列・URL・Request入力から完全なID組と発生時のページURLを通知し、content scriptは現在ページの候補だけを信頼度順にAPIで検証します。SPA切替後は残存する初期scriptを使いません。確定したIDからトランスクリプトURLを得てVTTを取得します。認証Cookieが必要なため `credentials: 'include'` を使いますが、送信先はHTTPSの `*.sharepoint.com` に限定します。
 
 ### Teamsチャット
 
@@ -72,6 +72,8 @@ popupの共通Web Componentが、メール確認コードによる認証後に�
 - `verifyAzureDevOpsInTab` はservice workerとpopupで意図的に同一定義を持つため、変更時は両方を同期する。
 - TeamsとCodeCommitのサイト固有セレクタは各Extractorの `SELECTORS` を唯一の正本とする。
 - SharePointの認証付きfetchは `_isSharePointOrigin` を通し、機微URLをログへ出す場合はoriginとpathだけへ縮約する。
+- SharePointのDrive ID / File IDは同じscript URLまたはfetch URL由来の完全な組として扱い、ソース間・リクエスト間で混在させない。fetch候補は発生時のページURLに結び付け、SPA切替後に前ページの候補や初期scriptを再利用しない。
+- レスポンス本文を読む共有fetchは `withText` / `withJson` を使い、ヘッダーだけでなく本文消費の完了まで30秒の中止制御を維持する。
 - レビュースレッドの重複除去は投稿者、ファイル、本文、日時、対象行の複合キーを維持する。
 - HTML由来の動的内容はDOM APIで構築し、`innerHTML` 代入やリモートJavaScript実行を行わない。
 - Teamsの対象月判定と遡り停止には `time[datetime]` 由来の信頼できる時刻だけを使う。

@@ -1,6 +1,6 @@
 # Privacy Policy — いろいろMDコピー (Review For MD)
 
-**Last Updated: August 27, 2026**
+**Last Updated: August 28, 2026**
 
 ## Overview
 
@@ -74,13 +74,13 @@ Data accessed by this Extension (PR titles, body, review comments, SharePoint St
 
 ## Data Storage
 
-The Extension itself does not persist user data:
+The Extension does not persist PR content, transcripts, or chat messages taken from pages:
 
-- No localStorage usage
+- PR content, transcripts, and chat messages are not saved to localStorage
 - No IndexedDB / chrome.storage usage
 - No external server storage (only what you submit through the contact form is stored by Kagayoi Support so it can be answered)
 
-In addition, the contact authentication session (the access token, email address, and expiry returned by Kagayoi Support) is saved in the extension's `localStorage`, but only if you use the contact form. It stops working once it expires or the extension is removed, and the verification code itself is never stored.
+As an exception, the contact authentication session (the access token, email address, and expiry returned by Kagayoi Support) is saved in the extension's `localStorage`, but only if you use the contact form. It stops working once it expires or the extension is removed, and the verification code itself is never stored.
 
 However, when the user clicks the "Download as MD" or "Download VTT" button, the browser's native download mechanism saves a `.md` / `.vtt` file to the user's own Downloads folder. This is an explicit user-initiated save, and the Extension does not access the file after it is saved.
 

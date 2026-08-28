@@ -12,9 +12,9 @@
  * 動画切替対応（singleton バグ対策）:
  *   このフックは `window.__rfmd_sp_hooked__` で多重注入を防いでいるが、
  *   動画切替（stream.aspx?id=A → ?id=B）でも同じフックが再利用される。
- *   そのため:
- *   1. 値が変わった時だけ更新する（「初回のみ代入」ロジックだと古い ID に固着する）
- *   2. content script から `rfmd:sp-reset` イベントを受け取ったら closure 変数をクリア
+ *   そのため候補を location.href 単位で保持し、通知にも pageUrl を含める。
+ *   transcripts を明示する URL は高信頼候補として通知し、それ以外の Drives item URL も
+ *   フォールバック候補として残す。
  *
  * 参考: 既存拡張機能 "Teams Transcript Downloader" の content.js のロジック
  */
@@ -26,43 +26,70 @@
   const original = window.fetch ? window.fetch.bind(window) : null;
   if (!original) return;
 
-  let driveId = '';
-  let fileId = '';
+  const MAX_SEEN_CANDIDATES = 40;
+  let seenPageUrl = '';
+  const seenCandidates = new Map();
 
-  function _emit() {
+  function _emit(driveId, fileId, pageUrl, transcriptRelated) {
     try {
       window.dispatchEvent(new CustomEvent('rfmd:sp-ids', {
-        detail: { driveId, fileId },
+        detail: { driveId, fileId, pageUrl, transcriptRelated },
       }));
     } catch {
       // CustomEvent 構築失敗時は黙殺
     }
   }
 
-  // rfmd:sp-reset リスナーは削除: content script 側で isolated world の変数を直接
-  // クリアするようになったため不要。リスナーを残すと攻撃者が CustomEvent を
-  // 任意タイミングで dispatch して driveId/fileId を消去する DoS 攻撃面になる。
+  // rfmd:sp-reset リスナーは置かない。ページ URL の変化で候補集合を入れ替えるため不要で、
+  // リスナーを置くと攻撃者が CustomEvent を任意タイミングで dispatch して候補を消去できる。
+
+  function _urlFromFetchInput(input) {
+    if (typeof input === 'string') return input;
+    if (input && typeof input.url === 'string') return input.url;
+    if (input && typeof input.href === 'string') return input.href;
+    return String(input || '');
+  }
+
+  function _extractCandidate(rawUrl) {
+    const url = new URL(rawUrl, location.href);
+    const match = url.pathname.match(/\/_api\/v2\.1\/drives\/([^/]+)\/items\/([^/]+)/i);
+    if (!match) return null;
+
+    const transcriptValues = [
+      url.searchParams.get('select'),
+      url.searchParams.get('$select'),
+      url.searchParams.get('expand'),
+      url.searchParams.get('$expand'),
+    ].filter(Boolean).join(' ').toLowerCase();
+    const transcriptRelated = url.pathname.toLowerCase().includes('/media/transcripts') ||
+      transcriptValues.includes('media/transcripts');
+    return {
+      driveId: decodeURIComponent(match[1]),
+      fileId: decodeURIComponent(match[2]),
+      transcriptRelated,
+    };
+  }
 
   window.fetch = function (...args) {
     try {
-      const url = args[0]?.toString() || '';
-      // SharePoint v2.1 Drives API のみを対象にする。
-      // 単純に '/media/transcripts' を含むだけでは、Drives API 以外の
-      // 無関係なエンドポイントが誤マッチして fileId を上書きする恐れがある。
-      // isTranscripts は isDrivesApi が true の文脈で /media/transcripts パスを
-      // 持つ URL（例: drives/.../items/.../media/transcripts）を特定するためのもの。
-      // 現在は isDrivesApi だけで ID を抽出できるため、追加条件は不要だが
-      // 将来の拡張性のためコメントとして残す。
-      const isDrivesApi = url.includes('/_api/v2.1/drives/');
-      if (isDrivesApi) {
-        const m = url.match(/drives\/([^/]+)/);
-        const p = url.match(/items\/([^/?]+)/);
-        let updated = false;
-        // 「初回のみ代入」ではなく「値が変わった時だけ更新」にする。
-        // 動画切替後に新しい ID が fetch に来ても反映されるようにする。
-        if (m && m[1] !== driveId) { driveId = m[1]; updated = true; }
-        if (p && p[1] !== fileId) { fileId = p[1]; updated = true; }
-        if (updated) _emit();
+      const candidate = _extractCandidate(_urlFromFetchInput(args[0]));
+      if (candidate) {
+        const pageUrl = location.href;
+        if (seenPageUrl !== pageUrl) {
+          seenPageUrl = pageUrl;
+          seenCandidates.clear();
+        }
+        const key = `${candidate.driveId}\u0000${candidate.fileId}`;
+        const confidence = candidate.transcriptRelated ? 2 : 1;
+        const previousConfidence = seenCandidates.get(key) || 0;
+        // 同じ組でも、後から transcripts 明示 URL で確認できた場合は信頼度更新を通知する。
+        if (confidence > previousConfidence) {
+          if (seenCandidates.size >= MAX_SEEN_CANDIDATES && !seenCandidates.has(key)) {
+            seenCandidates.delete(seenCandidates.keys().next().value);
+          }
+          seenCandidates.set(key, confidence);
+          _emit(candidate.driveId, candidate.fileId, pageUrl, candidate.transcriptRelated);
+        }
       }
     } catch {
       // URL 解析失敗時は通常の fetch にフォールスルー

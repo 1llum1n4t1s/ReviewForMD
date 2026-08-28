@@ -227,10 +227,7 @@ jobs:
     name: Firefox AMO に submission
     runs-on: ubuntu-latest
     needs: package
-    # Chrome publish が失敗 (同 version 重複 upload 等) しても Firefox AMO は独立 submit する。
-    # `if: success() || failure()` がないと「Chrome 失敗 → Firefox 連鎖 skip」でリカバリーが
-    # 機能しなくなる (cancelled() 時のみ skip)。
-    if: ${{ success() || failure() }}
+    # Chrome publish とは依存せず、共通 ZIP の作成成功だけを前提にする。
     steps:
       - name: リポジトリをチェックアウト
         # update-amo-listing.mjs / webstore/*.txt / vava.config.json / package.json が必要なので checkout。

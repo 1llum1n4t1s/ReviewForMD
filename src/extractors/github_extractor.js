@@ -26,6 +26,24 @@ var GitHubExtractor = GitHubExtractor || (() => {
   }
 
   /**
+   * GitHub PR のサブタブ URL を Conversation ページの URL に正規化する。
+   * @param {string} prUrl
+   * @param {string} baseUrl
+   * @returns {string}
+   */
+  function _normalizePrConversationUrl(prUrl, baseUrl) {
+    const url = new URL(prUrl, baseUrl);
+    const match = url.pathname.match(/^(\/[^/]+\/[^/]+\/pull\/\d+)(?:\/|$)/);
+    if (!match) {
+      throw new Error('GitHub PR URL の形式が不正です: ' + prUrl);
+    }
+    url.pathname = match[1];
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  }
+
+  /**
    * PR タイトルを取得する
    * @param {Document|Element} [root=document] - 検索対象のルート要素
    * @returns {string}
@@ -420,8 +438,11 @@ var GitHubExtractor = GitHubExtractor || (() => {
    */
   async function _fetchAndExtractComments() {
     try {
-      const prUrl = location.origin + location.pathname;
-      const res = await RfmdFetch.withTimeout(prUrl, { credentials: 'include' });
+      const prUrl = _normalizePrConversationUrl(location.href, location.href);
+      let { response: res, text: html } = await RfmdFetch.withText(
+        prUrl,
+        { credentials: 'include' }
+      );
       if (!res.ok) {
         try { await res.body?.cancel(); } catch { /* 接続解放 */ }
         console.warn(`[ReviewForMD] HTML fetch 失敗: HTTP ${res.status}`);
@@ -429,7 +450,6 @@ var GitHubExtractor = GitHubExtractor || (() => {
       }
       // 大規模 PR (500 コメント超) では HTML が数 MB になる。await をまたぐと
       // V8 の逃げ最適化が効かず GC されにくいので、パース後に明示的に参照を切る。
-      let html = await res.text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
       html = null;
 
@@ -454,20 +474,23 @@ var GitHubExtractor = GitHubExtractor || (() => {
     if (!_isSameOrigin(prUrl, location.href)) {
       throw new Error('クロスオリジンの PR URL はサポートされていません: ' + prUrl);
     }
-    const res = await RfmdFetch.withTimeout(prUrl, { credentials: 'include' });
+    const normalizedPrUrl = _normalizePrConversationUrl(prUrl, location.href);
+    let { response: res, text: html } = await RfmdFetch.withText(
+      normalizedPrUrl,
+      { credentials: 'include' }
+    );
     if (!res.ok) throw new Error(`GitHub PR fetch failed: HTTP ${res.status}`);
-    let html = await res.text();
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     html = null; // 大きな HTML 文字列の保持を早めに切る
 
     // hidden conversations（turbo-frame）の追加読み込み
-    await _fetchHiddenConversations(doc, prUrl);
+    await _fetchHiddenConversations(doc, normalizedPrUrl);
 
     // タイトル抽出（getTitle に DOMParser 生成 doc を渡して共通処理）
     const title = getTitle(doc) || 'Pull Request';
-    const prNum = (prUrl.match(/\/pull\/(\d+)/) || [])[1] || '';
+    const prNum = (normalizedPrUrl.match(/\/pull\/(\d+)/) || [])[1] || '';
 
     // 本文抽出（getBody に DOMParser 生成 doc を渡して共通処理）
     const body = getBody(doc);
@@ -529,9 +552,11 @@ var GitHubExtractor = GitHubExtractor || (() => {
               console.warn('[ReviewForMD] クロスオリジン fetch をスキップ:', absUrl);
               return { el, skip: true };
             }
-            const resp = await RfmdFetch.withTimeout(absUrl, { credentials: 'include' });
+            let { response: resp, text: fragmentHtml } = await RfmdFetch.withText(
+              absUrl,
+              { credentials: 'include' }
+            );
             if (!resp.ok) return { el, skip: true };
-            let fragmentHtml = await resp.text();
             const result = { el, fragmentHtml };
             fragmentHtml = null; // GC 促進: DOMParser.parseFromString() 前に文字列参照を解放
             return result;

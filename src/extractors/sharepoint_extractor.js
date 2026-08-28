@@ -4,19 +4,26 @@
  * 動画ページから会議トランスクリプト（VTT 字幕）を取得・ダウンロードする。
  *
  * 動作の流れ:
- *   1. <script> タグの textContent から Drive ID / File ID を抽出（同期）
- *   2. 取得できない場合は main world に注入した fetch フックからの
+ *   1. 初期文書では <script> タグの textContent から Drive ID / File ID を抽出（同期）
+ *   2. main world に注入した fetch フックから、現在のページ URL に結び付いた候補を
  *      CustomEvent ('rfmd:sp-ids') 経由で取得
- *   3. SharePoint REST API でトランスクリプトメタデータを取得
+ *   3. 候補を SharePoint API で検証し、トランスクリプトがある ID 組を確定
  *   4. temporaryDownloadUrl を /streamContent?is=1&applymediaedits=false に
  *      変換して VTT を取得し、ファイルとしてダウンロード
  *
  * 参考: 既存拡張機能 "Teams Transcript Downloader" (acaeimjaoagnkdbfmlplpcacjdghponp)
  */
 var SharePointExtractor = SharePointExtractor || (() => {
-  /** main world fetch フックから捕捉した ID を保持 */
-  let _capturedDriveId = '';
-  let _capturedFileId = '';
+  /** この content script が読み込まれた文書の URL。SPA 遷移後は初期 script を再利用しない。 */
+  const _documentUrl = location.href;
+
+  /** main world fetch フックから捕捉した、ページ URL 単位の ID 候補 */
+  let _capturedCandidates = [];
+  let _candidateSequence = 0;
+  const MAX_ID_CANDIDATES = 20;
+
+  /** checkAvailability で実際にトランスクリプトを確認できた ID 組 */
+  let _selectedIds = null;
 
   /** main world fetch フックの注入済みフラグ */
   let _hookInjected = false;
@@ -49,34 +56,39 @@ var SharePointExtractor = SharePointExtractor || (() => {
    * @returns {{ driveId: string, fileId: string }}
    */
   function _extractIdsFromScripts() {
-    let driveId = '';
-    let fileId = '';
     const scripts = document.querySelectorAll('script');
     for (const script of scripts) {
       const text = script.textContent || '';
       // まず /_api/v2.1/drives/.../items/... の完全一致を試す（最も信頼度が高い）
       // 単純な /items/ マッチはライブラリ一覧等の無関係 ID を拾う恐れがあるため、
       // 必ず SharePoint v2.1 Drives API の文脈に限定する。
-      if (!driveId || !fileId) {
-        const combined = text.match(/\/_api\/v2\.1\/drives\/(b![a-zA-Z0-9_-]+)\/items\/([A-Za-z0-9]{20,})/);
-        if (combined) {
-          if (!driveId) driveId = combined[1];
-          if (!fileId) fileId = combined[2];
-        }
+      const combined = text.match(/\/_api\/v2\.1\/drives\/(b![a-zA-Z0-9_-]+)\/items\/([A-Za-z0-9]{20,})/);
+      if (combined) {
+        return { driveId: combined[1], fileId: combined[2] };
       }
-      // drive 単独は b! プレフィックスで誤マッチリスクが低いためフォールバック
-      if (!driveId) {
-        const m = text.match(/drives\/(b![a-zA-Z0-9_-]+)/);
-        if (m) driveId = m[1];
-      }
-      if (driveId && fileId) break;
     }
-    return { driveId, fileId };
+    return { driveId: '', fileId: '' };
+  }
+
+  /**
+   * URL 変化に追随して、前ページの候補・選択結果・availability キャッシュを破棄する。
+   * fetch フックのイベントが navigation 検出より先に届く場合があるため、現在 URL 用として
+   * すでに捕捉した候補だけは残す。
+   */
+  function _syncPageContext() {
+    const currentUrl = location.href;
+    if (_lastSeenUrl && _lastSeenUrl !== currentUrl) {
+      _capturedCandidates = _capturedCandidates.filter((candidate) => candidate.pageUrl === currentUrl);
+      _selectedIds = null;
+      _availabilityCache = null;
+      _availabilityCacheUrl = '';
+    }
+    _lastSeenUrl = currentUrl;
   }
 
   /**
    * main world に fetch フックを一度だけ注入する。
-   * フックは window.fetch をラップして transcripts/items を含む URL から
+   * フックは window.fetch をラップして Drives item URL から
    * Drive ID / File ID を抽出し、CustomEvent 'rfmd:sp-ids' で通知する。
    */
   function _ensureFetchHookInjected() {
@@ -96,27 +108,76 @@ var SharePointExtractor = SharePointExtractor || (() => {
       const detail = /** @type {CustomEvent} */(e).detail || {};
       // main world は untrusted (SharePoint ページ上の任意スクリプトや他拡張が
       // CustomEvent を spoof できる) ため、Graph ID のフォーマットで検証してから受理する。
-      // 「初回のみ代入」ガードは外す: 動画切替 (stream.aspx?id=A→B) でも最新値に追随する必要がある。
-      if (typeof detail.driveId === 'string' && DRIVE_ID_RE.test(detail.driveId)) {
-        _capturedDriveId = detail.driveId;
-      }
-      if (typeof detail.fileId === 'string' && FILE_ID_RE.test(detail.fileId)) {
-        _capturedFileId = detail.fileId;
+      // URL を同時に照合し、遅れて完了した前動画の fetch や別ページ用イベントを混ぜない。
+      if (
+        typeof detail.driveId === 'string' && DRIVE_ID_RE.test(detail.driveId) &&
+        typeof detail.fileId === 'string' && FILE_ID_RE.test(detail.fileId) &&
+        typeof detail.pageUrl === 'string' && detail.pageUrl === location.href
+      ) {
+        _syncPageContext();
+        const existingIndex = _capturedCandidates.findIndex((candidate) =>
+          candidate.pageUrl === detail.pageUrl &&
+          candidate.driveId === detail.driveId &&
+          candidate.fileId === detail.fileId
+        );
+        const candidate = {
+          driveId: detail.driveId,
+          fileId: detail.fileId,
+          pageUrl: detail.pageUrl,
+          transcriptRelated: detail.transcriptRelated === true,
+          sequence: existingIndex >= 0
+            ? _capturedCandidates[existingIndex].sequence
+            : ++_candidateSequence,
+        };
+        if (existingIndex >= 0) {
+          candidate.transcriptRelated = candidate.transcriptRelated ||
+            _capturedCandidates[existingIndex].transcriptRelated;
+          _capturedCandidates.splice(existingIndex, 1);
+        }
+        _capturedCandidates.push(candidate);
+        if (_capturedCandidates.length > MAX_ID_CANDIDATES) {
+          _capturedCandidates.splice(0, _capturedCandidates.length - MAX_ID_CANDIDATES);
+        }
+
+        // 新しい候補が来たら、no-transcript/error を含む古い判定を再評価する。
+        _selectedIds = null;
+        _availabilityCache = null;
+        _availabilityCacheUrl = '';
       }
     });
   }
 
   /**
-   * Drive ID / File ID を取得する。
-   * 1) <script> タグから即時取得 → 2) fetch フック経由のキャッシュ
-   * @returns {{ driveId: string, fileId: string }}
+   * 現在ページ用の Drive ID / File ID 候補を信頼度順に返す。
+   * 1) transcripts を明示する fetch、2) 初期文書の script、3) その他の Drives item fetch。
+   * 初期 script は SPA 遷移後も DOM に残るため、読み込み時と同じ URL でしか使わない。
+   * @returns {Array<{ driveId: string, fileId: string }>}
    */
-  function _getIds() {
-    const fromScripts = _extractIdsFromScripts();
-    return {
-      driveId: fromScripts.driveId || _capturedDriveId,
-      fileId: fromScripts.fileId || _capturedFileId,
+  function _getIdCandidates() {
+    const currentUrl = location.href;
+    const result = [];
+    const add = (candidate) => {
+      if (!candidate?.driveId || !candidate?.fileId) return;
+      if (result.some((item) => item.driveId === candidate.driveId && item.fileId === candidate.fileId)) return;
+      result.push({ driveId: candidate.driveId, fileId: candidate.fileId });
     };
+    const captured = _capturedCandidates.filter((candidate) => candidate.pageUrl === currentUrl);
+
+    captured
+      .filter((candidate) => candidate.transcriptRelated)
+      .sort((a, b) => b.sequence - a.sequence)
+      .forEach(add);
+
+    if (currentUrl === _documentUrl) {
+      add(_extractIdsFromScripts());
+    }
+
+    captured
+      .filter((candidate) => !candidate.transcriptRelated)
+      .sort((a, b) => a.sequence - b.sequence)
+      .forEach(add);
+
+    return result;
   }
 
   /* ── REST API ──────────────────────────────── */
@@ -153,7 +214,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
     if (!_isSharePointOrigin(url)) {
       throw new Error('SharePoint 以外のオリジンへのリクエストは許可されていません');
     }
-    const res = await RfmdFetch.withTimeout(url, {
+    const { response: res, json } = await RfmdFetch.withJson(url, {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     });
@@ -161,8 +222,31 @@ var SharePointExtractor = SharePointExtractor || (() => {
       try { await res.body?.cancel(); } catch { /* 接続解放 */ }
       throw new Error(`metadata fetch failed: ${res.status}`);
     }
-    const json = await res.json();
     return json.media?.transcripts || [];
+  }
+
+  /**
+   * 現在ページの候補を順に検証し、実際にトランスクリプトがある ID 組を確定する。
+   * @returns {Promise<{ ids?: {driveId:string, fileId:string}, transcripts?: Array<{temporaryDownloadUrl:string}>, reason?: string }>}
+   */
+  async function _resolveTranscript() {
+    const candidates = _getIdCandidates();
+    if (candidates.length === 0) return { reason: 'no-ids' };
+
+    let lastError = null;
+    let successfulRequest = false;
+    for (const ids of candidates) {
+      try {
+        const transcripts = await _fetchTranscripts(ids.driveId, ids.fileId);
+        successfulRequest = true;
+        if (transcripts.length > 0) return { ids, transcripts };
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (!successfulRequest && lastError) throw lastError;
+    return { reason: 'no-transcript' };
   }
 
   /**
@@ -210,31 +294,23 @@ var SharePointExtractor = SharePointExtractor || (() => {
     // fetch フックは早めに仕込んでおく（動画再生で fetch される ID を捕捉する）
     _ensureFetchHookInjected();
 
-    // 実ナビゲーション（URL 変化）時のみ fetch フック由来の captured ID をクリアする。
-    // SharePoint Stream は stream.aspx?id=A → ?id=B の SPA 遷移で動画切替が起きるため、
-    // captured ID を残すと別動画のメタデータを誤取得しうる。
-    // ⚠️ _availabilityCacheUrl は no-ids 時に更新されず空のまま進まないため、これを基準にすると
-    //    フック専用ページで毎回「URL 変化」と誤判定し、rfmd:sp-ids で届いた ID を _getIds() が
-    //    使う前に消してしまう（availability が永遠に true にならない）。専用の _lastSeenUrl で判定する。
-    if (_lastSeenUrl && _lastSeenUrl !== location.href) {
-      _capturedDriveId = '';
-      _capturedFileId = '';
-    }
-    _lastSeenUrl = location.href;
+    _syncPageContext();
 
     if (_availabilityCacheUrl === location.href && _availabilityCache !== null) {
       return _availabilityCache;
     }
 
     try {
-      const { driveId, fileId } = _getIds();
-      if (!driveId || !fileId) {
+      const resolved = await _resolveTranscript();
+      if (resolved.reason === 'no-ids') {
         // ID 未取得はキャッシュしない: fetch フック経由で後から ID が届いた場合に
         // MutationObserver の次回コールで再評価できるようにする。
         return { available: false, reason: 'no-ids' };
       }
-      const transcripts = await _fetchTranscripts(driveId, fileId);
-      const result = transcripts.length > 0
+      _selectedIds = resolved.ids
+        ? { ...resolved.ids, pageUrl: location.href }
+        : null;
+      const result = resolved.ids
         ? { available: true }
         : { available: false, reason: 'no-transcript' };
       _availabilityCacheUrl = location.href;
@@ -257,23 +333,28 @@ var SharePointExtractor = SharePointExtractor || (() => {
    *   ダウンロードに使う VTT 本文と推奨ファイル名を返す
    */
   async function downloadTranscript() {
-    // URL が変わっていたら captured ID は古い動画のものなのでクリアして取り直す。
-    // checkAvailability() の URL 検出との二重防御。動画切替後に古い ID で
-    // 別動画の VTT が落ちてくる事故を防ぐ。
-    if (_availabilityCacheUrl !== location.href) {
-      _capturedDriveId = '';
-      _capturedFileId = '';
-      _availabilityCache = null;
-      _availabilityCacheUrl = '';
-      // 新しい URL のメタデータを取得（fetch フックも仕込まれる）
-      await checkAvailability();
-    }
+    _ensureFetchHookInjected();
+    _syncPageContext();
 
-    const { driveId, fileId } = _getIds();
-    if (!driveId || !fileId) {
+    let ids = _selectedIds?.pageUrl === location.href ? _selectedIds : null;
+    let transcripts;
+    if (ids) {
+      transcripts = await _fetchTranscripts(ids.driveId, ids.fileId);
+    } else {
+      const resolved = await _resolveTranscript();
+      if (resolved.reason === 'no-ids') {
+        throw new Error('Drive ID / File ID が見つかりません');
+      }
+      if (!resolved.ids) {
+        throw new Error('トランスクリプトが見つかりません');
+      }
+      ids = { ...resolved.ids, pageUrl: location.href };
+      _selectedIds = ids;
+      transcripts = resolved.transcripts;
+    }
+    if (!ids) {
       throw new Error('Drive ID / File ID が見つかりません');
     }
-    const transcripts = await _fetchTranscripts(driveId, fileId);
     if (transcripts.length === 0) {
       throw new Error('トランスクリプトが見つかりません');
     }
@@ -290,7 +371,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
     if (!_isSharePointOrigin(streamUrl)) {
       throw new Error('VTT ダウンロード URL が SharePoint オリジンではありません');
     }
-    const res = await RfmdFetch.withTimeout(streamUrl, {
+    const { response: res, text } = await RfmdFetch.withText(streamUrl, {
       // _normalizeStreamUrl が元 URL のクエリ文字列を ?is=1&applymediaedits=false で
       // 上書きするため、temporaryDownloadUrl に SAS トークンが含まれていても剥がれる。
       // よって認証は SharePoint のセッション cookie に依存する必要がある。
@@ -310,21 +391,19 @@ var SharePointExtractor = SharePointExtractor || (() => {
     const filename = _filenameFromContentDisposition(
       res.headers.get('Content-Disposition')
     ) || 'transcript.vtt';
-    const text = await res.text();
     return { text, filename };
   }
 
   /**
    * ページ遷移時に呼び出してキャッシュ・捕捉済み ID をリセットする。
-   * 注: main world フック側の closure はここからはクリアしない。フックは「値が変わった時だけ
-   * 更新」する方式で、別動画の再生 fetch が来れば新 ID に追随する。加えて
-   * checkAvailability / downloadTranscript が URL 変化時に captured ID を破棄する二重防御がある。
+   * 注: main world フック側の候補集合はここからはクリアしない。フック自身が location.href の
+   * 変化を検出して候補を入れ替え、content script 側も pageUrl が一致するイベントだけを受理する。
    * （`rfmd:sp-reset` のリスナーは DoS 攻撃面になるため hook 側で意図的に削除済み。
    *   ここから発火しても受け手はいないので dispatch しない。）
    */
   function reset() {
-    _capturedDriveId = '';
-    _capturedFileId = '';
+    _capturedCandidates = [];
+    _selectedIds = null;
     _availabilityCache = null;
     _availabilityCacheUrl = '';
     _lastSeenUrl = '';

@@ -430,10 +430,9 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     if (!_isSameOrigin(url)) {
       throw new Error(`クロスオリジンリクエストは許可されていません: ${new URL(url, location.origin).origin}`);
     }
-    const res = await RfmdFetch.withTimeout(url, { credentials: 'include' });
+    const { response: res, json } = await RfmdFetch.withJson(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    // JSON パース失敗時にも呼び出し元の catch で捕捉できるよう await する
-    return await res.json();
+    return json;
   }
 
   /**
@@ -444,12 +443,12 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   async function _fetchText(url) {
     if (!_isSameOrigin(url)) return null;
     try {
-      const res = await RfmdFetch.withTimeout(url, { credentials: 'include' });
+      const { response: res, text } = await RfmdFetch.withText(url, { credentials: 'include' });
       if (!res.ok) {
         try { await res.body?.cancel(); } catch { /* 接続解放 */ }
         return null;
       }
-      return await res.text();
+      return text;
     } catch {
       return null;
     }
@@ -514,7 +513,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     const url = `${urlInfo.baseUrl}/_apis/git/repositories/${urlInfo.repo}/FileDiffs?api-version=7.2-preview.1`;
     if (!_isSameOrigin(url)) return null;
     try {
-      const res = await RfmdFetch.withTimeout(url, {
+      const { response: res, json: data } = await RfmdFetch.withJson(url, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -528,7 +527,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
         try { await res.body?.cancel(); } catch { /* 接続解放 */ }
         return null;
       }
-      const data = await res.json();
       // レスポンスは FileDiff の配列（1ファイルのみリクエストしたので [0]）
       return data?.[0]?.lineDiffBlocks || null;
     } catch {

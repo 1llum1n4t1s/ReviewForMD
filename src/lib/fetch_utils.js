@@ -13,19 +13,59 @@ var RfmdFetch = RfmdFetch || (() => {
   const TIMEOUT_MS = 30000;
 
   /**
-   * タイムアウト付き fetch ラッパ。
+   * fetch とレスポンス処理を同じタイムアウト内で実行する。
+   * @template T
+   * @param {string} url
+   * @param {RequestInit} options
+   * @param {(response: Response) => Promise<T>} consume
+   * @returns {Promise<T>}
+   */
+  async function _runWithTimeout(url, options, consume) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      return await consume(response);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * ヘッダー取得までをタイムアウト対象にする fetch ラッパ。
+   * 本文も読む場合は withText / withJson を使う。
    * @param {string} url
    * @param {RequestInit} [options]
    * @returns {Promise<Response>}
    */
   async function withTimeout(url, options = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+    return _runWithTimeout(url, options, async (response) => response);
+  }
+
+  /**
+   * 成功レスポンスの text 本文までタイムアウト対象にする。
+   * @param {string} url
+   * @param {RequestInit} [options]
+   * @returns {Promise<{ response: Response, text: string }>}
+   */
+  async function withText(url, options = {}) {
+    return _runWithTimeout(url, options, async (response) => ({
+      response,
+      text: response.ok ? await response.text() : '',
+    }));
+  }
+
+  /**
+   * 成功レスポンスの JSON 本文までタイムアウト対象にする。
+   * @param {string} url
+   * @param {RequestInit} [options]
+   * @returns {Promise<{ response: Response, json: any }>}
+   */
+  async function withJson(url, options = {}) {
+    return _runWithTimeout(url, options, async (response) => ({
+      response,
+      json: response.ok ? await response.json() : null,
+    }));
   }
 
   /**
@@ -58,5 +98,5 @@ var RfmdFetch = RfmdFetch || (() => {
     throw lastErr || new Error('fetch failed');
   }
 
-  return { withTimeout, withRetry, TIMEOUT_MS };
+  return { withTimeout, withText, withJson, withRetry, TIMEOUT_MS };
 })();

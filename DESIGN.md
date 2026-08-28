@@ -39,7 +39,7 @@
 
 ### PR一覧ページ
 
-content scriptがGitHub / DevOpsの各行へ小型ボタンを注入し、対象PRのHTMLまたはAPIを背景取得してMarkdownを直接保存します。CodeCommitはクライアントレンダリングSPAのため、一覧取得を行わず詳細ページだけを対象にします。
+content scriptがGitHub / DevOpsの各行へ小型ボタンを注入し、対象PRのHTMLまたはAPIを背景取得してMarkdownを直接保存します。GitHubのHTML取得は、現在ページや一覧リンクが `/files`、`/commits`、`/checks` 等のサブタブでも本文と会話を欠落させないよう、常に `/{owner}/{repo}/pull/{id}` のConversation URLへ正規化します。CodeCommitはクライアントレンダリングSPAのため、一覧取得を行わず詳細ページだけを対象にします。
 
 ### SharePointトランスクリプト
 

@@ -115,6 +115,8 @@ Two extraction entry points exist:
 - `extractAll()` — PR 詳細ページ用。ライブ DOM + HTML fetch の2ソースを統合
 - `extractByPrUrl(url)` — PR 一覧ページ用。HTML fetch のみ（ライブ DOM なし）。`_fetchHiddenConversations` で pagination を処理
 
+どちらの HTML fetch も `_normalizePrConversationUrl` を通し、`/{owner}/{repo}/pull/{id}` より後ろのサブタブ path、query、hash を除いた Conversation URL を取得する。`/files`、`/commits`、`/checks` 等の HTML は PR 本文や会話全体を含まないため、そのまま取得経路へ渡さない。設計理由は `DESIGN.md` の「PR一覧ページ」を参照する。
+
 ### GitHub hidden conversations loading
 
 `_fetchHiddenConversations(doc, baseUrl)` は DOMParser 生成の doc 内の未読み込みコンテンツを fetch して挿入する。2種類のソースを処理:

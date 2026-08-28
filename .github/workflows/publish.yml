@@ -332,7 +332,7 @@ jobs:
           # になりうる。version conflict / timeout exceeded を検出したら warning 降格して CI を
           # green 化する（pre-flight の取りこぼし救済）。それ以外の exit 1 はそのまま fail。
           set +e
-          npx --yes web-ext@10.3.0 sign \
+          npx --yes web-ext@10.6.0 sign \
             --source-dir=build-firefox \
             --channel=listed \
             --amo-metadata=amo-metadata.json \

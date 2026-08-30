@@ -1,54 +1,64 @@
-# ReviewForMD 拡張機能パッケージ生成スクリプト (Windows PowerShell版)
+# ReviewForMD Chrome / Firefox パッケージ生成スクリプト (Windows PowerShell版)
 
-Write-Host "拡張機能パッケージを生成中..." -ForegroundColor Cyan
-Write-Host ""
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-# スクリプトのディレクトリをカレントディレクトリに設定
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $scriptDir
+$scriptDir = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
+$buildRoot = [IO.Path]::GetFullPath((Join-Path $scriptDir "temp-build"))
+$chromeDir = Join-Path $buildRoot "chrome"
+$firefoxDir = Join-Path $buildRoot "firefox"
+$chromeArchive = Join-Path $scriptDir "ReviewForMD.zip"
+$firefoxArchive = Join-Path $scriptDir "ReviewForMD-firefox.zip"
 
-# 古いZIPファイルを削除
-if (Test-Path "ReviewForMD.zip") {
-    Remove-Item "ReviewForMD.zip" -Force
-    Write-Host "既存のZIPファイルを削除しました" -ForegroundColor Yellow
+if ([IO.Path]::GetDirectoryName($buildRoot) -ne $scriptDir -or [IO.Path]::GetFileName($buildRoot) -ne "temp-build") {
+    throw "一時ディレクトリがリポジトリ直下の temp-build ではありません: $buildRoot"
 }
 
-# 一時ディレクトリを作成
-$tempDir = "temp-build"
-if (Test-Path $tempDir) {
-    Remove-Item $tempDir -Recurse -Force
+Write-Host "Chrome / Firefox 拡張機能パッケージを生成中..." -ForegroundColor Cyan
+
+foreach ($archive in @($chromeArchive, $firefoxArchive)) {
+    if (Test-Path -LiteralPath $archive) {
+        Remove-Item -LiteralPath $archive -Force
+    }
 }
-New-Item -ItemType Directory -Path $tempDir | Out-Null
+if (Test-Path -LiteralPath $buildRoot) {
+    Remove-Item -LiteralPath $buildRoot -Recurse -Force
+}
 
-# 必要なファイルをコピー
-Write-Host "必要なファイルをコピー中..." -ForegroundColor Yellow
+try {
+    foreach ($directory in @($chromeDir, $firefoxDir)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $scriptDir "src") -Destination $directory -Recurse
+        Copy-Item -LiteralPath (Join-Path $scriptDir "icons") -Destination $directory -Recurse
+    }
 
-Copy-Item "manifest.json" -Destination $tempDir
-Copy-Item "src" -Destination $tempDir -Recurse
-Copy-Item "icons" -Destination $tempDir -Recurse
+    Copy-Item -LiteralPath (Join-Path $scriptDir "manifest.json") -Destination (Join-Path $chromeDir "manifest.json")
+    & node (Join-Path $scriptDir "scripts\create-firefox-manifest.mjs") `
+        (Join-Path $scriptDir "manifest.json") `
+        (Join-Path $firefoxDir "manifest.json")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Firefox manifest の生成に失敗しました"
+    }
 
-# 不要なファイル・機密ファイルを除外
-Get-ChildItem -Path $tempDir -Recurse -Include "*.DS_Store", "*.swp", "*~" | Remove-Item -Force
-Get-ChildItem -Path $tempDir -Recurse -Include ".env*", "*.env" | Remove-Item -Force
-Get-ChildItem -Path $tempDir -Recurse -Filter ".*" | Remove-Item -Force -ErrorAction SilentlyContinue
+    foreach ($directory in @($chromeDir, $firefoxDir)) {
+        Get-ChildItem -LiteralPath $directory -Recurse -Force |
+            Where-Object { $_.Name -eq ".DS_Store" -or $_.Name -like ".env*" -or $_.Name -like "*.env" -or $_.Name -like "*.swp" -or $_.Name -like "*~" } |
+            Sort-Object FullName -Descending |
+            Remove-Item -Recurse -Force
+    }
 
-# ZIPファイルを作成
-Write-Host "ZIPファイルを作成中..." -ForegroundColor Cyan
-Compress-Archive -Path "$tempDir/*" -DestinationPath "ReviewForMD.zip" -Force
+    Compress-Archive -Path (Join-Path $chromeDir "*") -DestinationPath $chromeArchive -Force
+    Compress-Archive -Path (Join-Path $firefoxDir "*") -DestinationPath $firefoxArchive -Force
+} finally {
+    if (Test-Path -LiteralPath $buildRoot) {
+        Remove-Item -LiteralPath $buildRoot -Recurse -Force
+    }
+}
 
-# 一時ディレクトリを削除
-Remove-Item $tempDir -Recurse -Force
-
-if (Test-Path "ReviewForMD.zip") {
-    Write-Host "ZIPファイルを作成しました: ReviewForMD.zip" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "ファイルサイズ:" -ForegroundColor Cyan
-    $fileSize = (Get-Item "ReviewForMD.zip").Length
-    $fileSizeMB = [math]::Round($fileSize / 1KB, 2)
-    Write-Host "   $fileSizeMB KB" -ForegroundColor White
-    Write-Host ""
-    Write-Host "パッケージが正常に作成されました!" -ForegroundColor Green
-} else {
-    Write-Host "ZIPファイルの作成に失敗しました" -ForegroundColor Red
-    exit 1
+foreach ($archive in @($chromeArchive, $firefoxArchive)) {
+    if (-not (Test-Path -LiteralPath $archive)) {
+        throw "ZIPファイルの作成に失敗しました: $archive"
+    }
+    $sizeKb = [math]::Round((Get-Item -LiteralPath $archive).Length / 1KB, 2)
+    Write-Host "作成: $archive ($sizeKb KB)" -ForegroundColor Green
 }

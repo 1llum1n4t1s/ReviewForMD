@@ -102,9 +102,10 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 **Firefox**:
 
-1. `about:debugging#/runtime/this-firefox` を開く
-2. **「一時的なアドオンを読み込む」** をクリック
-3. リポジトリの `manifest.json` を選択（一時インストール。Firefox を閉じると消えます）
+1. 下記のパッケージ作成を実行する
+2. `about:debugging#/runtime/this-firefox` を開く
+3. **「一時的なアドオンを読み込む」** をクリック
+4. `ReviewForMD-firefox.zip` を選択（一時インストール。Firefox を閉じると消えます）
 
 ### パッケージ作成
 
@@ -118,7 +119,8 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 ./zip.sh
 ```
 
-`ReviewForMD.zip` が生成されます。
+- `ReviewForMD.zip` — Chrome / Edge用（MV3 `background.service_worker`）
+- `ReviewForMD-firefox.zip` — Firefox用（MV3 `background.scripts`）
 
 ## 技術仕様
 
@@ -222,8 +224,7 @@ PR 本文やコメントの HTML を Markdown に変換する際、以下の要�
 
 ## 動作要件
 
-- Chrome 121 以降（クロスブラウザ対応のため `background` に Firefox 用 `scripts` キーを併記しており、これを無視できるのは Chrome 121 以降のため）
-- Edge（Chromium ベース・121 相当以降）でも動作します
+- Chrome / Edge（Manifest V3対応版）
 - Firefox 128 以降（MV3 + `optional_host_permissions` 対応バージョン）
 
 ## ライセンス

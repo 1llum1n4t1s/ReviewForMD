@@ -1,18 +1,17 @@
 #!/bin/bash
 
-# ReviewForMD 拡張機能パッケージ生成スクリプト
+set -euo pipefail
 
-# スクリプトのディレクトリに移動
-cd "$(dirname "$0")" || exit 1
+# ReviewForMD Chrome / Firefox パッケージ生成スクリプト
+root_dir=$(cd "$(dirname "$0")" && pwd)
+cd "$root_dir"
 
-echo "拡張機能パッケージを生成中..."
-echo ""
+chrome_archive="$root_dir/ReviewForMD.zip"
+firefox_archive="$root_dir/ReviewForMD-firefox.zip"
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/reviewformd-build.XXXXXX")
+trap 'rm -rf -- "$temp_dir"' EXIT
 
-# 古いZIPファイルを削除
-rm -f ./ReviewForMD.zip
-echo "既存のZIPファイルを削除しました"
-
-echo "ZIPファイルを作成中..."
+rm -f -- "$chrome_archive" "$firefox_archive"
 
 # zipコマンドの確認
 if ! command -v zip &> /dev/null; then
@@ -22,23 +21,26 @@ if ! command -v zip &> /dev/null; then
   exit 1
 fi
 
-# 必要なファイルのみをZIPに含める
-zip -r ./ReviewForMD.zip \
+# Chrome は Manifest V3 service worker のみを宣言する正本をそのまま梱包する。
+zip -r "$chrome_archive" \
   manifest.json \
   src/ \
   icons/ \
   -x "*.DS_Store" "*.swp" "*~" \
      "src/**/.env*" "src/**/.*" "src/**/*.env"
 
-if [ $? -eq 0 ]; then
-  echo "ZIPファイルを作成しました: ReviewForMD.zip"
-  echo ""
-  echo "ファイルサイズ:"
-  ls -lh ./ReviewForMD.zip
-  echo ""
-  echo "含まれているファイル:"
-  unzip -l ./ReviewForMD.zip
-else
-  echo "ZIPファイルの作成に失敗しました"
-  exit 1
-fi
+# Firefox は同じ正本から background.scripts 形式の manifest.json を生成する。
+node scripts/create-firefox-manifest.mjs manifest.json "$temp_dir/manifest.json"
+zip -r "$firefox_archive" \
+  src/ \
+  icons/ \
+  -x "*.DS_Store" "*.swp" "*~" \
+     "src/**/.env*" "src/**/.*" "src/**/*.env"
+(
+  cd "$temp_dir"
+  zip "$firefox_archive" manifest.json
+)
+
+unzip -tq "$chrome_archive"
+unzip -tq "$firefox_archive"
+ls -lh "$chrome_archive" "$firefox_archive"

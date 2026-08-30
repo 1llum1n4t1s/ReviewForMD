@@ -11,13 +11,13 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイ�
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
 - **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで選択月まで収集し、Markdown でダウンロード
 
-アプリ表示名は「いろいろMDコピー」。Vanilla JS、ビルドステップなし。日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — 単一の `manifest.json` を共有。Chrome は `browser_specific_settings` を無視、Firefox は `gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions` 対応）+ `data_collection_permissions: {required:["personallyIdentifyingInfo", "authenticationInfo"]}`（お問い合わせフォームで扱うメールアドレスと認証セッションの申告）を読む。`background` は **dual-key**（`service_worker` を Chrome、`scripts: ["src/service_worker.js"]` を Firefox が使う MDN 推奨のクロスブラウザパターン）— `service_worker.js` は `window`/`document` も SW 専用 API も使わないので両コンテキストで動く。⚠️ **Chrome 110-120 は MV3 で `background.scripts` を無視せず拒否する**（121+ で無視に変わった）ため、`minimum_chrome_version: "121"` で 121 未満を弾く（旧 Chrome に壊れたパッケージを配らない）。`web-ext lint` は errors 0（残る warnings は dual-key の informational と data_collection の forward-compat のみ）。CWS/AMO とも同一 zip（manifest + src + icons）で公開する。
+アプリ表示名は「いろいろMDコピー」。Vanilla JS、日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — `manifest.json`はChrome用の正本で、`background.service_worker`だけを持つ。Firefox用manifestは`create-firefox-manifest.mjs`が同じ正本を`background.scripts`形式へ決定的に変換する。Firefoxは`gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions`対応）+ `data_collection_permissions: {required:["personallyIdentifyingInfo", "authenticationInfo", "personalCommunications"]}`を読む。`service_worker.js`は`window`/`document`もSW専用APIも使わないので両コンテキストで動く。Chrome用manifestへ`scripts`を併記しない。
 
 ## Commands
 
-**Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → `ReviewForMD.zip` 生成。Windows から npm 経由で実行したい場合は `npm run zip:win`。
+**Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`npm run zip:win`。
 
-**Release (自動公開):** `release/x.y.z` ブランチを push すると `.github/workflows/publish.yml` が起動し、**2 つの独立ジョブ**で公開する: (1) Chrome Web Store APIへZIPを直接アップロードし、Publish APIで審査提出、(2) Firefox AMO（`web-ext sign --channel listed` で listed 提出）。ジョブは互いに `needs` を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要な GitHub Secrets: CWS は `CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMO は `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMO は初回のみ Developer Hub での add-on 登録が必要**（listing 情報の事前登録。登録後は CI が新バージョンを listed channel に自動提出）。バージョンバンプ＋ストア listing 同期は `/vava` スキル（AMO listing は `vava.config.json` + `webstore/store-listing.firefox.{ja,en}.txt` を参照）。
+**Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。ジョブは互いに`needs`を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
 
 No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 

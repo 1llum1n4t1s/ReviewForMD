@@ -16,7 +16,7 @@
 
 | コンポーネント | 責務と境界 |
 | --- | --- |
-| `manifest.json` | 対応サイト、権限、静的content script、Chrome / Firefoxのbackground実行方式を宣言する。 |
+| `manifest.json` | 対応サイト、権限、静的content script、Chromeのservice workerを宣言する正本。 |
 | `src/popup/` | 全詳細ページ操作の起点。サイト状態と利用可能な操作を表示し、フォーカスが必要なクリップボード書き込みを行う。 |
 | `src/content_script.js` | ページ側の調停役。SPA遷移を検知し、`rfmd:status` / `rfmd:extract` / `rfmd:navigate` を処理する。 |
 | `src/ui/button_injector.js` | popup向け状態取得・抽出実行と、GitHub / DevOpsのPR一覧行ボタンを提供する。 |
@@ -25,7 +25,8 @@
 | `src/service_worker.js` | 対象タブのナビゲーションを監視し、カスタムドメインDevOpsとCodeCommitの必要時だけ動的注入する。 |
 | `src/inject/` | main worldでHistory APIとSharePointのfetchを観測し、isolated worldへ最小限のイベントを渡す。 |
 | `src/shared/` | popup内のKagayoi Support問い合わせフォームとフッターを提供する。抽出機能とはデータを共有しない。 |
-| `zip.ps1` / `zip.sh` | `manifest.json`、`src/`、`icons/`だけを同一配布ZIPへまとめる。 |
+| `scripts/create-firefox-manifest.mjs` | Chrome正本からFirefoxの`background.scripts`形式へmanifestを決定的に変換する。 |
+| `zip.ps1` / `zip.sh` | Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成する。 |
 | `.github/workflows/publish.yml` | `release/x.y.z`を検証・梱包し、CWSとAMOを独立ジョブで提出する。 |
 
 ## 実行モデルとデータフロー
@@ -67,7 +68,7 @@ popupの共通Web Componentが、メール確認コードによる認証後に�
 
 - content scriptは `site_detector` → 共通lib → サイト固有Extractor → `button_injector` → `content_script` の順で読み込む。
 - 詳細ページのUIはpopupへ集約し、ページ埋め込みUIはPR一覧行ボタンとTeams進捗オーバーレイに限定する。
-- `background.service_worker` と `background.scripts` を同じファイルへ向け、ChromeとFirefoxへ同一ZIPを配布する。Chrome 121未満は対象外とする。
+- Chrome正本には`background.service_worker`だけを置き、Firefox成果物だけ`background.scripts`へ変換する。両キーをChrome用manifestへ併記しない。
 - 動的注入は、静的注入で扱えないカスタムドメインDevOpsとCodeCommitのフォールバックだけに限定する。
 - `verifyAzureDevOpsInTab` はservice workerとpopupで意図的に同一定義を持つため、変更時は両方を同期する。
 - TeamsとCodeCommitのサイト固有セレクタは各Extractorの `SELECTORS` を唯一の正本とする。
@@ -81,6 +82,6 @@ popupの共通Web Componentが、メール確認コードによる認証後に�
 
 ## 配布設計
 
-ChromeとFirefoxは単一manifest・単一ZIPを共有します。Chromeはservice worker、Firefoxはbackground scriptsを選択します。この方式はブラウザ別成果物の分岐を避ける代わりに、各ブラウザのlintで未使用キーに関する情報警告が残ります。
+ChromeとFirefoxはソースとバージョンを共有し、background宣言だけを成果物生成時に分けます。Chrome用ZIPは正本`manifest.json`の`service_worker`を保持し、Firefox用ZIPは生成スクリプトが同じファイルを`scripts`配列へ変換します。これによりChrome MV3へFirefox専用キーを渡さず、手編集するmanifestの重複も持ちません。
 
-公開時は最初にSecretsを持たないジョブでZIPを生成し、artifactをCWS / AMOジョブへ渡します。CWSは公式APIへ直接アップロードして審査提出し、AMOは `web-ext sign --channel listed` で提出します。両ジョブを独立させ、一方のストア障害が他方の提出を止めない構成です。
+公開時は最初にSecretsを持たないジョブで2つのZIPを生成し、同じartifact内でCWS / AMOジョブへ渡します。CWSはChrome用ZIPを公式APIへ直接アップロードし、AMOはFirefox用ZIPを展開して`web-ext sign --channel listed`で提出します。両ジョブを独立させ、一方のストア障害が他方の提出を止めない構成です。

@@ -37,7 +37,8 @@ Everything is done from the toolbar popup. The popup detects the current site an
 
 [Privacy]
 
-- No personal information is collected.
-- No data is sent to any external server.
+- Pull request, caption, and chat retrieval and file generation are processed in the browser.
+- Only when you submit the optional contact form are your email address, optional name, inquiry content, verification code, and related support details sent to Kagayoi Support.
+- No data is collected or transmitted for advertising, analytics, or telemetry.
 - It only reads the DOM / official APIs of the page you are viewing, writes to the clipboard and downloads files.
 - All code is contained within the extension package.

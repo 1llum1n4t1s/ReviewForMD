@@ -15,6 +15,8 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイ�
 
 ## Commands
 
+**Dependencies / shared support UI:** `pnpm install --frozen-lockfile` で依存を復元する。`src/shared/` は `kagayoi-support-extension` から配布物へ同梱する追跡済みコピーなので、同パッケージの更新後とパッケージ作成前に `pnpm sync:support` を実行し、JSとCSSを一式で同期する。共通部品の実装変更はパッケージ側を正本とし、このリポジトリのコピーへ直接加えない。
+
 **Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`npm run zip:win`。
 
 **Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。ジョブは互いに`needs`を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
@@ -28,7 +30,7 @@ No tests, no linter. Install via `chrome://extensions` → Load unpacked → リ
 - `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`)
 - `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `codecommit_extractor`, `sharepoint_extractor`, `teams_extractor`)
 - `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
-- `src/shared/` — Kagayoi Support の問い合わせフォームとフッターを提供する共通 Web Components
+- `src/shared/` — `kagayoi-support-extension` から同期した、問い合わせフォームとフッターの配布時コピー
 - `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
 - `src/popup/` — ツールバーアイコンのポップアップ UI
 - `src/content_script.js` / `src/service_worker.js` — エントリポイント

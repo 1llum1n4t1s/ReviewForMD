@@ -485,11 +485,16 @@ var GitHubExtractor = GitHubExtractor || (() => {
     const doc = parser.parseFromString(html, 'text/html');
     html = null; // 大きな HTML 文字列の保持を早めに切る
 
+    // DOMParser 生成 document では getTitle() が PR 固有セレクタだけを使う。
+    // タイトルが無い 200 応答はログイン画面や soft 404 とみなし、成功ファイルを作らない。
+    const title = getTitle(doc);
+    if (!title) {
+      throw new Error('GitHub PR ページを確認できませんでした。ログイン状態を確認してください。');
+    }
+
     // hidden conversations（turbo-frame）の追加読み込み
     await _fetchHiddenConversations(doc, normalizedPrUrl);
 
-    // タイトル抽出（getTitle に DOMParser 生成 doc を渡して共通処理）
-    const title = getTitle(doc) || 'Pull Request';
     const prNum = (normalizedPrUrl.match(/\/pull\/(\d+)/) || [])[1] || '';
 
     // 本文抽出（getBody に DOMParser 生成 doc を渡して共通処理）

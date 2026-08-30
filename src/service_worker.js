@@ -294,7 +294,7 @@ const NAV_URL_FILTERS = {
   url: [
     { urlMatches: '.*/pull/\\d+.*' },                  // GitHub PR 詳細
     { urlMatches: '.*/_git/[^/]+/pull[Rr]equest/\\d+.*' }, // Azure DevOps PR 詳細
-    { urlMatches: '.*/pulls(\\?.*)?$' },                // GitHub PR 一覧
+    { urlMatches: '.*/pulls(/.*|\\?.*)?$' },            // GitHub PR 一覧
     { urlMatches: '.*/_git/[^/]+/pullrequests(\\?.*)?$' }, // Azure DevOps PR 一覧
     { urlMatches: '.*/codesuite/codecommit/repositories/[^/]+/pull-requests/\\d+.*' }, // AWS CodeCommit PR 詳細
     { urlMatches: '.*/[Ss]tream\\.aspx.*' },            // SharePoint Stream

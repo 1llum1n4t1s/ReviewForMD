@@ -226,6 +226,16 @@
       if (_reinitTimer) clearTimeout(_reinitTimer);
       _reinitTimer = setTimeout(() => {
         _reinitTimer = null;
+        // Teams は同じ URL のまま pushState/replaceState で会話が切り替わる場合がある。
+        // ナビゲーション通知を受けた時点で旧会話の収集結果とオーバーレイを破棄し、
+        // 次の init() が同じ siteType を返しても状態を持ち越さない。
+        if (_currentSiteType === SiteDetector.SiteType.TEAMS_CHAT) {
+          try {
+            if (typeof TeamsExtractor !== 'undefined' && TeamsExtractor.reset) {
+              TeamsExtractor.reset();
+            }
+          } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
+        }
         _retries = 0;
         init();
       }, NAV_REINIT_DEBOUNCE_MS);

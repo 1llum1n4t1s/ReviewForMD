@@ -1,12 +1,18 @@
 {
   "name": "review-for-md",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "private": true,
   "description": "プルリクのタイトル・本文・レビューコメントをMarkdownでダウンロードするChrome拡張",
   "scripts": {
+    "sync:support": "node --preserve-symlinks-main ./node_modules/kagayoi-support-extension/bin/kagayoi-support-sync.mjs",
+    "prebuild": "pnpm sync:support",
     "zip:win": "pwsh -NoProfile -ExecutionPolicy Bypass -File zip.ps1",
     "zip:nix": "bash zip.sh",
-    "zip": "npm run zip:nix"
+    "zip": "npm run zip:nix",
+    "manifest:firefox": "node scripts/create-firefox-manifest.mjs manifest.json build-firefox/manifest.json"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "kagayoi-support-extension": "1.0.2"
+  }
 }

@@ -26,8 +26,6 @@ webstore/pnpm-workspace.yaml
 *~
 Thumbs.db
 
-# Serena MCP cache
-.serena/
 
 # wrangler のローカル状態キャッシュ (web/ のデプロイ時に生成される)
 web/.wrangler/

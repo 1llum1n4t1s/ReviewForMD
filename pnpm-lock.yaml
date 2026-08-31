@@ -9,16 +9,16 @@ importers:
   .:
     devDependencies:
       kagayoi-support-extension:
-        specifier: 1.0.2
-        version: 1.0.2
+        specifier: 1.0.5
+        version: 1.0.5
 
 packages:
 
-  kagayoi-support-extension@1.0.2:
-    resolution: {integrity: sha512-FjbOk14S3mEAStIdO5XCyUURXbQeDKMXSJc/806nZ5NirmHjoDc6gWNyfbYg63Fx9W68RofKoVh91P+CfW2ujA==}
+  kagayoi-support-extension@1.0.5:
+    resolution: {integrity: sha512-kUFtbATu2h7cE/9IPV16bC48ADTV7etudKx+wDFwNYmOEUsobsKymD+UhlMbG5yiwdWpxIYYp/FRNy6NGa0iKA==}
     engines: {node: '>=22'}
     hasBin: true
 
 snapshots:
 
-  kagayoi-support-extension@1.0.2: {}
+  kagayoi-support-extension@1.0.5: {}

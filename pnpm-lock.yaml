@@ -8,17 +8,17 @@ importers:
 
   .:
     devDependencies:
-      kagayoi-support-extension:
-        specifier: 1.0.5
-        version: 1.0.5
+      '@kagayoi/support-extension':
+        specifier: 1.0.6
+        version: 1.0.6
 
 packages:
 
-  kagayoi-support-extension@1.0.5:
-    resolution: {integrity: sha512-kUFtbATu2h7cE/9IPV16bC48ADTV7etudKx+wDFwNYmOEUsobsKymD+UhlMbG5yiwdWpxIYYp/FRNy6NGa0iKA==}
+  '@kagayoi/support-extension@1.0.6':
+    resolution: {integrity: sha512-nxQqhZWbfXDrmjDg8dKk4/RU7IUXyTkQ7XlcKwKNLR+srCX+KzsMEPETOsa35vDL4cQ4fWqrxl6rW8ddE/sYDQ==}
     engines: {node: '>=22'}
     hasBin: true
 
 snapshots:
 
-  kagayoi-support-extension@1.0.5: {}
+  '@kagayoi/support-extension@1.0.6': {}

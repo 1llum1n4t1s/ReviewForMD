@@ -15,7 +15,7 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイ�
 
 ## Commands
 
-**Dependencies / shared support UI:** `pnpm install --frozen-lockfile` で依存を復元する。`src/shared/` は `kagayoi-support-extension` から配布物へ同梱する追跡済みコピーなので、同パッケージの更新後とパッケージ作成前に `pnpm sync:support` を実行し、JSとCSSを一式で同期する。共通部品の実装変更はパッケージ側を正本とし、このリポジトリのコピーへ直接加えない。
+**Dependencies / shared support UI:** `pnpm install --frozen-lockfile` で依存を復元する。`src/shared/` は `@kagayoi/support-extension` から配布物へ同梱する追跡済みコピーなので、同パッケージの更新後とパッケージ作成前に `pnpm sync:support` を実行し、JSとCSSを一式で同期する。共通部品の実装変更はパッケージ側を正本とし、このリポジトリのコピーへ直接加えない。
 
 **Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`npm run zip:win`。
 
@@ -30,7 +30,7 @@ No tests, no linter. Install via `chrome://extensions` → Load unpacked → リ
 - `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`)
 - `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `codecommit_extractor`, `sharepoint_extractor`, `teams_extractor`)
 - `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
-- `src/shared/` — `kagayoi-support-extension` から同期した、問い合わせフォームとフッターの配布時コピー
+- `src/shared/` — `@kagayoi/support-extension` から同期した、問い合わせフォームとフッターの配布時コピー
 - `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
 - `src/popup/` — ツールバーアイコンのポップアップ UI
 - `src/content_script.js` / `src/service_worker.js` — エントリポイント

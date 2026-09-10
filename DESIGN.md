@@ -24,7 +24,7 @@
 | `src/extractors/` | サイト固有のDOM・HTML・API差異を吸収し、MarkdownまたはVTTへ正規化する。 |
 | `src/service_worker.js` | 対象タブのナビゲーションを監視し、カスタムドメインDevOpsとCodeCommitの必要時だけ動的注入する。 |
 | `src/inject/` | main worldでHistory APIとSharePointのfetchを観測し、isolated worldへ最小限のイベントを渡す。 |
-| `src/shared/` | `kagayoi-support-extension` から同期したJS/CSSの配布時コピーとして、popup内の問い合わせフォームとフッターを提供する。抽出機能とはデータを共有しない。 |
+| `src/shared/` | `@kagayoi/support-extension` から同期したJS/CSSの配布時コピーとして、popup内の問い合わせフォームとフッターを提供する。抽出機能とはデータを共有しない。 |
 | `scripts/create-firefox-manifest.mjs` | Chrome正本からFirefoxの`background.scripts`形式へmanifestを決定的に変換する。 |
 | `zip.ps1` / `zip.sh` | Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成する。 |
 | `.github/workflows/publish.yml` | `release/x.y.z`を検証・梱包し、CWSとAMOを独立ジョブで提出する。 |
@@ -54,7 +54,7 @@ content scriptがGitHub / DevOpsの各行へ小型ボタンを注入し、対象
 
 popupの共通Web Componentが、メール確認コードによる認証後に問い合わせをKagayoi Supportへ送信します。認証済みセッションのアクセストークン、メールアドレス、有効期限は、フォームを利用した場合だけ拡張機能の `localStorage` に保存します。
 
-問い合わせUIの実装正本は `kagayoi-support-extension` パッケージです。拡張機能のMV3配布物がリモートJavaScriptへ依存しないよう、`pnpm sync:support` でJSとCSSを `src/shared/` へ一括同期し、ZIPへ同梱します。
+問い合わせUIの実装正本は `@kagayoi/support-extension` パッケージです。拡張機能のMV3配布物がリモートJavaScriptへ依存しないよう、`pnpm sync:support` でJSとCSSを `src/shared/` へ一括同期し、ZIPへ同梱します。
 
 ## サイト別の取得戦略
 

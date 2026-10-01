@@ -4,7 +4,7 @@
 
 - **PR レビュー**: GitHub / Azure DevOps（カスタムドメイン含む）/ AWS CodeCommit の PR タイトル・本文・レビューコメントを Markdown でダウンロード
 - **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから字幕（VTT）をダウンロード
-- **Teams チャット**: Microsoft Teams のチャット/チャネルを自動スクロールで収集し、Markdown でダウンロード（収集する月を選べて、進捗を見ながらいつでも中止できます）
+- **Teams チャット**: Microsoft Teams のチャット/チャネルを自動スクロールで収集し、Markdown でダウンロード（収集開始月を選べて、進捗を見ながらいつでも中止できます）
 
 ## 機能
 
@@ -14,10 +14,10 @@
 
 PR の詳細ページを開いてツールバーアイコンをクリックすると、ポップアップに次のボタンが出ます。
 
-- **「MDでダウンロード」** — タイトル・本文・全レビューコメント（投稿者・日時・対象ファイル・差分コード付き）を 1 つの `.md` ファイルとして保存。ファイル名には PR タイトルが自動で使われます。
+- **「MDでダウンロード」** — タイトル・本文・取得できたレビューコメント（投稿者・日時、取得できる場合は対象ファイル・差分コード付き）を 1 つの `.md` ファイルとして保存。ファイル名には PR タイトルが自動で使われます。
 - **「MDコピー」** — 同じ内容を Markdown テキストとしてクリップボードにコピー。
 
-> **AWS CodeCommit について**: AWS マネジメントコンソールの PR 詳細ページに対応しています。CodeCommit は **詳細ページ専用**（PR 一覧ページの行ダウンロードボタンはありません）。コンソールがクライアントレンダリングの SPA のため、PR を開かずに取得する仕組みが使えないためです。
+> **AWS CodeCommit について**: AWS マネジメントコンソールの PR 詳細ページに対応しています。CodeCommit は **詳細ページ専用**（PR 一覧ページの行ダウンロードボタンはありません）。画面構成によって本文・コメントが取得できない場合があるため、保存内容を確認してください。
 
 #### PR 一覧ページ対応（GitHub / Azure DevOps）
 
@@ -32,7 +32,7 @@ Teams 会議の録画動画ページ（`*.sharepoint.com/.../stream.aspx`）を�
 Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.microsoft`）のチャット・チャネルを開いてアイコンをクリックすると、**収集開始月**（今月／先月から／2か月前から／3か月前から）を選んでから次のボタンを押せます。指定した月の月初から現在までが対象です。例えば 5/10 に「今月」を選ぶと 5/1〜5/10、「3か月前から」を選ぶと 2/1〜5/10 を収集します。参加直後などで履歴が1か月分しかない場合も、取得できる分を保存します。
 
 - **「MDでダウンロード」** — 選んだ月から現在までのチャットを自動スクロール収集し、送信者・日時・本文・リアクション・添付リンクを `チャット名_yyyyMMdd.md` として保存（日付は保存日のローカル日付）。
-- **「MDコピー」** — 同じ内容をクリップボードにコピー。
+- **「MDコピー」** — 収集後、ページ右下のパネルにある **「クリップボードにコピー」** を押してコピー。
 
 > 収集中はページ右下に進捗パネルが出て、そこで **「ここまでで保存」**（それまでの分を書き出し）や **「中止」** がいつでも行えます。収集はページ側で動くので、**ポップアップは閉じても大丈夫**です（長い会話でも途中で止められます）。
 
@@ -40,7 +40,7 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 ### お問い合わせ
 
-ツールバーポップアップ下部の **「お問い合わせ」** から、Kagayoi Support へ不具合や要望を送信できます。初回のみメールで届く確認コードによる本人確認が必要です。送信内容と認証情報の取り扱いは [プライバシーポリシー](docs/privacy-policy.md) をご確認ください。
+ツールバーポップアップ下部の **「お問い合わせ」** から、Kagayoi Support へ不具合や要望を送信できます。メールで届く確認コードによる本人確認が必要です。送信内容と認証情報の取り扱いは [プライバシーポリシー](docs/privacy-policy.md) をご確認ください。
 
 ### 出力例
 
@@ -80,7 +80,7 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 ### カスタムドメインの Azure DevOps 対応
 
-企業独自ドメインで運用されている Azure DevOps も検出できます。URL パターン（`/_git/{repo}/pullrequest/{id}`）に加え、DOM 構造のマルチシグナル判定（`bolt-*` / `repos-*` CSS クラス等）を組み合わせることで、ドメインに依存しない判定を行います。
+企業独自ドメインの Azure DevOps にも対応しています。初回はPRページで拡張機能のアイコンを開き、**「このサイトでの動作を許可する」** を押して、対象サイトへのアクセスを許可してください。
 
 ## インストール
 
@@ -96,7 +96,7 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 **Chrome / Edge**:
 
-1. このリポジトリをクローンまたはダウンロード
+1. このリポジトリをクローンまたはダウンロードし、[ローカル準備](AGENTS.md#commands) に従って依存復元・共通UI同期を行う
 2. Chrome で `chrome://extensions` を開く
 3. 右上の **「デベロッパーモード」** を有効化
 4. **「パッケージ化されていない拡張機能を読み込む」** をクリック
@@ -104,134 +104,30 @@ Microsoft Teams（`teams.microsoft.com` / `teams.live.com` / `teams.cloud.micros
 
 **Firefox**:
 
-1. 下記のパッケージ作成を実行する
+1. [パッケージ作成手順](AGENTS.md#commands) に従ってFirefox用ZIPを作成する
 2. `about:debugging#/runtime/this-firefox` を開く
 3. **「一時的なアドオンを読み込む」** をクリック
 4. `ReviewForMD-firefox.zip` を選択（一時インストール。Firefox を閉じると消えます）
-
-### パッケージ作成
-
-```powershell
-# Windows (PowerShell)
-.\zip.ps1
-```
-
-```bash
-# macOS / Linux
-./zip.sh
-```
-
-- `ReviewForMD.zip` — Chrome / Edge用（MV3 `background.service_worker`）
-- `ReviewForMD-firefox.zip` — Firefox用（MV3 `background.scripts`）
-
-## 技術仕様
-
-### アーキテクチャ
-
-```
-src/
-├── content_script.js          # エントリポイント（SPA ナビゲーション対応）
-├── service_worker.js          # webNavigation 監視・動的注入
-├── lib/
-│   ├── site_detector.js       # GitHub / Azure DevOps / CodeCommit / SharePoint / Teams 判定
-│   ├── markdown_builder.js    # HTML → Markdown 変換・テキスト組み立て
-│   ├── clipboard.js           # クリップボードコピー・ファイル/Blob ダウンロード
-│   └── fetch_utils.js         # タイムアウト付き fetch（全 Extractor 共有）
-├── extractors/
-│   ├── github_extractor.js    # GitHub PR データ抽出
-│   ├── devops_extractor.js    # Azure DevOps PR データ抽出（REST API フォールバック付き）
-│   ├── codecommit_extractor.js # AWS CodeCommit PR データ抽出（DOM ベース・詳細ページ専用）
-│   ├── sharepoint_extractor.js # SharePoint Stream トランスクリプト(VTT)取得
-│   └── teams_extractor.js     # Teams チャット抽出（自動スクロール・月範囲収集）
-├── inject/
-│   ├── navigation_hook.js     # main world 注入（SPA 遷移検出用）
-│   └── sharepoint_fetch_hook.js # main world 注入（fetch をフックして Drive/File ID を捕捉）
-├── shared/
-│   ├── kagayoi-support-popup.js # Kagayoi Support 問い合わせフォーム
-│   └── kagayoi-support-footer.js # 問い合わせ・評価導線の共通フッター
-├── ui/
-│   ├── button_injector.js     # popupアクション実行・PR一覧行ボタン注入
-│   └── styles.css             # PR一覧行ボタンのスタイル・ダークモード対応
-└── popup/
-    ├── popup.html             # ポップアップ UI
-    └── popup.js               # サイト状態取得・アクション表示と実行
-```
-
-### データフロー
-
-操作の起点はツールバーアイコンのポップアップです。詳細ページのアクションは
-ポップアップ↔コンテンツスクリプト間のメッセージで実行します。
-
-```
-詳細ページ（GitHub/DevOps/CodeCommit/SharePoint/Teams）:
-  ポップアップ起動 → rfmd:status でサイト状態を取得 → サイトに合うボタンを描画
-  ボタンクリック → rfmd:extract { kind, mode }
-    → コンテンツスクリプトが Extractor で抽出
-        ダウンロード: その場でファイル保存
-        コピー:      文字列を返し、ポップアップ側でクリップボードへ書き込み
-
-PR 一覧ページ（ページ側に残す行ボタン）:
-  行ボタンクリック → Extractor.extractByPrUrl(url)  ※バックグラウンドで PR ページを fetch
-    → { title, markdown } → ファイル保存
-```
-
-### サイト検出ロジック
-
-| 判定対象 | 方法 |
-|---|---|
-| GitHub | ドメイン (`github.com`) + URL パス (`/pull/\d+` or `/pulls`) |
-| Azure DevOps（既知ドメイン） | ドメイン (`dev.azure.com`, `*.visualstudio.com`) + URL パス |
-| Azure DevOps（カスタムドメイン） | URL パス + DOM シグナル 2 つ以上一致 |
-| AWS CodeCommit | コンソールホスト (`*.console.aws.amazon.com`) + URL パス (`/codesuite/codecommit/.../pull-requests/{id}`) |
-| SharePoint Stream | ドメイン (`*.sharepoint.com`) + URL パス (`stream.aspx`) |
-| Microsoft Teams チャット | ドメイン (Teams 系) + メッセージリストの DOM シグナル |
-
-### SPA ナビゲーション対応
-
-GitHub（turbo）や Azure DevOps / Teams（SPA）のクライアントサイドルーティングに対応するため、以下の 5 つの方法でページ遷移を検出します（主に PR 一覧ページの行ボタン再注入に使用）。
-
-1. **Service Worker** — `webNavigation.onHistoryStateUpdated` API
-2. **Main World Script** — `history.pushState` / `replaceState` のフック → カスタムイベント
-3. **popstate** イベント（ブラウザの戻る/進む）
-4. **turbo:load** イベント（GitHub 固有）
-5. **hashchange** イベント（Teams クラシックのハッシュルーティング）
-
-### Azure DevOps データ取得戦略（3 階層）
-
-1. **DOM 抽出** — レンダリング済みコメントを直接パース
-2. **REST API フォールバック** — DOM にコメントがない場合、`/_apis/git/` エンドポイントから取得
-3. **Items API 補完** — diff 情報がないスレッドに対し、FileDiffs API でソースコード行を復元
-
-### 必要なパーミッション
-
-| パーミッション | 用途 |
-|---|---|
-| `activeTab` | 現在のタブのコンテンツにアクセス |
-| `scripting` | カスタムドメインの DevOps に動的スクリプト注入 |
-| `webNavigation` | SPA ナビゲーション（`history.pushState`）の検出 |
-| `clipboardWrite` | ポップアップの「コピー」で Markdown / VTT をクリップボードへ書き込み |
-
-### HTML → Markdown 変換
-
-PR 本文やコメントの HTML を Markdown に変換する際、以下の要素を正しく変換します。
-
-- 見出し（`h1`〜`h6` → `#`〜`######`）
-- 太字 / 斜体 / 取り消し線
-- インラインコード / コードブロック（言語指定付き）
-- リンク / 画像（data-URI → プレースホルダ）
-- 順序付き・順序なしリスト（ネスト対応）
-- テーブル
-- 引用（`blockquote` → `>`）
-- チェックボックス
 
 ## 動作要件
 
 - Chrome / Edge（Manifest V3対応版）
 - Firefox 128 以降（MV3 + `optional_host_permissions` 対応バージョン）
 
-## ストア提出の設定
+## 権限とデータの取り扱い
 
-`release/x.y.z` の配信workflowはCWS API V2を使用します。既存のOAuth Secretsと `CWS_EXTENSION_ID` に加え、Developer Dashboardのアカウントページにあるpublisher IDを、GitHub Actions variable `CWS_PUBLISHER_ID`（または同名secret）へ設定してください。Firefox AMOへの提出処理にはNode 24を使用します。配信構成の詳細は [DESIGN.md](DESIGN.md) を参照してください。
+対象サイトの内容取得、ページ遷移への対応、コピーのためにブラウザの権限を使います。抽出した内容はブラウザ内で処理し、ファイルまたはクリップボードへ出力します。お問い合わせは利用者の操作で別途送信します。詳細は [プライバシーポリシー](docs/privacy-policy.md) を参照してください。
+
+## 困ったとき
+
+- 拡張更新後に反応しない場合は、対象ページを再読み込みしてからアイコンを開き直してください。
+- SharePointで取得に失敗した場合は、ログイン状態と録画へのアクセス権を確認し、再ログイン・ページ再読み込み後に再実行してください。
+- 抽出中にPR・録画・Teamsの会話を切り替えた場合は、現在のページで再実行してください。Teamsの切替時は収集中のデータを破棄します。
+- Teamsで対象期間のメッセージがない場合は、収集開始月を前にしてください。メッセージが表示されているのに抽出できない場合は、画面構成の変更が考えられます。「お問い合わせ」から状況をお知らせください。
+
+## 開発・配布の情報
+
+ローカル準備、パッケージ作成、検証、ストア提出設定は [AGENTS.md](AGENTS.md#commands)、内部構造と設計判断は [DESIGN.md](DESIGN.md) を参照してください。
 
 ## ライセンス
 

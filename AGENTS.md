@@ -1,17 +1,8 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code and other coding agents working in this repository.
+このリポジトリの作業規約、必須コマンド、検証手順、変更時の制約を扱う。利用方法は [README.md](README.md)、構造・責務・データフロー・設計判断は [DESIGN.md](DESIGN.md) を正本とする。構造や責務を変更するときは、実装と同じ変更内で設計書も更新する。
 
-利用方法は [README.md](README.md)、現在の構造・責務・データフロー・設計判断は [DESIGN.md](DESIGN.md) を正本とする。このファイルは作業規約、必須コマンド、変更時に守る制約を扱う。構造や責務を変更するときは、実装と同じ変更内で `DESIGN.md` も更新する。
-
-## Overview
-
-Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイルでダウンロード:
-- **PR レビュー**: GitHub・Azure DevOps（カスタムドメイン含む）・AWS CodeCommit の PR タイトル/本文/レビューコメントを Markdown でダウンロード（またはコピー）
-- **会議トランスクリプト**: SharePoint Stream の Teams 会議録画ページから VTT 字幕ファイルをダウンロード
-- **Teams チャット**: Microsoft Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット/チャネルを自動スクロールで選択月まで収集し、Markdown でダウンロード
-
-アプリ表示名は「いろいろMDコピー」。Vanilla JS、日本語 UI/コメント。**Chrome / Firefox(MV3) 両対応** — `manifest.json`はChrome用の正本で、`background.service_worker`だけを持つ。Firefox用manifestは`create-firefox-manifest.mjs`が同じ正本を`background.scripts`形式へ決定的に変換する。Firefoxは`gecko.id` + `strict_min_version: 128.0`（`optional_host_permissions`対応）+ `data_collection_permissions: {required:["personallyIdentifyingInfo", "authenticationInfo", "personalCommunications"]}`を読む。`service_worker.js`は`window`/`document`もSW専用APIも使わないので両コンテキストで動く。Chrome用manifestへ`scripts`を併記しない。
+「いろいろMDコピー」はVanilla JSのChrome / Firefox Manifest V3拡張。UI・コメント・Markdownのラベルは日本語を使う。
 
 ## Commands
 
@@ -19,209 +10,52 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイ�
 
 **Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`npm run zip:win`。
 
-**Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。ジョブは互いに`needs`を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
+**Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。両提出ジョブは共通の`package`ジョブだけに依存し、互いには依存しないので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
 
-CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。公開済み・審査提出済みrevisionでversion重複を判定し、非同期uploadは完了後にだけpublishする。AMO jobのNodeは24。
+CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。提出状態の判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。AMO jobのNodeは24。
 
-No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
+ローカルに自動テスト・専用リンタはない。配信CIは `.github/workflows/publish.yml` にある。実機読み込みは [README.md](README.md#インストール) を参照する。
 
-**構文サニティチェック（テスト代替）:** テスト/リンタ/CI が無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
+**構文サニティチェック（テスト代替）:** 自動テスト・専用リンタが無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
 
-## Repo layout
+Firefox manifest生成だけを確認する場合は `pnpm manifest:firefox` を使う（出力: `build-firefox/manifest.json`）。梱包スクリプト自体は依存復元・Support同期を実行しないため、上記の準備を先に行う。Windows梱包は `temp-build/package` だけを作成・清掃し、`temp-build` 配下の他の成果物には触れない。
 
-- `src/lib/` — サイト非依存のユーティリティ (`site_detector`, `markdown_builder`, `clipboard`, `fetch_utils`)
-- `src/extractors/` — サイト別抽出ロジック (`github_extractor`, `devops_extractor`, `codecommit_extractor`, `sharepoint_extractor`, `teams_extractor`)
-- `src/inject/` — main world に注入するフック (`navigation_hook`, `sharepoint_fetch_hook`) — `web_accessible_resources` に登録
-- `src/shared/` — `@kagayoi/support-extension` から同期した、問い合わせフォームとフッターの配布時コピー
-- `src/ui/` — ボタン注入 (`button_injector.js`) と CSS (`styles.css`)
-- `src/popup/` — ツールバーアイコンのポップアップ UI
-- `src/content_script.js` / `src/service_worker.js` — エントリポイント
-- `docs/` — Chrome Web Store 審査用のプライバシーポリシーなど
-- `webstore/` — CWS 掲載用のアセット
+変更した機能は実機で保存・コピーまで確認する。抽出・非同期処理の変更では、抽出中のSPA遷移、通信失敗と再試行、一覧ボタンの連打、Teamsの部分保存・中止・0件を該当経路で確認し、再現手順と出力を検証結果として残す。
 
-## Architecture
+## 変更時の制約
 
-### Data flow
+### 読み込み・サイト判定
 
-UI は **popup に集約**されている。詳細ページ（GitHub/DevOps PR・SharePoint・Teams）のアクションは
-すべて popup から実行する。ページ側に残る埋め込みボタンは **PR 一覧の各行ダウンロードのみ**。
+- IIFEで公開APIをグローバルへ公開し、非公開関数は `_` を接頭辞にする。新しい共有グローバルには `Rfmd` を付け、ブラウザ組み込み名との衝突を避ける。
+- 静的・動的注入とも、`site_detector` → `markdown_builder` → `clipboard` → `fetch_utils` → サイト固有Extractor → `button_injector` → `content_script` の依存順を維持する。
+- Chrome用 `manifest.json` は `background.service_worker` のみを宣言する。Firefox用は `scripts/create-firefox-manifest.mjs` で生成し、正本へ `background.scripts` を併記しない。既存のgecko ID、最低対応版128.0、データ収集権限宣言を維持する。background処理はFirefoxのscriptsでも動作するよう、背景コンテキストでwindow/documentやSW専用APIへ依存させない（executeScriptでページへ渡す関数は除く）。
+- service workerの動的注入はカスタムドメインDevOpsとCodeCommitのフォールバックに限定する。`extractorFileForUrl` でExtractorを1本だけ選び、GitHub・SharePoint・Teamsは静的注入に委ねる。
+- `verifyAzureDevOpsInTab` は `src/service_worker.js` を正として変更し、`src/popup/popup.js` へ同じ変更を転記する。シグナル1つで許可する判定を厳しくする前に、オンプレDevOpsへの影響を確認する。検出との閾値の違いは [DESIGN.md](DESIGN.md#サイト判定とspa遷移) を参照する。
+- TeamsとCodeCommitのサイト固有セレクタは各Extractorの `SELECTORS` で保守する。Teams検出は `TeamsExtractor.hasChatDom()` へ委譲し、別のセレクタ体系を増やさない。CodeCommit本文・コメントは実PRのDOMに基づいて調整する。
 
-```
-content_script.js (entry, IIFE)
-  → SiteDetector.detect() / detectList()
-  → PR 一覧ページのみ ButtonInjector.injectList()（行ボタン）+ MutationObserver
-  → SPA nav listeners (5 methods)
-  → chrome.runtime.onMessage: rfmd:status / rfmd:extract / rfmd:navigate
+### 抽出・出力
 
-詳細ページ（popup 主導）:
-  popup 起動 → tabs.sendMessage('rfmd:status')
-    → ButtonInjector.getStatus() が { siteType, pageType, available, title } を返す
-    → popup がサイトに合うボタンを描画
-  ボタンクリック → tabs.sendMessage('rfmd:extract', { kind, mode })
-    → ButtonInjector.runAction() が Extractor で抽出
-        mode='download' → content script 側で RfmdClipboard.download/downloadBlob（{ok} を返す）
-        mode='copy'     → 文字列を { ok, text } で返し popup 側が navigator.clipboard で書き込み
-                          （clipboard はフォーカス必須なので popup 側で実行）
+- PR詳細とVTTの非同期処理では開始URLを照合し、保存・コピー直前にはアクション世代も照合する。SharePointのID・キャッシュ更新もURLと世代が一致する処理だけに許可する。
+- GitHubのHTML取得は `_normalizePrConversationUrl` を通す。`_fetchHiddenConversations` のpagination削除対象はform自体に限定し、既存スレッドが同居する親DIVを削除しない。
+- DevOps API URLは `_parseDevOpsUrl` から組み立て、クエリ値には `encodeURIComponent` を使う（`encodeURI` は `&`、`?`、`#`、`+` を保護しない）。差分照合の一意性・メモリ境界は [DESIGN.md](DESIGN.md#差分とmarkdownの整合性) を維持する。
+- レスポンス本文を読む共有fetchは `RfmdFetch.withText` / `withJson` を使い、本文消費まで30秒の中止制御を維持する。
+- SharePointのDrive ID / File IDは同じURL由来の完全な組だけを使う。ページに結び付けた候補を維持し、SPA切替後に旧ページ候補や初期scriptを再利用しない。現在ページのfetchイベントがnavigation通知より先に来ても、その候補を捨てない。
+- VTT取得は `_isSharePointOrigin` のHTTPS・SharePointガードと `credentials: 'include'` を維持する。`omit` への変更前には [DESIGN.md](DESIGN.md#sharepointトランスクリプト) の認証上の理由を確認する。ID未取得・通信・権限エラーを利用可否キャッシュへ固定しない。
+- レビュースレッドの重複除去では投稿者・ファイル・本文・日時・対象行の複合キーを維持し、同じ親の別ソースにある返信を統合する。リスト・表の変換は専用走査だけで行い、DOM深度上限を引き継ぐ。
+- Teamsは再入ガード、中止・破棄、会話切替時のreset、時間・件数・反復上限を維持する。月判定と遡り停止には `time[datetime]` 由来の信頼できる時刻だけを使い、送信者・時刻の補完を期間フィルタより先に行う。
+- Teams収集開始の `{ok, started}` と収集完了を区別する。完了時0件は成功・空ファイル扱いにせず、生0件と期間フィルタ後0件を `rawCount` で区別する。部分履歴の理由を画面とMarkdownに残す。
+- Markdownのラベルは `本文`、`レビューコメント`、`コメント N`、`投稿者`、`日時`、`ファイル`、`対象行`、`↩ 返信` を使う。
 
-PR 一覧ページ（ページ側に残す）:
-  行ボタンクリック → Extractor.extractByPrUrl(url)  ※バックグラウンドで PR ページを fetch
-    → { title, markdown } → RfmdClipboard.download()
-```
+### DOM・ログ・共通UI
 
-**kind**: `pr`（GitHub/DevOps/CodeCommit 詳細）/ `vtt`（SharePoint）/ `teams-md`。Teams 経路は抽出 0 件のとき `runAction` が `{ ok:false }` を返す（空ファイルの成功偽装防止）。**CodeCommit は詳細ページ専用**（PR 一覧の行ボタンは無し。コンソールがクライアントレンダリング SPA で `extractByPrUrl` の背景 fetch が不可能なため）。
+- 動的内容は `createElement` / `textContent` / `replaceChildren` で構築し、`innerHTML` 代入を使わない（AMOの静的検査で警告になる）。SVGはDOMParserとimportNodeを使う。リモートJavaScriptやFirefox非対応のoffscreen APIを導入しない。
+- DOM識別と二重注入防止には `data-rfmd` 属性と既存の `__rfmd_initialized` / `__rfmd_nav_hooked__` を使う。
+- 一覧ボタンの成否は可視テキスト・アクセシブル名・ `role="status"` 領域に反映する。テーマ対応は一覧ボタンの `src/ui/styles.css` とpopupの `popup.html` で行う。
+- ログには `[ReviewForMD]` を付け、content script起動時のバージョン・hostログを維持する。SAS付きURL等は `_redactUrl` でorigin+pathnameへ縮約する。拡張更新で発生する `Extension context invalidated` は黙って処理する。
+- `src/shared/` は配布時コピーへ直接実装変更せず、Supportパッケージ側を変更してJS/CSSを一式同期する。問い合わせ経路へPR・VTT・チャットの抽出データを渡さない。
 
-### Content script load order matters
+### 配信
 
-Defined in manifest.json `content_scripts.js` array. Each module is an IIFE that exposes a global (`SiteDetector`, `MarkdownBuilder`, etc.), so order determines dependency availability. manifest は5エントリに分割されており（GitHub / DevOps / CodeCommit / SharePoint / Teams）、各エントリは以下の順で共通ライブラリ → サイト固有 extractor → UI の順にロードする:
-
-`site_detector` → `markdown_builder` → `clipboard` → `fetch_utils` → **[site-specific extractor]** → `button_injector` → `content_script`
-
-CodeCommit エントリは `*.console.aws.amazon.com/codesuite/codecommit/*` にマッチし、`codecommit_extractor.js` をロードする。
-
-`fetch_utils.js` (`RfmdFetch`) は `github_extractor` / `devops_extractor` / `sharepoint_extractor` が使う `withTimeout` / `withText` / `withJson` / `withRetry`（429/503/一時障害を指数バックオフで再試行）/ `TIMEOUT_MS` の共有モジュール（CodeCommit は DOM 専用、Teams は MD 専用化で fetch しない）。本文を読む通信は、本文消費まで30秒制限を維持する `withText` / `withJson` を使う。
-
-**動的注入（DevOps カスタムドメイン + CodeCommit の 2 経路のみ）**: `service_worker.js` は `chrome.scripting.executeScript` で (1) カスタムドメインの DevOps ページ、(2) 他サービスから SPA 遷移してきた CodeCommit PR ページ、の 2 つだけを動的注入する。GitHub・SharePoint・Teams は静的注入に委ねる。サイト固有 extractor は `extractorFileForUrl(url)` が URL から 1 本だけ選ぶ（CodeCommit 既知ドメインなら `codecommit_extractor.js`、それ以外は `devops_extractor.js`）。動的注入のファイルリストにも `fetch_utils.js` を含める必要がある。
-
-### Module pattern
-
-IIFE returning public API object. Private functions prefixed with `_`. No ES modules — all scripts share the global scope within the content script context.
-
-### SPA navigation detection (5 layers)
-
-`content_script.js` listens for navigation via: (1) `chrome.runtime.onMessage` from service worker, (2) custom events from `navigation_hook.js` (injected into main world to hook `history.pushState/replaceState`), (3) `popstate` for browser back/forward, (4) GitHub's `turbo:load` event, (5) `hashchange` (Teams クラシックのハッシュルーティング会話切替). All five trigger `reinit()` — a 300 ms-debounced wrapper (`NAV_REINIT_DEBOUNCE_MS`) that resets `_retries` before calling `init()`. `init()` self は即時実行で、MutationObserver（一覧ページのみ起動）側は別の 400 ms (`DEBOUNCE_MS`) で絞る。
-
-### Service worker (`service_worker.js`)
-
-Monitors `webNavigation.onHistoryStateUpdated` / `onCompleted`. For known domains (github.com / *.github.com / dev.azure.com / *.visualstudio.com / console.aws.amazon.com / *.console.aws.amazon.com / *.sharepoint.com), sends `rfmd:navigate` to the content script. **`injectContentScripts` は `extractorFileForUrl` で extractor を 1 本だけ選ぶ**ので、メッセージ未達時のフォールバック動的注入は **`isDevOpsKnownDomain(url) || isCodeCommitKnownDomain(url)` に限定**する（GitHub/SharePoint/Teams は静的注入に委ね、誤った extractor セットを注入して `__rfmd_initialized` で正規注入を阻害しないため）。カスタムドメインは `verifyAzureDevOpsInTab` で DevOps シグナル検証後に `chrome.scripting.executeScript` で動的注入。Teams は SW 非関与（content script が自前で SPA 遷移を処理）。
-
-**⚠️ `verifyAzureDevOpsInTab` は `service_worker.js` と `popup/popup.js` の意図的な二重定義**（MV3 で SW と popup はモジュール共有できないため）。**`service_worker.js` を正として変更し、`popup.js` へ転記する**。片方だけ直すとセキュリティ検証が一方で緩くなる。判定は「シグナル 1 つでも真」で意図的に緩く、これは**オンプレ Azure DevOps Server（カスタムドメイン）で検出漏れを起こさないため**。閾値を上げると機能が止まる側に倒れるので、上げる前にオンプレ環境での影響を確認すること（注入先は content script の isolated world で、ページ側からは触れない）。
-
-### DevOps extraction strategy (3 tiers)
-
-`devops_extractor.js` uses a tiered approach because DevOps is a SPA with lazy-loaded DOM:
-
-1. **DOM extraction** — parses rendered comments from Activity/Discussion tabs and inline file comments
-2. **REST API fallback** (`fetchViaApi`) — when DOM comments are missing or incomplete (e.g., unloaded tabs), fetches via `/_apis/git/repositories/.../pullRequests/.../threads` and iterations endpoints
-3. **Items API enrichment** (`_enrichWithItemsApi`) — when threads lack diff context (source code lines), fetches file contents and FileDiffs API to reconstruct diff blocks. Batched with max 6 concurrent fetches.
-
-`extractAll()` orchestrates: tries DOM first, falls back to API if comments are missing, then enriches any remaining threads lacking `diffLines` via Items API.
-
-### GitHub extraction strategy (2 tiers)
-
-`github_extractor.js` uses a dual-source approach to ensure complete comment extraction:
-
-1. **DOM extraction** — parses live page comments after expanding hidden conversations (`_loadHiddenConversations`)
-2. **HTML fetch fallback** (`_fetchAndExtractComments`) — fetches the same PR page via HTTP, parses with DOMParser, and loads hidden conversations (`_fetchHiddenConversations`). Captures review threads that are collapsed or not rendered in the live DOM due to GitHub's lazy-loading/fold state. Results are merged with DOM threads and deduplicated.
-
-`extractAll()` orchestrates: expands hidden conversations in live DOM, extracts comments, then supplements with HTML fetch results.
-
-Two extraction entry points exist:
-- `extractAll()` — PR 詳細ページ用。ライブ DOM + HTML fetch の2ソースを統合
-- `extractByPrUrl(url)` — PR 一覧ページ用。HTML fetch のみ（ライブ DOM なし）。`_fetchHiddenConversations` で pagination を処理
-
-どちらの HTML fetch も `_normalizePrConversationUrl` を通し、`/{owner}/{repo}/pull/{id}` より後ろのサブタブ path、query、hash を除いた Conversation URL を取得する。`/files`、`/commits`、`/checks` 等の HTML は PR 本文や会話全体を含まないため、そのまま取得経路へ渡さない。設計理由は `DESIGN.md` の「PR一覧ページ」を参照する。
-
-### GitHub hidden conversations loading
-
-`_fetchHiddenConversations(doc, baseUrl)` は DOMParser 生成の doc 内の未読み込みコンテンツを fetch して挿入する。2種類のソースを処理:
-
-1. **turbo-frame[src]** — GitHub がまだレンダリングしていない hidden items
-2. **`.ajax-pagination-btn`** — "Load more" ボタン（form の action 属性から URL 取得）
-
-**⚠️ 重要な設計制約**: pagination btn の `el` は `form` 自体を指す必要がある（`form.parentElement` ではない）。GitHub の PR ページでは、pagination form の親 DIV 内に既存のレビュースレッド（turbo-frame）が兄弟要素として共存しているため、親 DIV を `el.remove()` すると既存スレッドも巻き添えで削除される。
-
-### AWS CodeCommit extraction strategy
-
-`codecommit_extractor.js` は AWS マネジメントコンソール（CodeSuite）の CodeCommit PR 詳細ページから DOM ベースで抽出する。**DOM 一択の理由**: 公開 CodeCommit API は SigV4 署名（IAM 秘密鍵）必須でブラウザから呼べず、コンソール内部 API は CSRF + セッション依存で未公開・脆い。
-
-- 公開 API: `getTitle` / `getPRNumber`（URL ベース・最も堅牢）/ `getBody` / `getComments` / `extractAll`（Markdown 文字列を返す）。GitHub/DevOps と違い `extractByPrUrl` は**持たない**（コンソールはクライアントレンダリング SPA で生 HTML に PR データが無く、背景 fetch では取得不能）→ PR 一覧の行ボタンは提供せず、**詳細ページ専用**。
-- **⚠️ セレクタの揮発性**: コンソールは Cloudscape の React SPA で CSS クラスがハッシュ化（`awsui_xxx_yyyy`）され頻繁に変わる。**サイト固有セレクタの単一の真実の源は `codecommit_extractor.js` の `SELECTORS`**。タイトル / PR 番号 / 検出は URL・見出しベースで堅牢だが、**本文・コメントのセレクタは best-effort のプレースホルダ**で、実 PR ページの DOM を採取して `SELECTORS` を調整する前提（Teams と同方針）。本文・コメントが両方空のとき `extractAll` は `console.warn` で調整シグナルを出す（タイトル見出しは必ず出すので空ファイルにはしない）。
-
-### Site detection
-
-`site_detector.js`: GitHub by domain+path. DevOps known domains (dev.azure.com, *.visualstudio.com) by URL path (case-insensitive). Custom DevOps domains by URL path pattern + 2+ DOM signals (`.repos-pr-details-page`, `bolt-header`, PR tabbar, etc. — `THRESHOLD = 2` で、軽いシグナルから順に評価して閾値到達で早期 return する）。ただし **PR 一覧の `detectList` 側はシグナル 1 つ**（`.repos-pr-list` または `bolt-header`）で、詳細ページより緩い。 AWS CodeCommit by console host (`*.console.aws.amazon.com`) + URL path (`/codesuite/codecommit/repositories/{repo}/pull-requests/{id}`)。コンソールは Cloudscape の React SPA で DOM クラスがハッシュ化され揮発性が高いため、検出は安定した URL ベース（DOM 非依存）。SharePoint Stream by `*.sharepoint.com` domain + `stream.aspx` path. Microsoft Teams chat by Teams domain (teams.microsoft.com / teams.live.com / teams.cloud.microsoft) + message-list DOM signals（Teams はハッシュ/SPA ルーティングで URL から会話判定しづらいため DOM ベース）。
-
-### SharePoint Stream extraction strategy
-
-`sharepoint_extractor.js` は Teams 会議録画ページから VTT トランスクリプトを取得する。Drive ID と File ID の取得には2層構造を採用:
-
-1. **`<script>` タグ抽出** (`_extractIdsFromScripts`) — 初期 HTML に埋め込まれた script の textContent から、同じ `/_api/v2.1/drives/{driveId}/items/{fileId}` URL に含まれる ID 組を正規表現抽出（同期）。初期 script は SPA 切替後も DOM に残るため、content script 読み込み時と同じ URL でだけ候補にする
-2. **main world fetch フックフォールバック** (`sharepoint_fetch_hook.js`) — main world に注入したフックが `window.fetch` の文字列 / URL / Request 入力を監視し、`/_api/v2.1/drives/{driveId}/items/{fileId}` の完全な組と発生時の `location.href` を CustomEvent `rfmd:sp-ids` で通知。`media/transcripts` を明示する URL を優先しつつ、その他の Drives item URL も候補として保持する
-
-現在のページ URL に属する候補を信頼度順に同 API で検証し、実際に transcript がある ID 組を確定する。その後 `temporaryDownloadUrl` を `/streamContent?is=1&applymediaedits=false` に正規化 → `credentials:'include'` で VTT 取得 → `RfmdClipboard.download(text, filename, 'text/vtt;charset=utf-8')`。
-
-Drive ID / File ID は必ず同じ script URL または同じ fetch URL 由来の完全な組だけを使う。script と fetch フック、または別リクエストの片方ずつを混ぜてはならない。
-
-**⚠️ `credentials` を `'omit'` に変えてはいけない（実機で 401 になった実績あり）**: `_normalizeStreamUrl` は元 URL のクエリ文字列を `?is=1&applymediaedits=false` で**上書き**するため、`temporaryDownloadUrl` に SAS トークンが含まれていても剥がれる。よって認証は SharePoint のセッション cookie 依存になる。v1.0.44 (`3c4dc7f`) で「SAS 埋め込み型だから cookie 不要」と判断して `'omit'` にしたところ VTT が 401 になり、v1.0.45 (`aeaf6d4`) で `'include'` へロールバックしている。cookie 漏洩の懸念は `_isSharePointOrigin` ガード（`*.sharepoint.com` の HTTPS 限定）＋ cookie のドメインスコープで塞いでいる。「SAS を保持して `'omit'` にすべき」というレビュー指摘は繰り返し出るが、**この履歴を確認してから判断すること**。
-
-`checkAvailability()` の結果は同一 URL でキャッシュするが、**`no-ids` の場合はキャッシュしない**（fetch フック由来の ID が後から到着したときに再評価できるようにするため）。stream.aspx?id=A → ?id=B のクエリ変更では前 URL の候補と選択済み ID を破棄する。ただし navigation 検出より先に新 URL の fetch イベントが届く競合を考慮し、現在 URL に結び付いた候補は保持する。
-
-### Teams chat extraction strategy
-
-`teams_extractor.js` は Teams チャット/チャネルの全履歴を **DOM 自動スクロール方式** で収集する（公開機能仕様からのクリーンルーム実装。内部 chatsvc API は未使用）。Teams Web は仮想スクロールで画面外メッセージが DOM から外れるため、スクロールしながら逐次回収する必要がある。
-
-1. **スクローラ特定** — `SELECTORS.scroller` 候補 → 外れたら最初のメッセージ要素から `_findScrollableAncestor` でスクロール可能祖先を探索
-2. **段階スクロール収集** (`_collectRecords`) — 下端（最新）から上へ `clientHeight * 0.8` ずつ移動し、各 viewport の可視メッセージを id キーの Map に確保（**全メッセージを viewport に通す**ためジャンプではなく段階移動）。上端では `LOAD_WAIT_MS` 待って古い分の prepend を待ち、`scrollHeight` が増えなくなる状態が `STABLE_ROUNDS` 連続したら終了。**毎ラウンド中止フラグ（`_cancelRequested` / `_discarded`）と遡り下限 cutoff（`sinceMs`＝対象月の月初）を確認して途中終了でき、`onProgress` でオーバーレイへ進捗を通知する**。指定月より履歴が短い場合も、取得可能な履歴の先頭で正常終了して取得できた分を保存する。`MAX_ITERATIONS` / `MAX_DURATION_MS` / `MAX_MESSAGES` はセーフティネットとして維持
-3. **時系列整列 + 送信者/ts 補完 + 月レンジフィルタ** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前も time も 1 度しか出さないため、整列後に空 author と「判定用 ts(`_effTs`)」を直前の値で前方補完する（継続メッセージを先頭と同じ月に分類）。**補完はフィルタより前・全レコードで行う**（フィルタで先頭が落ちても継続分の著者/月分類を失わないため）。フィルタは **指定した開始月の月初 `sinceMs` から現在まで** で絞り、判定は **`time[datetime]` 由来の信頼できる ts の前方補完値**で行う（title 由来の粗い ts は判定に使わず、補完値が無いものは安全側で残す）
-4. **Markdown 生成** (`_buildMarkdown`) — 本文は `MarkdownBuilder.htmlToMarkdown`、日時は `formatTimestamp` を再利用。本文クローンから添付（画像・ファイルカード）を抜いてから変換し、二重化を防ぐ
-
-**起動 / 出力**（長時間処理のため popup ではなくページ側オーバーレイで完結させる）:
-- `startCollection({ monthsAgo, mode })` — fire-and-forget で収集を開始し `{ ok, started }` を即返す。収集・進捗表示・中止・保存/コピーは content script 側の **進捗オーバーレイ**（ページ右下のパネル）で完結する。これにより popup を閉じても収集を継続でき、いつでも「ここまでで保存」/「中止」できる（`mode='download'` は完了時にその場保存、`mode='copy'` は完了オーバーレイの操作ボタンから user 操作起点でコピー＝「popup を閉じると copy が失敗する」問題を回避）
-- 収集開始月は popup のドロップダウン（**今月 / 先月から / 2か月前から / 3か月前から**＝`monthsAgo` 0/1/2/3）で選ぶ。`startCollection` が `monthsAgo` を開始月の月初 `sinceMs` に変換し、そこから現在までを保存する。履歴が指定期間より短い場合も取得できた分を保存する。`count`＝収集件数で 0 件は成功扱いにしない（空ファイルの偽装防止。生 0 件＝セレクタ全滅と、期間フィルタ後 0 件＝指定月以降に無し、を `rawCount` で区別して文言を出し分ける）
-
-**堅牢化（暴走・OOM・取りこぼし・無言失敗の防止）**:
-- 再入ガード `_busy`（収集中の多重起動を弾く）＋ 中止フラグ `_cancelRequested`（ここまでで保存）/ `_discarded`（破棄）でいつでも安全に停止できる
-- `_collectRecords` は開始時の `location.href` が変わったら中断、`startCollection` も完了時に href を再確認して会話切替時は保存しない。`reset()`（会話切替/離脱で content_script が呼ぶ）は進行中収集を破棄しオーバーレイを閉じる（誤会話の収集・DOM 奪い合い・部分データの誤保存を防ぐ）
-- 遡り下限 cutoff（`sinceMs`）は **信頼できる `time[datetime]` 由来 ts のみで打ち切る**（title 由来の誤日付＝添付の更新日等で対象月のメッセージを取りこぼさない）。指定月の月初より古いメッセージは前方補完した信頼 ts で除外する
-- 生収集 0 件は `console.warn`（セレクタ全滅の切り分け用ログ）
-
-**⚠️ セレクタの揮発性**: Teams の DOM クラス/属性は頻繁に変わる。**サイト固有セレクタの単一の真実の源は `teams_extractor.js` の `SELECTORS`**。`site_detector.js` の `_isTeamsChatByDom` は `TeamsExtractor.hasChatDom()` に委譲しているので、UI 変更で動かなくなったら `SELECTORS` だけを実機 DOM に合わせて調整すればよい（detect 側と extract 側でセレクタが分裂するのを防ぐ設計）。
-
-### Button injection / popup actions
-
-`button_injector.js` は UI 注入とアクション実行の両方を担う:
-- **ページ埋め込み（残存）**: PR 一覧ページの各行ダウンロードボタン（`injectList` → `_injectGitHubList` / `_injectDevOpsList`）のみ。`_createButton` factory でクリックハンドラ・フィードバック（1.5s）・二重クリック防止（`data-rfmd-busy`）を構成。一覧行の `extractFn` は `{title, markdown}` を返し `.md` 保存する（VTT 等の binary・text 保存は popup の `runAction` 経路が担う。`RfmdClipboard` には `download` / `downloadBlob` の両方がある）。
-- **popup 向け（詳細ページのアクションはこちら）**:
-  - `getStatus()` — `SiteDetector.detect/detectList` ＋ SharePoint/Teams の `checkAvailability` で `{ siteType, pageType, available, title }` を返す
-  - `runAction({ kind, mode })` — kind ごとに extractor を呼び、`mode='download'` はその場で保存して `{ok}`、`mode='copy'` は `{ok, text}` を返す（popup 側でクリップボードへ）
-- 詳細ページにボタンを埋め込まなくなったため、`_injectGitHub`/`_injectDevOps`/`_injectSharePoint`/`_injectTeams` と個別コメント/詳細用ファクトリは廃止。`_getExtractor`・サニタイズ・一覧注入は維持。
-
-content_script の `chrome.runtime.onMessage` が `rfmd:status` → `getStatus()`、`rfmd:extract` → `runAction()` を仲介する。
-
-### Thread deduplication
-
-`MarkdownBuilder.deduplicateThreads(threads)` はスレッド配列の先頭コメントから複合キーを生成して重複を除去する:
-
-```
-key = `${author}::${filePath}::${body}::${timestamp}::${lineRange}`
-```
-
-5要素すべてが必要な理由: bot（Codex, Gemini）が同一ファイルに同じテンプレート文のレビューを複数回投稿するため、`author::filePath::body` だけでは異なるレビューラウンドのコメントが誤って除去される。`timestamp` と `lineRange`（diffContext 由来）で区別する。
-
-### HTML → Markdown conversion
-
-`markdown_builder.js`: Recursive DOM walker (`_convertNode`) with 80-depth limit. Handles headings, inline formatting, code blocks (with language detection), links (with relative URL resolution), images (data-URI → placeholder), lists (nested with depth tracking), tables, checkboxes. Security: sanitizes dangerous URI schemes, escapes Markdown injection in link text/URLs. Filters out GitHub Code Review Agent badge images.
-
-### Popup (`src/popup/`)
-
-`popup.html` + `popup.js`: ツールバーアイコンのポップアップ UI。**全アクションの実行起点**。起動時に `rfmd:status` で現在ページの状態を取得し、サイトに合うボタン（GitHub/DevOps/CodeCommit=MD DL+コピー、SharePoint=VTT DL+コピー、Teams=MD DL+コピー、一覧=案内）を動的描画する。ボタンクリックで `rfmd:extract` を送信。**コピーは popup 側で `navigator.clipboard`（フォーカス必須のため）**、ダウンロードは content script 側で実行。content script に届かない場合（カスタムドメイン DevOps 未許可など）は URL ベースの許可フロー（`chrome.permissions.request` → DevOps シグナル検証 → service_worker 経由注入）にフォールバック。下部の `kagayoi-support-footer` は、抽出処理から独立した利用者操作としてKagayoi Support問い合わせフォームを開く。
-
-### CSS / ダークモード
-
-`styles.css`: 詳細ページのボタン埋め込みを廃止したため、**PR 一覧の行ボタン（`.rfmd-btn--sm` / `.rfmd-list-btn-wrap`）向けに絞った**。GitHub ダークモード属性（`[data-color-mode="dark"]` / `html.dark`）と DevOps ダークテーマ、`@media (prefers-color-scheme: dark)` に対応。popup 内のボタン CSS は `popup.html` の `<style>` に定義（`.pop-btn` 系、ダークモード対応）。
-
-## Conventions
-
-- `data-rfmd` attributes for DOM targeting and duplicate prevention
-- `[ReviewForMD]` prefix on all console output。content_script 起動時に `[ReviewForMD] v{version} loaded on {host}` を 1 行出す（ユーザー報告からバージョン/サイトを特定するため）
-- 機微 URL（SAS トークン付き SharePoint/OneDrive URL 等）をログに出すときは `_redactUrl` 等で `origin+pathname` に落としてから出力する
-- Extension context invalidation errors (`Extension context invalidated`) silently caught throughout — this is expected when extension is updated while page is open
-- `window.__rfmd_initialized` / `window.__rfmd_nav_hooked__` flags prevent double initialization from dynamic injection
-- DevOps API URLs are constructed from URL parsing (`_parseDevOpsUrl`), not hardcoded — supports custom domains
-- DevOps REST のクエリ値（Items API の `path` 等）は **`encodeURIComponent`** で組む。`encodeURI` は `&` `?` `#` `+` を素通しするため、それらを含むファイル名（`foo&bar.cs` / `foo+bar.cs`）でクエリ構造が壊れて別ファイル取得や 404 になる。区切りの `/` が `%2F` になっても Items API はクエリ値デコード後にパスとして解釈するので問題ない
-- Markdown output uses Japanese labels: `本文`, `レビューコメント`, `コメント N`, `投稿者`, `日時`, `ファイル`, `対象行`, `↩ 返信`
-- グローバル変数名は `Rfmd` プレフィックス（例: `RfmdClipboard`）でブラウザ組み込みオブジェクトとの名前衝突を回避
-- PR タイトルの取得: DOM 要素 → `document.title` フォールバック（両プラットフォーム共通）
-- GitHub REST API (`api.github.com`) は CORS 制約でCookie認証不可（`Access-Control-Allow-Origin: *` が `credentials: 'include'` をブロック）。代わりに同一オリジンの HTML fetch + DOMParser を使用
-- `_fetchHiddenConversations` の DOM 操作では、挿入先要素 (`el`) のスコープに注意 — `el.remove()` は `el` 自体とその子孫のみ削除されるが、`el` が意図より広い範囲を指すと既存コンテンツが失われる
-- **`innerHTML` 代入は使わない**（Firefox AMO の `web-ext lint` が `UNSAFE_VAR_ASSIGNMENT` 警告を static analysis で出すため。runtime で安全でも警告は消えない）。代わりにボタン等の動的内容は DOM 構築で組む: `button_injector` の `_setButtonContent`（SVG アイコンは `_buildSvg` = `DOMParser('image/svg+xml')` + `importNode`）、`popup.js` の `_setPopBtnContent`（`createElement` + `textContent` + `replaceChildren`）。クリアは `el.replaceChildren()`。Firefox 固有 API（`offscreen` 等）は不使用なので strip マーカーは不要
+- `release/x.y.z` はmanifestのversionと一致させる。公開構成と重複提出判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。
+- CWSはSecretsを持たない梱包ジョブのartifactだけを受け取り、提出ジョブでcheckoutやnpm lifecycleを実行しない。OAuth応答を出力せず、単一行のaccess tokenだけをマスクし、`set -x` を有効にしない。
+- GitHub ActionsはSHAを固定し、更新時はタグコメントも合わせる。checkoutは `persist-credentials: false` を維持する。AMOのweb-extはパッチ版を固定する。

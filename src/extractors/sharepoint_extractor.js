@@ -39,6 +39,19 @@ var SharePointExtractor = SharePointExtractor || (() => {
    */
   let _lastSeenUrl = '';
 
+  /** URL が同じまま reset された場合も、進行中の通信結果を無効にする世代。 */
+  let _pageGeneration = 0;
+
+  function _isCurrentContext(context) {
+    return context.pageUrl === location.href && context.generation === _pageGeneration;
+  }
+
+  function _assertCurrentContext(context) {
+    if (!_isCurrentContext(context)) {
+      throw new Error('動画ページが切り替わったため、取得を中止しました');
+    }
+  }
+
   // RfmdFetch.withTimeout と FETCH_TIMEOUT_MS は src/lib/fetch_utils.js の
   // RfmdFetch.withTimeout / RfmdFetch.TIMEOUT_MS に集約済み。
 
@@ -78,6 +91,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
   function _syncPageContext() {
     const currentUrl = location.href;
     if (_lastSeenUrl && _lastSeenUrl !== currentUrl) {
+      _pageGeneration++;
       _capturedCandidates = _capturedCandidates.filter((candidate) => candidate.pageUrl === currentUrl);
       _selectedIds = null;
       _availabilityCache = null;
@@ -229,7 +243,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
    * 現在ページの候補を順に検証し、実際にトランスクリプトがある ID 組を確定する。
    * @returns {Promise<{ ids?: {driveId:string, fileId:string}, transcripts?: Array<{temporaryDownloadUrl:string}>, reason?: string }>}
    */
-  async function _resolveTranscript() {
+  async function _resolveTranscript(context) {
     const candidates = _getIdCandidates();
     if (candidates.length === 0) return { reason: 'no-ids' };
 
@@ -238,9 +252,11 @@ var SharePointExtractor = SharePointExtractor || (() => {
     for (const ids of candidates) {
       try {
         const transcripts = await _fetchTranscripts(ids.driveId, ids.fileId);
+        _assertCurrentContext(context);
         successfulRequest = true;
         if (transcripts.length > 0) return { ids, transcripts };
       } catch (e) {
+        _assertCurrentContext(context);
         lastError = e;
       }
     }
@@ -295,34 +311,36 @@ var SharePointExtractor = SharePointExtractor || (() => {
     _ensureFetchHookInjected();
 
     _syncPageContext();
+    const context = { pageUrl: location.href, generation: _pageGeneration };
 
     if (_availabilityCacheUrl === location.href && _availabilityCache !== null) {
       return _availabilityCache;
     }
 
     try {
-      const resolved = await _resolveTranscript();
+      const resolved = await _resolveTranscript(context);
+      _assertCurrentContext(context);
       if (resolved.reason === 'no-ids') {
         // ID 未取得はキャッシュしない: fetch フック経由で後から ID が届いた場合に
         // MutationObserver の次回コールで再評価できるようにする。
         return { available: false, reason: 'no-ids' };
       }
       _selectedIds = resolved.ids
-        ? { ...resolved.ids, pageUrl: location.href }
+        ? { ...resolved.ids, pageUrl: context.pageUrl }
         : null;
       const result = resolved.ids
         ? { available: true }
         : { available: false, reason: 'no-transcript' };
-      _availabilityCacheUrl = location.href;
+      _availabilityCacheUrl = context.pageUrl;
       _availabilityCache = result;
       return result;
     } catch (e) {
+      if (!_isCurrentContext(context)) return { available: false, reason: 'page-changed' };
       // 権限切れ(401)/ネットワーク等。reason を残し、切り分け用にログも出す
       // （popup 側は reason を見て「トランスクリプト無し」か「取得失敗」かを出し分ける）。
       console.warn('[ReviewForMD][SP] availability チェック失敗:', e?.message || e);
       const result = { available: false, reason: `error: ${e?.message || e}` };
-      _availabilityCacheUrl = location.href;
-      _availabilityCache = result;
+      // 一時的な通信失敗・権限切れはキャッシュせず、次回の操作で再取得する。
       return result;
     }
   }
@@ -335,20 +353,23 @@ var SharePointExtractor = SharePointExtractor || (() => {
   async function downloadTranscript() {
     _ensureFetchHookInjected();
     _syncPageContext();
+    const context = { pageUrl: location.href, generation: _pageGeneration };
 
     let ids = _selectedIds?.pageUrl === location.href ? _selectedIds : null;
     let transcripts;
     if (ids) {
       transcripts = await _fetchTranscripts(ids.driveId, ids.fileId);
+      _assertCurrentContext(context);
     } else {
-      const resolved = await _resolveTranscript();
+      const resolved = await _resolveTranscript(context);
+      _assertCurrentContext(context);
       if (resolved.reason === 'no-ids') {
         throw new Error('Drive ID / File ID が見つかりません');
       }
       if (!resolved.ids) {
         throw new Error('トランスクリプトが見つかりません');
       }
-      ids = { ...resolved.ids, pageUrl: location.href };
+      ids = { ...resolved.ids, pageUrl: context.pageUrl };
       _selectedIds = ids;
       transcripts = resolved.transcripts;
     }
@@ -381,8 +402,10 @@ var SharePointExtractor = SharePointExtractor || (() => {
       credentials: 'include',
       cache: 'no-store',
     });
+    _assertCurrentContext(context);
     if (!res.ok) {
       try { await res.body?.cancel(); } catch { /* 接続解放 */ }
+      _assertCurrentContext(context);
       const hint = (res.status === 401 || res.status === 403)
         ? 'ログインし直してからページを再読み込みしてください'
         : '';
@@ -402,6 +425,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
    *   ここから発火しても受け手はいないので dispatch しない。）
    */
   function reset() {
+    _pageGeneration++;
     _capturedCandidates = [];
     _selectedIds = null;
     _availabilityCache = null;

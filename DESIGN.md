@@ -38,17 +38,25 @@
 3. `ButtonInjector.runAction()` がサイト固有Extractorを呼ぶ。
 4. ダウンロードはcontent script側で実行し、コピーは文字列をpopupへ返して `navigator.clipboard` へ書く。
 
+PR詳細の各Extractorは開始時のURLを保持し、通信・会話展開・タブ切替の待機後に照合して、別PRのDOMを混ぜません。アクション実行側も開始URLとcleanupで進める世代を保存し、完了時に一致する場合だけ保存またはコピー用文字列を返します。
+
 ### PR一覧ページ
 
 content scriptがGitHub / DevOpsの各行へ小型ボタンを注入し、対象PRのHTMLまたはAPIを背景取得してMarkdownを直接保存します。GitHubのHTML取得は、現在ページや一覧リンクが `/files`、`/commits`、`/checks` 等のサブタブでも本文と会話を欠落させないよう、常に `/{owner}/{repo}/pull/{id}` のConversation URLへ正規化します。CodeCommitはクライアントレンダリングSPAのため、一覧取得を行わず詳細ページだけを対象にします。
+
+一覧ボタンの成否は可視テキスト・アクセシブル名へ反映し、独立した `role="status"` 領域でも通知します。
 
 ### SharePointトランスクリプト
 
 初期文書ではscriptから同じAPI URLに含まれるDrive ID / File IDの組を抽出します。main worldのfetchフックは文字列・URL・Request入力から完全なID組と発生時のページURLを通知し、content scriptは現在ページの候補だけを信頼度順にAPIで検証します。SPA切替後は残存する初期scriptを使いません。確定したIDからトランスクリプトURLを得てVTTを取得します。認証Cookieが必要なため `credentials: 'include'` を使いますが、送信先はHTTPSの `*.sharepoint.com` に限定します。
 
+利用可否判定とVTT取得は開始URLと世代を通信後に照合してからID・キャッシュを更新し、結果を返します。URL変更とresetで世代を進め、同じURLのreset前の処理も破棄します。ID未取得と通信・権限エラーはキャッシュせず、次の操作で再評価します。
+
 ### Teamsチャット
 
-仮想スクロールで画面外要素が破棄されるため、最新位置から上方向へ段階スクロールし、各viewportのメッセージをID単位で蓄積します。時系列整列後に送信者と信頼できる時刻を補完し、選択月の `[sinceMs, untilMs)` へ絞ります。進捗、部分保存、中止、会話切替時の破棄はページ内オーバーレイで完結します。
+仮想スクロールで画面外要素が破棄されるため、最新位置から上方向へ段階スクロールし、各viewportのメッセージをID単位で蓄積します。時系列整列後に送信者と信頼できる時刻を補完し、選択した開始月の月初 `sinceMs` から現在までへ絞ります。過去月の翌月初による上限は設けません。履歴が指定期間より短い場合は、取得可能な履歴の先頭で収集を正常終了し、取得できた分を保存します。進捗、部分保存、中止、会話切替時の破棄はページ内オーバーレイで完結します。
+
+収集結果は終了理由を保持します。時間・件数・反復上限、スクロール領域未検出、「ここまでで保存」は、取得済みデータを保存しつつ画面とMarkdownに部分履歴と理由を明記し、利用者が確認できるよう完了パネルを自動で閉じません。期間下限または取得可能な履歴の先頭への到達は通常完了です。ファイル名はチャット名と保存日のローカル日付から `チャット名_yyyyMMdd.md` とします。
 
 ### お問い合わせ
 
@@ -78,6 +86,10 @@ popupの共通Web Componentが、メール確認コードによる認証後に�
 - SharePointのDrive ID / File IDは同じscript URLまたはfetch URL由来の完全な組として扱い、ソース間・リクエスト間で混在させない。fetch候補は発生時のページURLに結び付け、SPA切替後に前ページの候補や初期scriptを再利用しない。
 - レスポンス本文を読む共有fetchは `withText` / `withJson` を使い、ヘッダーだけでなく本文消費の完了まで30秒の中止制御を維持する。
 - レビュースレッドの重複除去は投稿者、ファイル、本文、日時、対象行の複合キーを維持する。
+- 同じ親コメントの複数ソースは返信を統合し、返信にも同じ複合キーで重複除去を適用する。
+- HTMLのリスト・表は専用変換だけで一度走査し、DOM深度を専用変換にも引き継ぐ。
+- DevOpsのDOM差分はファイルと非空の対象行が完全一致する場合だけ採用し、不一致はItems APIで補完する。Items / FileDiffsは6件ずつ取得し、各取得taskで必要なsnippetを生成して全文を後続batchへ保持しない。
+- DOMへのフォールバック後にAPIを再取得する補完でも、投稿者・パス・既知の行範囲から一意に対応付けられる候補だけを採用する。行範囲欠落や短縮パスで複数候補が残る場合は差分を付けず、別スレッドのコードを混ぜない。
 - HTML由来の動的内容はDOM APIで構築し、`innerHTML` 代入やリモートJavaScript実行を行わない。
 - Kagayoi Support共通部品は `pnpm sync:support` でJSとCSSを一式同期し、`src/shared/` のファイル間契約を同じパッケージ版に揃える。
 - Teamsの対象月判定と遡り停止には `time[datetime]` 由来の信頼できる時刻だけを使う。
@@ -88,3 +100,5 @@ popupの共通Web Componentが、メール確認コードによる認証後に�
 ChromeとFirefoxはソースとバージョンを共有し、background宣言だけを成果物生成時に分けます。Chrome用ZIPは正本`manifest.json`の`service_worker`を保持し、Firefox用ZIPは生成スクリプトが同じファイルを`scripts`配列へ変換します。これによりChrome MV3へFirefox専用キーを渡さず、手編集するmanifestの重複も持ちません。
 
 公開時は最初にSecretsを持たないジョブで2つのZIPを生成し、同じartifact内でCWS / AMOジョブへ渡します。CWSはChrome用ZIPを公式APIへ直接アップロードし、AMOはFirefox用ZIPを展開して`web-ext sign --channel listed`で提出します。両ジョブを独立させ、一方のストア障害が他方の提出を止めない構成です。
+
+CWSはAPI V2を使用します。既存のOAuth設定とextension IDに加え、Developer Dashboardのpublisher IDをGitHub Actionsの `CWS_PUBLISHER_ID` variable（またはsecret）へ設定します。`fetchStatus` の公開済み・提出済みrevisionとversionで重複を判定し、アップロードが非同期なら完了を確認してから `DEFAULT_PUBLISH` で審査へ提出します。失敗・不明状態・待機上限では提出せずjobを失敗させます。listingは引き続きDashboardで管理します。AMOのmetadata生成とweb-ext実行にはNode 24を使います。

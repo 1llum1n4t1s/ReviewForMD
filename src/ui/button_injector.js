@@ -64,6 +64,8 @@ var ButtonInjector = ButtonInjector || (() => {
 
     btn.classList.add(cls);
     _setButtonContent(btn, success ? CHECK_ICON_SVG : null, text);
+    btn.setAttribute('aria-label', `${btn.title}: ${text}`);
+    _resultStatus().textContent = `${btn.title}: ${text}`;
 
     btn._rfmdTimer = setTimeout(() => {
       if (!btn.isConnected) {
@@ -73,9 +75,25 @@ var ButtonInjector = ButtonInjector || (() => {
       btn.classList.remove(cls);
       // 生成時に保持した元のアイコン/テキストで復元する
       _setButtonContent(btn, btn._rfmdIcon, btn._rfmdText);
+      btn.setAttribute('aria-label', btn.title);
       btn.dataset.rfmdBusy = '0';
       btn._rfmdTimer = null;
     }, FEEDBACK_DURATION_MS);
+  }
+
+  /** 見た目と独立して、一覧操作の結果を支援技術へ通知する。 */
+  function _resultStatus() {
+    let status = document.querySelector('[data-rfmd-status]');
+    if (!status) {
+      status = document.createElement('div');
+      status.setAttribute('data-rfmd-status', '');
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      status.setAttribute('aria-atomic', 'true');
+      status.style.cssText = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0';
+      document.body.appendChild(status);
+    }
+    return status;
   }
 
   /**
@@ -87,6 +105,7 @@ var ButtonInjector = ButtonInjector || (() => {
    * @returns {HTMLButtonElement}
    */
   function _createButton({ className, dataRfmd, iconSvg, text, title, action = 'copy', extractFn }) {
+    _resultStatus(); // 操作より前に通知領域を接続しておく。
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = className;
@@ -106,6 +125,7 @@ var ButtonInjector = ButtonInjector || (() => {
       if (btn.dataset.rfmdBusy === '1') return;
       // 即座に busy 状態にして並行クリックを防止 (single-flight)
       btn.dataset.rfmdBusy = '1';
+      _resultStatus().textContent = '';
       try {
         const result = await Promise.resolve(extractFn());
         let ok;
@@ -323,6 +343,8 @@ var ButtonInjector = ButtonInjector || (() => {
 
   /* ── popup 向け: アクション実行（抽出 + ダウンロード/コピー）──────── */
 
+  let _actionGeneration = 0;
+
   /**
    * popup から依頼されたアクションを実行する。
    *   mode='download' → このページ側で保存し {ok} を返す
@@ -332,6 +354,13 @@ var ButtonInjector = ButtonInjector || (() => {
    * @returns {Promise<{ok:boolean, text?:string, started?:boolean, error?:string}>}
    */
   async function runAction({ kind, mode, monthsAgo }) {
+    const startHref = location.href;
+    const generation = _actionGeneration;
+    const requireSamePage = () => {
+      if (location.href !== startHref || generation !== _actionGeneration) {
+        throw new Error('抽出中にページが切り替わりました。現在のページで再実行してください。');
+      }
+    };
     try {
       if (kind === 'pr') {
         // 現在の PR ページ（GitHub or Azure DevOps）を判定して抽出
@@ -340,6 +369,7 @@ var ButtonInjector = ButtonInjector || (() => {
         if (!extractor) return { ok: false, error: 'PR ページの extractor が見つかりません' };
         const title = extractor.getTitle();
         const markdown = await extractor.extractAll();
+        requireSamePage();
         if (mode === 'copy') return { ok: true, text: markdown };
         const ok = RfmdClipboard.download(markdown, _sanitizeFilename(title) + '.md');
         return ok ? { ok: true } : { ok: false, error: 'ダウンロードに失敗しました' };
@@ -349,6 +379,7 @@ var ButtonInjector = ButtonInjector || (() => {
         const extractor = _getExtractor(SiteDetector.SiteType.SHAREPOINT_TEAMS);
         if (!extractor) return { ok: false, error: 'SharePoint extractor が見つかりません' };
         const { text, filename } = await extractor.downloadTranscript();
+        requireSamePage();
         if (mode === 'copy') return { ok: true, text };
         const ok = RfmdClipboard.download(
           text,
@@ -382,6 +413,8 @@ var ButtonInjector = ButtonInjector || (() => {
    * 一覧行ボタンのフィードバックタイマーを解除する。
    */
   function cleanup() {
+    _actionGeneration++;
+    document.querySelector('[data-rfmd-status]')?.remove();
     document.querySelectorAll('[data-rfmd]').forEach((btn) => {
       if (btn._rfmdTimer) {
         clearTimeout(btn._rfmdTimer);

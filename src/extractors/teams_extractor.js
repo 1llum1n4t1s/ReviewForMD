@@ -471,19 +471,19 @@ var TeamsExtractor = TeamsExtractor || (() => {
   /**
    * 下端から上端まで段階的にスクロールしながらメッセージを収集する。
    * 中止（_cancelRequested / _discarded）・遡り打ち切り（sinceMs）・進捗通知（onProgress）に対応。
-   * 遡り（スクロール）は sinceMs まで。untilMs（レンジ上限）は収集の停止には使わず _finalize の
-   * フィルタでのみ適用する（収集は常に下端＝最新から始まるため、上限超のメッセージは集めてから絞る）。
-   * @param {{sinceMs?:number|null, untilMs?:number|null, onProgress?:(info:{count:number, elapsedMs:number})=>void}} [options]
-   * @returns {Promise<{records:Array, rawCount:number}>}
+   * 遡り（スクロール）は sinceMs または取得可能な履歴の先頭まで。指定月から現在までを保存する。
+   * @param {{sinceMs?:number|null, onProgress?:(info:{count:number, elapsedMs:number})=>void}} [options]
+   * @returns {Promise<{records:Array, rawCount:number, stopReason:string}>}
    *   records=月レンジフィルタ＋時系列ソート済み、rawCount=フィルタ前の生収集件数（0件判定の切り分け用）
    */
   async function _collectRecords(options = {}) {
-    const { sinceMs = null, untilMs = null, onProgress = null } = options;
+    const { sinceMs = null, onProgress = null } = options;
     const scroller = _findScroller();
     const map = new Map();
     const roundRef = { value: 0 };
     const startHref = location.href; // 収集中にページ/会話が変わったら中断する基準
     const start = Date.now();
+    const finish = (stopReason) => ({ ..._finalizeResult(map, sinceMs, scroller), stopReason });
 
     const reportProgress = () => {
       if (!onProgress) return;
@@ -498,7 +498,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
       // スクローラ不明: 現在表示分だけでも回収して返す
       _captureInto(map, roundRef, sinceMs);
       reportProgress();
-      return _finalizeResult(map, sinceMs, untilMs, scroller);
+      return finish('visible-only');
     }
 
     // まず下端（最新）に寄せて初回キャプチャ
@@ -513,18 +513,19 @@ var TeamsExtractor = TeamsExtractor || (() => {
     if (location.href === startHref && !_discarded) {
       const hit = _captureInto(map, roundRef, sinceMs);
       reportProgress();
-      if (hit) return _finalizeResult(map, sinceMs, untilMs, scroller); // 最新分が既に期間外
+      if (hit) return finish('cutoff'); // 最新分が既に期間外
     }
 
     let stagnant = 0;
     let iter = 0;
+    let stopReason = 'iteration-limit';
 
     while (iter < MAX_ITERATIONS) {
       iter++;
-      if (Date.now() - start > MAX_DURATION_MS) break;
-      if (map.size >= MAX_MESSAGES) break;
       // ユーザーが「ここまでで保存」/「中止」を押したら停止（それまでの分は呼び出し側で処理）
-      if (_cancelRequested || _discarded) break;
+      if (_cancelRequested || _discarded) { stopReason = 'user-stopped'; break; }
+      if (Date.now() - start > MAX_DURATION_MS) { stopReason = 'time-limit'; break; }
+      if (map.size >= MAX_MESSAGES) { stopReason = 'message-limit'; break; }
       if (iter % 50 === 0) {
         console.debug(`[ReviewForMD][Teams] 収集中: ${map.size} 件 / iter=${iter} / elapsed=${Date.now() - start}ms`);
       }
@@ -542,12 +543,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
         if (location.href !== startHref || _discarded) break;
         const hit = _captureInto(map, roundRef, sinceMs);
         reportProgress();
-        if (hit) break; // 期間基準に到達 → 遡り終了
+        if (hit) { stopReason = 'cutoff'; break; } // 期間基準に到達 → 遡り終了
         if (scroller.scrollHeight > prevHeight + 4) {
           stagnant = 0; // 古い分が読み込まれた → 継続
         } else {
           stagnant++;
-          if (stagnant >= STABLE_ROUNDS) break; // 本当に先頭に到達
+          if (stagnant >= STABLE_ROUNDS) { stopReason = 'history-start'; break; } // 本当に先頭に到達
         }
       } else {
         // 読み込み済み範囲を 1 段ずつ上へ（全メッセージを viewport に通す）
@@ -558,16 +559,28 @@ var TeamsExtractor = TeamsExtractor || (() => {
         if (location.href !== startHref || _discarded) break;
         const hit = _captureInto(map, roundRef, sinceMs);
         reportProgress();
-        if (hit) break; // 期間基準に到達 → 遡り終了
+        if (hit) { stopReason = 'cutoff'; break; } // 期間基準に到達 → 遡り終了
         stagnant = 0;
       }
     }
 
-    return _finalizeResult(map, sinceMs, untilMs, scroller);
+    return finish(stopReason);
+  }
+
+  /** 正常な先頭到達と、途中までの保存を出力と表示の両方で区別する。 */
+  function _collectionNote(reason) {
+    const notes = {
+      'time-limit': '収集時間の上限に達したため、指定期間の履歴は一部のみです。',
+      'message-limit': '収集件数の上限に達したため、指定期間の履歴は一部のみです。',
+      'iteration-limit': 'スクロール回数の上限に達したため、指定期間の履歴は一部のみです。',
+      'visible-only': 'スクロール領域を確認できなかったため、画面に表示された履歴のみです。',
+      'user-stopped': '「ここまでで保存」で停止したため、取得済みの履歴のみです。',
+    };
+    return notes[reason] || '';
   }
 
   /**
-   * Map → 時系列ソート → 送信者と判定用 ts の前方補完 → カレンダー月レンジフィルタ。
+   * Map → 時系列ソート → 送信者と判定用 ts の前方補完 → 開始月以降の期間フィルタ。
    *
    * 補完を「フィルタより前・全レコード」で行うのが要点: Teams は同一送信者の連投で名前も
    * time[datetime] も先頭 1 件にしか出さない。先にフィルタすると「著者・ts を持つグループ先頭
@@ -576,11 +589,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
    *
    * @param {Map} map
    * @param {number|null} sinceMs レンジ下限（含む）。判定用 ts がこれ未満なら除外。null で下限なし。
-   * @param {number|null} untilMs レンジ上限（含まない＝翌月初）。判定用 ts がこれ以上なら除外。null で上限なし（＝現在まで）。
    *   判定は「信頼できる ts（time[datetime] 由来）の前方補完値」で行い、補完値が無い（先頭側で
    *   信頼できる ts に未到達）レコードは残す（誤って落とすと取りこぼしになるため安全側）。
    */
-  function _finalize(map, sinceMs, untilMs) {
+  function _finalize(map, sinceMs) {
     const records = Array.from(map.values());
     // 主キー sortKey、同値時は seqKey（収集順から復元した時系列）でタイブレーク。
     // 粗いタイムスタンプ（分単位）で複数メッセージが同じ ts.ms を持つとき、収集が下→上のため
@@ -600,13 +612,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
       if (r.tsPrecise && !Number.isNaN(r.tsMs)) lastPreciseTs = r.tsMs;
       r._effTs = (r.tsPrecise && !Number.isNaN(r.tsMs)) ? r.tsMs : lastPreciseTs;
     }
-    // カレンダー月レンジ [sinceMs, untilMs) で絞る。判定用 ts 不明（先頭側で未到達）は残す。
-    if (sinceMs == null && untilMs == null) return records;
+    // 開始月の月初から現在までを残す。判定用 ts 不明（先頭側で未到達）は残す。
+    if (sinceMs == null) return records;
     return records.filter((r) => {
       const ts = r._effTs;
       if (Number.isNaN(ts)) return true;
       if (sinceMs != null && ts < sinceMs) return false;
-      if (untilMs != null && ts >= untilMs) return false;
       return true;
     });
   }
@@ -615,9 +626,9 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * _finalize に加え、生収集 0 件のときは切り分け用に必ず警告ログを残す。
    * @returns {{records:Array, rawCount:number}}
    */
-  function _finalizeResult(map, sinceMs, untilMs, scroller) {
+  function _finalizeResult(map, sinceMs, scroller) {
     const rawCount = map.size;
-    const records = _finalize(map, sinceMs, untilMs);
+    const records = _finalize(map, sinceMs);
     if (rawCount === 0) {
       // 生 0 件は最も壊れやすい「Teams DOM 変更でセレクタ全滅」のサイン。無言にしない。
       // （期間フィルタで 0 件になったケースは rawCount>0 なので区別できる）
@@ -694,11 +705,12 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * @param {string} title 会話タイトル
    * @param {Array} records レコード
    */
-  function _buildMarkdown(title, records) {
+  function _buildMarkdown(title, records, note = '') {
     const lines = [];
     lines.push(`# ${_escapeMdInline(title)}`);
     lines.push('');
     lines.push(`> Microsoft Teams チャット書き出し / メッセージ数: ${records.length}`);
+    if (note) lines.push(`> ※ ${note}`);
     lines.push('');
 
     for (const r of records) {
@@ -844,14 +856,18 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * 収集完了時の表示。download はその場で保存、copy は操作ボタンを出す
    * （copy は user 操作起点が必要なため、オーバーレイのボタンクリックで実行する）。
    */
-  function _overlayComplete({ markdown, count, mode, title }) {
+  function _overlayComplete({ markdown, count, mode, title, note = '' }) {
     if (!_overlayEl || !_overlayActionsEl || !_overlayProgressEl) return;
     _markOverlayDone(false);
-    _overlayProgressEl.textContent = `✓ ${count} 件を収集しました`;
+    const describe = (text) => note ? `${text}（一部）\n${note}` : text;
+    _overlayProgressEl.textContent = describe(`✓ ${count} 件を収集しました`);
     _overlayActionsEl.replaceChildren();
 
     const clip = _clip();
-    const filename = _safeName(title, 'teams-chat') + '.md';
+    // 保存日のローカル日付を付ける（UTC変換による日付のずれを防ぐ）。
+    const savedAt = new Date();
+    const date = `${savedAt.getFullYear()}${String(savedAt.getMonth() + 1).padStart(2, '0')}${String(savedAt.getDate()).padStart(2, '0')}`;
+    const filename = `${_safeName(title, 'teams-chat')}_${date}.md`;
 
     if (mode === 'copy') {
       const copyBtn = _overlayButton('クリップボードにコピー', 'primary', async () => {
@@ -860,8 +876,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
         const progressEl = _overlayProgressEl;
         const ok = clip ? await clip.copy(markdown) : false;
         if (!progressEl || !progressEl.isConnected) return;
-        progressEl.textContent = ok ? `✓ コピーしました（${count} 件）` : 'コピーに失敗しました';
-        if (ok) { copyBtn.disabled = true; _autoClose(); }
+        progressEl.textContent = describe(ok ? `✓ コピーしました（${count} 件）` : 'コピーに失敗しました');
+        if (ok) { copyBtn.disabled = true; if (!note) _autoClose(); }
       });
       _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
       return;
@@ -870,17 +886,17 @@ var TeamsExtractor = TeamsExtractor || (() => {
     // download
     const ok = clip ? clip.download(markdown, filename) : false;
     if (ok) {
-      _overlayProgressEl.textContent = `✓ ${count} 件をダウンロードしました`;
+      _overlayProgressEl.textContent = describe(`✓ ${count} 件をダウンロードしました`);
       _overlayActionsEl.append(_overlayButton('閉じる', 'ghost', _removeOverlay));
-      _autoClose();
+      if (!note) _autoClose();
     } else {
       // 保存失敗時はコピーで救済できる手段を出す
-      _overlayProgressEl.textContent = 'ダウンロードに失敗しました';
+      _overlayProgressEl.textContent = describe('ダウンロードに失敗しました');
       const copyBtn = _overlayButton('コピーで保存', 'primary', async () => {
         const progressEl = _overlayProgressEl; // copy 分岐と同様、await 後の null 参照を防ぐ
         const c = clip ? await clip.copy(markdown) : false;
         if (!progressEl || !progressEl.isConnected) return;
-        progressEl.textContent = c ? `✓ コピーしました（${count} 件）` : 'コピーにも失敗しました';
+        progressEl.textContent = describe(c ? `✓ コピーしました（${count} 件）` : 'コピーにも失敗しました');
         if (c) copyBtn.disabled = true;
       });
       _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
@@ -967,8 +983,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
    * いつでもオーバーレイから中止・保存できる。
    *
    * @param {{monthsAgo?:number, mode?:('download'|'copy')}} [opts]
-   *   monthsAgo: 収集対象のカレンダー月オフセット（0=今月 / 1=先月 / 2=2か月前 / 3=3か月前）。
-   *     今月は月初〜現在、それ以外はその月の 1 日〜末日（翌月初の直前）に絞る。
+   *   monthsAgo: 収集開始月のオフセット（0=今月 / 1=先月から / 2=2か月前から / 3=3か月前から）。
+   *     指定月の 1 日から現在まで。履歴が短ければ取得できた分を保存する。
    *   mode: 完了時の既定動作（download=その場保存 / copy=コピー操作ボタンを提示）
    * @returns {{ok:boolean, started?:boolean, error?:string}}
    */
@@ -981,16 +997,14 @@ var TeamsExtractor = TeamsExtractor || (() => {
     _cancelRequested = false;
     _discarded = false;
 
-    // 収集対象のカレンダー月レンジ [sinceMs, untilMs) を算出する。
-    // 例: 5/10 に monthsAgo=0（今月）→ [5/1 00:00, null)（現在まで）/ monthsAgo=1（先月）→ [4/1, 5/1)。
+    // 指定月の月初から現在までを収集する。
+    // 例: 5/10 に monthsAgo=0（今月）→ 5/1〜現在、monthsAgo=1（先月から）→ 4/1〜現在。
     const ma = Number(opts.monthsAgo);
     const monthsAgo = Number.isFinite(ma) && ma > 0 ? Math.floor(ma) : 0;
     const now = new Date();
     const y = now.getFullYear();
     const mo = now.getMonth();
     const sinceMs = new Date(y, mo - monthsAgo, 1, 0, 0, 0, 0).getTime(); // 対象月の 1 日 0 時
-    // 今月は上限なし（＝現在まで）。それ以外は翌月 1 日 0 時を上限（含まない）にしてその月だけに絞る。
-    const untilMs = monthsAgo === 0 ? null : new Date(y, mo - monthsAgo + 1, 1, 0, 0, 0, 0).getTime();
     const mode = opts.mode === 'copy' ? 'copy' : 'download';
     const title = getTitle();
     const startHref = location.href; // 完了時に会話が切り替わっていないか確認する基準
@@ -1000,9 +1014,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
     // 非同期で収集を走らせ、完了/中止/エラーをオーバーレイに反映する。
     (async () => {
       try {
-        const { records, rawCount } = await _collectRecords({
+        const { records, rawCount, stopReason } = await _collectRecords({
           sinceMs,
-          untilMs,
           onProgress: _updateOverlayProgress,
         });
         // 破棄指示、または収集中に別会話/ページへ切り替わったら部分データを保存しない
@@ -1014,13 +1027,14 @@ var TeamsExtractor = TeamsExtractor || (() => {
         if (records.length === 0) {
           _overlayError(
             rawCount > 0
-              ? '選択した月にメッセージがありませんでした。別の月でお試しください。'
+              ? '選択した期間にメッセージがありませんでした。収集開始月を前にしてお試しください。'
               : 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）。'
           );
           return;
         }
-        const markdown = _buildMarkdown(title, records);
-        _overlayComplete({ markdown, count: records.length, mode, title });
+        const note = _collectionNote(stopReason);
+        const markdown = _buildMarkdown(title, records, note);
+        _overlayComplete({ markdown, count: records.length, mode, title, note });
       } catch (e) {
         if (_discarded) {
           _removeOverlay();

@@ -316,11 +316,17 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
    * @returns {Promise<string>}
    */
   async function extractAll() {
+    const pageUrl = location.href;
+    const assertCurrentPage = () => {
+      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+    };
     // Details タブを開いてから本文を取る（Activity 開始時の本文欠落を防ぐ）
     await _activateTab(SELECTORS.detailsTabText);
+    assertCurrentPage();
     const body = getBody();
     // Activity タブを開いてからコメントを取る（Details 開始時のコメント欠落を防ぐ）
     await _activateTab(SELECTORS.activityTabText);
+    assertCurrentPage();
     const threads = getComments();
 
     const title = `${getTitle()} ${getPRNumber()}`.trim();

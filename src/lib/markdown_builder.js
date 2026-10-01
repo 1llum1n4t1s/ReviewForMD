@@ -52,6 +52,12 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
       return '';
     }
 
+    // 専用変換は子ノードを自分で読むため、通常走査と重ねない。
+    if (tag === 'ul' || tag === 'ol') {
+      return '\n' + _convertListItems(el, tag === 'ol', 0, depth, insidePre) + '\n';
+    }
+    if (tag === 'table') return '\n' + _convertTable(el, depth, insidePre) + '\n';
+
     // 子ノードを先に変換（深度・pre 内フラグを伝播）
     const childText = _convertChildren(el, depth, insidePre);
 
@@ -156,17 +162,10 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
       }
 
       // ── リスト ──
-      case 'ul':
-      case 'ol':
-        return '\n' + _convertListItems(el, tag === 'ol') + '\n';
       case 'li': {
         // li は _convertListItems から呼ばれるので、単独で来た場合
         return `- ${childText.trim()}\n`;
       }
-
-      // ── テーブル ──
-      case 'table':
-        return '\n' + _convertTable(el) + '\n';
 
       // ── ブロック要素 ──
       case 'p':
@@ -218,9 +217,12 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
    * @param {Element} listEl - ul/ol 要素
    * @param {boolean} ordered
    * @param {number} [depth=0]
+   * @param {number} [nodeDepth=0] - インデントと分けたDOM再帰深度
+   * @param {boolean} [insidePre=false]
    * @returns {string}
    */
-  function _convertListItems(listEl, ordered, depth = 0) {
+  function _convertListItems(listEl, ordered, depth = 0, nodeDepth = 0, insidePre = false) {
+    if (nodeDepth > MAX_CONVERT_DEPTH) return listEl.textContent || '';
     const lines = [];
     const indent = '  '.repeat(depth);
     let counter = 1;
@@ -242,7 +244,9 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
             subList += _convertListItems(
               childEl,
               childTag === 'ol',
-              depth + 1
+              depth + 1,
+              nodeDepth + 2,
+              insidePre
             );
             continue;
           }
@@ -255,7 +259,7 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
             continue;
           }
         }
-        itemText += _convertNode(node, depth);
+        itemText += _convertNode(node, nodeDepth + 2, insidePre);
       }
 
       const prefix = ordered ? `${counter}.` : '-';
@@ -273,9 +277,11 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
    * HTML テーブルを Markdown テーブルに変換する
    * thead/tbody/tfoot を考慮し、直接の子 tr のみ処理する（ネストテーブル混入防止）
    * @param {Element} tableEl
+   * @param {number} [depth=0]
+   * @param {boolean} [insidePre=false]
    * @returns {string}
    */
-  function _convertTable(tableEl) {
+  function _convertTable(tableEl, depth = 0, insidePre = false) {
     const rows = [];
 
     // thead → tbody → tfoot の順に直接の子 tr を収集
@@ -301,7 +307,11 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
         for (const cell of tr.children) {
           const cellTag = cell.tagName.toLowerCase();
           if (cellTag === 'th' || cellTag === 'td') {
-            cells.push(_convertChildren(cell).trim().replace(/\|/g, '\\|').replace(/\n/g, ' '));
+            const cellDepth = depth + (section === tr ? 2 : 3);
+            const text = cellDepth > MAX_CONVERT_DEPTH
+              ? (cell.textContent || '')
+              : _convertChildren(cell, cellDepth, insidePre);
+            cells.push(text.trim().replace(/\|/g, '\\|').replace(/\n/g, ' '));
           }
         }
         if (cells.length > 0) rows.push(cells);
@@ -670,16 +680,25 @@ var MarkdownBuilder = MarkdownBuilder || (() => {
    * @returns {Array<Array>}
    */
   function deduplicateThreads(threads) {
-    const seen = new Set();
-    return threads.filter((thread) => {
-      if (!thread || thread.length === 0) return false;
-      const first = thread[0];
-      const lineRange = first.diffContext?.lineRange || '';
-      const key = `${first.author}::${first.filePath || ''}::${first.body || ''}::${first.timestamp || ''}::${lineRange}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const byRoot = new Map();
+    const commentKey = (comment) => `${comment.author}::${comment.filePath || ''}::${comment.body || ''}::${comment.timestamp || ''}::${comment.diffContext?.lineRange || ''}`;
+    for (const thread of threads) {
+      if (!thread || thread.length === 0) continue;
+      const key = commentKey(thread[0]);
+      let entry = byRoot.get(key);
+      if (!entry) {
+        entry = { comments: [thread[0]], replies: new Set() };
+        byRoot.set(key, entry);
+      }
+      // 同じ親の別ソースにしかない返信は残し、入力スレッドは変更しない。
+      for (const reply of thread.slice(1)) {
+        const replyKey = commentKey(reply);
+        if (entry.replies.has(replyKey)) continue;
+        entry.replies.add(replyKey);
+        entry.comments.push(reply);
+      }
+    }
+    return Array.from(byRoot.values(), entry => entry.comments);
   }
 
   return {

@@ -340,7 +340,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * 折りたたまれた会話を展開する（ライブ DOM 専用）
    * @returns {Promise<void>}
    */
-  async function _loadHiddenConversations() {
+  async function _loadHiddenConversations(assertCurrentPage) {
     // 1500ms × 20 ラウンドで最大 30 秒 UI フリーズしていたのを短縮。
     // 典型的な PR では 1-3 ラウンドで収束するため 5 ラウンド + 500ms でも十分。
     const MAX_ROUNDS = 5;  // 無限ループ防止
@@ -379,6 +379,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
 
       // コンテンツが読み込まれるまで待機
       await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
+      assertCurrentPage();
     }
   }
 
@@ -392,8 +393,13 @@ var GitHubExtractor = GitHubExtractor || (() => {
    * @returns {Promise<string>}
    */
   async function extractAll() {
+    const pageUrl = location.href;
+    const assertCurrentPage = () => {
+      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+    };
     // 折りたたまれた会話を展開してから抽出
-    await _loadHiddenConversations();
+    await _loadHiddenConversations(assertCurrentPage);
+    assertCurrentPage();
     const title = `${getTitle()} ${getPRNumber()}`;
     const body = getBody();
 
@@ -408,6 +414,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
 
     // HTML fetch で DOM に表示されていないレビュースレッドを補完
     const fetchedThreads = await _fetchAndExtractComments();
+    assertCurrentPage();
 
     // DOM スレッドを優先し、fetch で追加取得したスレッドをマージして重複除去
     const threads = fetchedThreads.length > 0

@@ -120,9 +120,9 @@ function _addActionButton({ label, icon, kind, mode, primary }) {
 }
 
 /**
- * Teams 用の収集対象月ドロップダウン（今月 / 先月 / 2か月前 / 3か月前）を actions の先頭に追加する。
+ * Teams 用の収集開始月ドロップダウン（今月 / 先月から / 2か月前から / 3か月前から）を actions の先頭に追加する。
  * 値はカレンダー月オフセット（0/1/2/3）。_runAction が teams-md のときこの値を monthsAgo として送る。
- * 今月は月初〜現在、それ以外はその月の 1 日〜末日に絞られる。
+ * 指定月の月初から現在まで。履歴が短ければ取得できた分を保存する。
  */
 function _addTeamsPeriodControl() {
   const wrap = document.createElement('div');
@@ -131,12 +131,12 @@ function _addTeamsPeriodControl() {
   const label = document.createElement('label');
   label.className = 'pop-period__label';
   label.setAttribute('for', 'teams-period');
-  label.textContent = '収集する月';
+  label.textContent = '収集開始月';
 
   const select = document.createElement('select');
   select.id = 'teams-period';
   select.className = 'pop-period__select';
-  [['0', '今月'], ['1', '先月'], ['2', '2か月前'], ['3', '3か月前']].forEach(([value, text]) => {
+  [['0', '今月'], ['1', '先月から'], ['2', '2か月前から'], ['3', '3か月前から']].forEach(([value, text]) => {
     const opt = document.createElement('option');
     opt.value = value;
     opt.textContent = text;
@@ -189,7 +189,7 @@ async function _runAction(btn, kind, mode) {
     labelEl.textContent = isTeams ? '開始しています…' : '取得中…';
   }
 
-  // Teams は収集対象のカレンダー月（0=今月 / 1=先月 / 2=2か月前 / 3=3か月前）をドロップダウンから渡す
+  // Teams は収集開始月（0=今月 / 1=先月から / 2=2か月前から / 3=3か月前から）を渡す
   let monthsAgo;
   if (isTeams) {
     const sel = document.getElementById('teams-period');
@@ -311,7 +311,7 @@ function _renderForStatus(status) {
     _addTeamsPeriodControl();
     _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
     _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
-    _setNote('選んだ月のメッセージを収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
+    _setNote('選んだ月から現在まで、取得できる履歴を収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
     return;
   }
 

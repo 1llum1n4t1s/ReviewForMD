@@ -745,14 +745,10 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     // 3. FileDiffs + Items API を並列取得（同時6件ずつ）
     const CONCURRENCY = 6;
     const tasks = Array.from(fetchTasks.values());
-    // fetchResult: key → { modifiedContent, baseContent, lineDiffBlocks }
-    const fetchResults = new Map();
-
     for (let i = 0; i < tasks.length; i += CONCURRENCY) {
       const batch = tasks.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
+      await Promise.all(
         batch.map(async (task) => {
-          const key = `${task.filePath}\0${task.sourceCommitId}`;
           // modified / base / FileDiffs を全て並列取得
           const fetches = [
             _fetchFileContent(urlInfo, task.filePath, task.sourceCommitId),
@@ -764,47 +760,37 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
             );
           }
           const [modifiedContent, baseContent = null, lineDiffBlocks = null] = await Promise.all(fetches);
-          return { key, modifiedContent, baseContent, lineDiffBlocks };
+          if (!modifiedContent) return; // ファイル削除/移動 → lineRange のみ保持
+
+          // 4. 取得直後に各スレッドの差分を生成する。
+          // 全文はこのタスク内だけに保持し、後続バッチへ持ち越さない。
+          task.entries.forEach(({ idx, rawThread }) => {
+            const first = apiThreads[idx][0];
+            const tc = rawThread.threadContext;
+            if (!tc) return;
+
+            const startLine = tc.rightFileStart?.line || tc.leftFileStart?.line;
+            const endLine = tc.rightFileEnd?.line || tc.leftFileEnd?.line || startLine;
+            if (!startLine) return;
+
+            let diffLines;
+            if (lineDiffBlocks && baseContent) {
+              diffLines = _buildDiffWithBlocks(
+                lineDiffBlocks, baseContent, modifiedContent, startLine, endLine
+              );
+            } else {
+              diffLines = _extractLinesAroundTarget(modifiedContent, startLine, endLine);
+            }
+            if (diffLines.length === 0) return;
+
+            if (!first.diffContext) {
+              first.diffContext = { lineRange: _formatLineRange(startLine, endLine), diffLines };
+            } else {
+              first.diffContext.diffLines = diffLines;
+            }
+          });
         })
       );
-      results.forEach((r) => fetchResults.set(r.key, r));
-    }
-
-    // 4. 各スレッドに diffLines を設定
-    for (const [, task] of fetchTasks) {
-      const key = `${task.filePath}\0${task.sourceCommitId}`;
-      const result = fetchResults.get(key);
-      if (!result?.modifiedContent) continue; // ファイル削除/移動 → lineRange のみ保持
-
-      task.entries.forEach(({ idx, rawThread }) => {
-        const thread = apiThreads[idx];
-        const first = thread[0];
-        const tc = rawThread.threadContext;
-        if (!tc) return;
-
-        const startLine = tc.rightFileStart?.line || tc.leftFileStart?.line;
-        const endLine = tc.rightFileEnd?.line || tc.leftFileEnd?.line || startLine;
-        if (!startLine) return;
-
-        // FileDiffs + base 側が取得できていれば +/- 付き diff を生成
-        let diffLines;
-        if (result.lineDiffBlocks && result.baseContent) {
-          diffLines = _buildDiffWithBlocks(
-            result.lineDiffBlocks, result.baseContent, result.modifiedContent,
-            startLine, endLine
-          );
-        } else {
-          // フォールバック: 全行コンテキスト（prefix=' '）
-          diffLines = _extractLinesAroundTarget(result.modifiedContent, startLine, endLine);
-        }
-        if (diffLines.length === 0) return;
-
-        if (!first.diffContext) {
-          first.diffContext = { lineRange: _formatLineRange(startLine, endLine), diffLines };
-        } else {
-          first.diffContext.diffLines = diffLines;
-        }
-      });
     }
   }
 
@@ -939,7 +925,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
     // DOM スレッドから複合キー(filePath + lineRange) → diffContext のマップを構築
     const compositeMap = new Map();  // "filePath\0lineRange" → diffContext
-    const fileOnlyMap = new Map();   // filePath → diffContext（フォールバック用）
     domThreadEls.forEach((threadEl) => {
       const prevSibling = threadEl.previousElementSibling;
       if (!prevSibling || !prevSibling.classList.contains('comment-file-header')) return;
@@ -957,10 +942,6 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       if (!compositeMap.has(key)) {
         compositeMap.set(key, diffContext);
       }
-      // filePath のみのフォールバック（同一ファイル1スレッドの場合に使用）
-      if (!fileOnlyMap.has(filePath)) {
-        fileOnlyMap.set(filePath, diffContext);
-      }
     });
 
     if (compositeMap.size === 0) return;
@@ -975,7 +956,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       // API 側の lineRange を使って複合キーで正確にマッチ
       const apiLineRange = first.diffContext?.lineRange || '';
       const key = `${first.filePath}\0${apiLineRange}`;
-      const ctx = compositeMap.get(key) || fileOnlyMap.get(first.filePath);
+      const ctx = apiLineRange ? compositeMap.get(key) : null;
       if (ctx) {
         first.diffContext = ctx;
       }
@@ -1000,7 +981,8 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * DOM スレッドに対して API 生データとマッチさせ、Items API で diffLines を補完する
    *
    * DOM パスで取得したスレッドの中に diffLines が欠落しているものがある場合、
-   * API から rawApiThreads を取得し、filePath でマッチして Items API 経由で補完する。
+   * API から rawApiThreads を取得し、filePath・author・取得済み行範囲で
+   * 一意に対応付けられるスレッドだけ Items API 経由で補完する。
    *
    * @param {Array<Array>} domThreads - DOM から取得したスレッド配列
    * @param {object} [existingApiData] - 既に取得済みの fetchViaApi() 結果（省略時は内部で取得）
@@ -1051,14 +1033,15 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       const domPath = first.filePath || '';
       const domAuthor = first.author || '';
       const domLineRange = first.diffContext?.lineRange || '';
-      const match = rawEntries.find((e) =>
-        !e.used &&
+      const candidates = rawEntries.filter((e) =>
         e.author === domAuthor &&
         (e.filePath === domPath || e.filePath.endsWith('/' + domPath)) &&
-        // lineRange が両方空でない場合のみ比較（DOM 側に lineRange がないケースを許容）
-        (!domLineRange || !e.lineRange || e.lineRange === domLineRange)
+        (!domLineRange || e.lineRange === domLineRange)
       );
-      if (!match) return;
+      // 行範囲欠落や短縮パスで複数候補が残る場合、別スレッドの差分を採用しない。
+      // 使用済み候補も曖昧さの判定に含め、処理順による見かけの一意化を防ぐ。
+      if (candidates.length !== 1 || candidates[0].used) return;
+      const match = candidates[0];
 
       match.used = true;
       matchedThreads.push(thread);
@@ -1092,6 +1075,10 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @returns {Promise<string>}
    */
   async function extractAll() {
+    const pageUrl = location.href;
+    const assertCurrentPage = () => {
+      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+    };
     let domTitle = getTitle();
     let body = getBody();
     let threads = getComments(); // Array<Array<comment>> (DOM 由来)
@@ -1123,6 +1110,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     } catch (e) {
       console.warn('[ReviewForMD] extractAll: API取得で予期しないエラー:', e);
     }
+    assertCurrentPage();
 
     if (apiData) {
       // API タイトルを優先（DOM より確実）
@@ -1143,6 +1131,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
         } catch (e) {
           console.warn('[ReviewForMD] Items API 補完で予期しないエラー:', e);
         }
+        assertCurrentPage();
         itemsApiDone = true;
 
         // API を採用（DOM とマージしない: タイムスタンプ/パス正規化差で重複が出るため）
@@ -1160,6 +1149,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
       } catch (e) {
         console.warn('[ReviewForMD] DOM diffLines 補完で予期しないエラー:', e);
       }
+      assertCurrentPage();
     }
 
     // API タイトルが取れなかった場合は DOM タイトルにフォールバック

@@ -32,8 +32,10 @@ Everything is done from the toolbar popup. The popup detects the current site an
   Save or copy the meeting transcript (captions) as a .vtt file — handy as a draft for meeting minutes.
 
 - Microsoft Teams chat
-  Collect the full history of a chat or channel via auto-scroll and save sender, timestamp, body, reactions and
+  Collect chat or channel history from the selected starting month through today via auto-scroll and save sender, timestamp, body, reactions and
   attachment links as a single .md file.
+  Choose this month or start one, two or three months ago. Shorter available histories can also be saved.
+  Files are named chat-name_yyyyMMdd.md. Exports stopped by collection limits are marked as partial.
 
 [Privacy]
 

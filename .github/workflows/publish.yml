@@ -78,149 +78,82 @@ jobs:
           name: reviewformd-zip
           path: .
 
-      - name: バージョン pre-flight check (CWS / 既存 version と一致なら skip)
-        # 同 version 再 push は CWS API が INVALID_ARGUMENT 等で拒否するため、Items.get API で
-        # **draft の crxVersion** を取得して manifest version と一致したら publish を skip する。
-        #
-        # ⚠️ `crxVersion` は CWS Items API 公式ドキュメント未記載の **未文書フィールド**だが、
-        # 実機検証 (`?projection=DRAFT`) で返ることを確認済み (PlasmoHQ 等の publish ツールでも
-        # 事実上の標準)。将来 API 変更で消えたら draft_version が空になり skip=false 側 (publish 実行)
-        # に倒れるので安全。
-        #
-        # ⚠️ uploadState: publish 済み clean draft は `NOT_FOUND` (= 保留中アップロード操作なし) を返す。
-        # FAILURE のときのみ「直近アップロード失敗 → 再 upload したい」ので skip しない。
-        # それ以外は crxVersion 一致で skip。
-        id: cws-preflight
+      - name: Chrome Web Store API V2 でアップロード + 審査提出
         env:
           CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID || secrets.CWS_PUBLISHER_ID }}
           MANIFEST_VERSION: ${{ needs.package.outputs.version }}
         run: |
           set -euo pipefail
-          shopt -s inherit_errexit
-          # OAuth refresh (publish step と同じ流れ、token はマスク登録)
-          token_response=$(curl -fsS \
+          # V2のpublisher IDはDeveloper Dashboardのアカウントページから設定する。
+          # listingは引き続きDashboardで管理し、このjobはZIPの提出だけを担う。
+          # checkout/npmを行わず、Secretsをnpm lifecycleへ渡さない構成を維持する。
+          for name in CWS_CLIENT_ID CWS_CLIENT_SECRET CWS_REFRESH_TOKEN CWS_EXTENSION_ID CWS_PUBLISHER_ID MANIFEST_VERSION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::必要な設定がありません: ${name}"
+              exit 1
+            fi
+          done
+          if [[ ! "$CWS_PUBLISHER_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || [[ ! "$CWS_EXTENSION_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "::error::publisher ID / extension ID の形式が不正です"
+            exit 1
+          fi
+          token_response=$(curl -fsS --connect-timeout 15 --max-time 60 \
             -X POST "https://oauth2.googleapis.com/token" \
             --data-urlencode "client_id=${CWS_CLIENT_ID}" \
             --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
             --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
-            --data-urlencode "grant_type=refresh_token") || token_response=""
-          # python が非 JSON で exit 1 しても inherit_errexit で step ごと落ちないよう `|| echo ""`
-          # でフォールバックさせ、直後の空チェック分岐で warning 降格させる。curl 側にも `|| token_response=""`
-          # が要る（無いと set -e + curl -fsS で step ごと即死し、この分岐が死にコードになる）。
-          access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
-          if [ -z "${access_token:-}" ]; then
-            echo "::warning::CWS pre-flight: OAuth token 取得失敗 → publish step に判定を委ねる"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # ⚠️ token_response（複数行 JSON）を add-mask に渡してはいけない。ワークフローコマンドは
-          #    行単位で解釈されるため 1 行目 "{" だけがマスク値として消費され、残りの行
-          #    （access_token を含む）が平文でログに出る。単一行の access_token だけをマスクする。
-          echo "::add-mask::${access_token}"
-          # Items.get で draft の crxVersion + uploadState を取得
-          draft_response=$(curl -fsS \
-            -H "Authorization: Bearer ${access_token}" \
-            -H "x-goog-api-version: 2" \
-            "https://www.googleapis.com/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}?projection=DRAFT") || draft_response=""
-          if [ -z "$draft_response" ]; then
-            echo "::warning::CWS pre-flight: Items.get 失敗 → publish step に判定を委ねる"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          draft_version=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("crxVersion",""))' 2>/dev/null <<< "$draft_response" || echo "")
-          draft_state=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("uploadState",""))' 2>/dev/null <<< "$draft_response" || echo "")
-          echo "📊 CWS draft: version=${draft_version:-(unknown)} state=${draft_state:-(unknown)} / manifest: ${MANIFEST_VERSION}"
-          if [ -n "$draft_version" ] && [ "$draft_version" = "$MANIFEST_VERSION" ] && [ "$draft_state" != "FAILURE" ]; then
-            echo "::notice::CWS は既に v${MANIFEST_VERSION} を保持 (crxVersion 一致, uploadState=${draft_state})。CWS publish step を skip (同 version 重複 push 防止)"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Chrome Web Store にアップロード + Publish API で Submit for review
-        if: ${{ steps.cws-preflight.outputs.skip != 'true' }}
-        env:
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-        run: |
-          # フルオート申請フロー:
-          # 1) ZIP を Draft としてアップロード
-          # 2) Publish API (publishTarget=default) で Submit for review まで自動化
-          #
-          # **listing 変更時の運用注意**: 説明文 / スクリーンショット / カテゴリ / 権限の正当性などの
-          # CWS listing 項目は API に更新エンドポイントが無い (v2 API discovery で確認済み)。
-          # listing を変更したいリリースでは push 前後に Dashboard で listing を整えてから
-          # release ブランチを push する (Submit for review は Draft の最新コミット + 最新 listing で行う)。
-          #
-          # この job は checkout/npm を行わず、Secrets を第三者 npm lifecycle の後段に置かない。
-          # package job が作った ZIP artifact だけを fresh runner で受け取り、CWS API へ直接アップロードする。
-          #
-          # **stdout/stderr は直接ストリームする**: 変数に取り込んで echo すると、CLI が OAuth Bearer
-          # Token をエラーに混ぜたとき GitHub Actions の自動マスキングが効かず平文残存しうる。
-          # 直接ストリームすればランナー側マスキングが各シークレットを *** に置換できる。
-          set -euo pipefail
-          shopt -s inherit_errexit
-          # ⚠️ このブロックでは `set -x` を絶対に有効化しない (token が add-mask 登録前に平文ログに出る)。
-          token_response=$(curl -fsS \
-            -X POST "https://oauth2.googleapis.com/token" \
-            --data-urlencode "client_id=${CWS_CLIENT_ID}" \
-            --data-urlencode "client_secret=${CWS_CLIENT_SECRET}" \
-            --data-urlencode "refresh_token=${CWS_REFRESH_TOKEN}" \
-            --data-urlencode "grant_type=refresh_token") || token_response=""
-          access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null <<< "$token_response" || echo "")
-          if [ -z "${access_token:-}" ]; then
-            echo "::error::access_token の取得に失敗しました (OAuth refresh が拒否されたか、応答が想定形式でない)"
+            --data-urlencode "grant_type=refresh_token")
+          access_token=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))' <<< "$token_response")
+          if [ -z "$access_token" ]; then
+            echo "::error::OAuth access_tokenを取得できませんでした"
             exit 1
           fi
-          # 動的取得した access_token は GitHub Actions の自動マスキング対象外のため、
-          # add-mask で明示登録して以降のログ出力でも漏洩しないようにする。
-          # ⚠️ token_response（複数行 JSON）は渡してはいけない。ワークフローコマンドは行単位で
-          #    解釈されるため 1 行目 "{" だけがマスク値として消費され、残りの行（access_token を
-          #    含む）が平文でログに出る。単一行の access_token だけをマスクする。
+          # 複数行のOAuth応答は出力せず、単一行のtokenだけをマスク登録する。
           echo "::add-mask::${access_token}"
-
-          # ----- ステップ 1: ZIP を Draft としてアップロード -----
-          echo "📤 Step 1/2: Chrome Web Store に ZIP をアップロード中..."
-          upload_response=$(curl -fsS \
-            -X PUT \
-            -H "Authorization: Bearer ${access_token}" \
-            -H "x-goog-api-version: 2" \
-            -H "Content-Type: application/zip" \
-            --data-binary @ReviewForMD.zip \
-            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}")
-          echo "✅ アップロード完了"
-          upload_state=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("uploadState","UNKNOWN"))' 2>/dev/null <<< "$upload_response")
-          echo "📊 uploadState: ${upload_state}"
-          if [ "$upload_state" != "SUCCESS" ]; then
-            echo "::error::アップロードが SUCCESS ではないため publish を中止します (state=${upload_state})"
-            echo "Response: $upload_response"
+          item_url="https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}"
+          status_response=$(curl -fsS --connect-timeout 15 --max-time 60 \
+            -H "Authorization: Bearer ${access_token}" "${item_url}:fetchStatus")
+          # 未文書のdraftフィールドに依存せず、公開済み/審査提出済みrevisionだけで重複を判定する。
+          skip=$(python3 -c 'import json,sys; d=json.load(sys.stdin); states={"PUBLISHED","PUBLISHED_TO_TESTERS","PENDING_REVIEW","STAGED"}; revisions=[d.get(k,{}) for k in ("publishedItemRevisionStatus","submittedItemRevisionStatus")]; print("true" if any(r.get("state") in states and any(c.get("crxVersion")==sys.argv[1] for c in r.get("distributionChannels",[])) for r in revisions) else "false")' "$MANIFEST_VERSION" <<< "$status_response")
+          if [ "$skip" = "true" ]; then
+            echo "::notice::v${MANIFEST_VERSION}は公開済みまたは審査提出済みのためスキップします"
+            exit 0
+          fi
+          echo "📤 Chrome Web StoreへZIPをアップロード中..."
+          upload_response=$(curl -fsS --connect-timeout 15 --max-time 300 \
+            -X POST -H "Authorization: Bearer ${access_token}" \
+            -H "Content-Type: application/zip" --data-binary @ReviewForMD.zip \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:upload")
+          upload_state=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("uploadState","UNKNOWN"))' <<< "$upload_response")
+          # V2 UploadState enumはSUCCEEDED / IN_PROGRESS / FAILED。
+          # 非同期処理中は5秒間隔で最大24回確認してから審査提出する。
+          for attempt in $(seq 1 24); do
+            if [ "$upload_state" != "IN_PROGRESS" ]; then break; fi
+            sleep 5
+            status_response=$(curl -fsS --connect-timeout 15 --max-time 60 \
+              -H "Authorization: Bearer ${access_token}" "${item_url}:fetchStatus")
+            upload_state=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("lastAsyncUploadState","UNKNOWN"))' <<< "$status_response")
+          done
+          if [ "$upload_state" != "SUCCEEDED" ]; then
+            echo "::error::アップロード完了を確認できないため提出を停止します (state=${upload_state})"
             exit 1
           fi
-
-          # ----- ステップ 2: Publish API で Submit for review -----
-          echo "📨 Step 2/2: Publish API で Submit for review..."
-          publish_response=$(curl -fsS \
-            -X POST \
-            -H "Authorization: Bearer ${access_token}" \
-            -H "x-goog-api-version: 2" \
-            -H "Content-Length: 0" \
-            "https://www.googleapis.com/chromewebstore/v1.1/items/${CWS_EXTENSION_ID}/publish?publishTarget=default")
-          publish_status=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(d.get("status",[])))' 2>/dev/null <<< "$publish_response")
-          echo "📊 Publish status: ${publish_status}"
-          case "$publish_status" in
-            *OK*|*ITEM_PENDING_REVIEW*)
-              echo "🎉 Submit for review 完了！Chrome Web Store のレビューキューに入りました"
-              echo "🔗 Dashboard: https://chrome.google.com/webstore/devconsole"
-              echo "⏰ レビュー結果は通常 1〜数日でメール通知"
+          echo "📨 審査提出中..."
+          publish_response=$(curl -fsS --connect-timeout 15 --max-time 120 \
+            -X POST -H "Authorization: Bearer ${access_token}" \
+            -H "Content-Type: application/json" \
+            --data '{"publishType":"DEFAULT_PUBLISH"}' "${item_url}:publish")
+          publish_state=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("state","UNKNOWN"))' <<< "$publish_response")
+          case "$publish_state" in
+            PENDING_REVIEW|PUBLISHED|PUBLISHED_TO_TESTERS|STAGED)
+              echo "✅ Chrome Web Storeの提出受付を確認しました (state=${publish_state})"
               ;;
             *)
-              echo "::error::予期しない publish status: ${publish_status}"
-              echo "Response: $publish_response"
+              echo "::error::提出受付を確認できませんでした (state=${publish_state})"
               exit 1
               ;;
           esac
@@ -254,7 +187,7 @@ jobs:
       - name: Node セットアップ
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: バージョン pre-flight check (AMO / 既 submission 済み version なら skip)
         # 同 version 重複 submission は AMO が "Version already exists" で拒否するため、

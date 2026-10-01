@@ -4,14 +4,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $scriptDir = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
-$buildRoot = [IO.Path]::GetFullPath((Join-Path $scriptDir "temp-build"))
+$tempRoot = [IO.Path]::GetFullPath((Join-Path $scriptDir "temp-build"))
+$buildRoot = [IO.Path]::GetFullPath((Join-Path $tempRoot "package"))
 $chromeDir = Join-Path $buildRoot "chrome"
 $firefoxDir = Join-Path $buildRoot "firefox"
 $chromeArchive = Join-Path $scriptDir "ReviewForMD.zip"
 $firefoxArchive = Join-Path $scriptDir "ReviewForMD-firefox.zip"
 
-if ([IO.Path]::GetDirectoryName($buildRoot) -ne $scriptDir -or [IO.Path]::GetFileName($buildRoot) -ne "temp-build") {
-    throw "一時ディレクトリがリポジトリ直下の temp-build ではありません: $buildRoot"
+if ([IO.Path]::GetDirectoryName($tempRoot) -ne $scriptDir -or [IO.Path]::GetDirectoryName($buildRoot) -ne $tempRoot -or [IO.Path]::GetFileName($buildRoot) -ne "package") {
+    throw "梱包ディレクトリがリポジトリ直下の temp-build/package ではありません: $buildRoot"
 }
 
 Write-Host "Chrome / Firefox 拡張機能パッケージを生成中..." -ForegroundColor Cyan

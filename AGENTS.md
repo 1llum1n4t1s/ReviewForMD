@@ -21,6 +21,8 @@ Chrome extension (Manifest V3) — 複数サイトの情報を MD/VTT ファイ�
 
 **Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。ジョブは互いに`needs`を持たず独立なので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
 
+CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。公開済み・審査提出済みrevisionでversion重複を判定し、非同期uploadは完了後にだけpublishする。AMO jobのNodeは24。
+
 No tests, no linter. Install via `chrome://extensions` → Load unpacked → リポジトリルートを選択。
 
 **構文サニティチェック（テスト代替）:** テスト/リンタ/CI が無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
@@ -159,18 +161,18 @@ Drive ID / File ID は必ず同じ script URL または同じ fetch URL 由来�
 `teams_extractor.js` は Teams チャット/チャネルの全履歴を **DOM 自動スクロール方式** で収集する（公開機能仕様からのクリーンルーム実装。内部 chatsvc API は未使用）。Teams Web は仮想スクロールで画面外メッセージが DOM から外れるため、スクロールしながら逐次回収する必要がある。
 
 1. **スクローラ特定** — `SELECTORS.scroller` 候補 → 外れたら最初のメッセージ要素から `_findScrollableAncestor` でスクロール可能祖先を探索
-2. **段階スクロール収集** (`_collectRecords`) — 下端（最新）から上へ `clientHeight * 0.8` ずつ移動し、各 viewport の可視メッセージを id キーの Map に確保（**全メッセージを viewport に通す**ためジャンプではなく段階移動）。上端では `LOAD_WAIT_MS` 待って古い分の prepend を待ち、`scrollHeight` が増えなくなる状態が `STABLE_ROUNDS` 連続したら終了。**毎ラウンド中止フラグ（`_cancelRequested` / `_discarded`）と遡り下限 cutoff（`sinceMs`＝対象月の月初）を確認して途中終了でき、`onProgress` でオーバーレイへ進捗を通知する**。上限 `untilMs`（翌月初）は収集の停止には使わず `_finalize` のフィルタで適用する（収集は常に最新から始まるため、上限超は集めてから絞る）。`MAX_ITERATIONS` / `MAX_DURATION_MS` / `MAX_MESSAGES` はセーフティネットとして維持
-3. **時系列整列 + 送信者/ts 補完 + 月レンジフィルタ** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前も time も 1 度しか出さないため、整列後に空 author と「判定用 ts(`_effTs`)」を直前の値で前方補完する（継続メッセージを先頭と同じ月に分類）。**補完はフィルタより前・全レコードで行う**（フィルタで先頭が落ちても継続分の著者/月分類を失わないため）。フィルタは **カレンダー月レンジ `[sinceMs, untilMs)`** で絞り、判定は **`time[datetime]` 由来の信頼できる ts の前方補完値**で行う（title 由来の粗い ts は判定に使わず、補完値が無いものは安全側で残す）
+2. **段階スクロール収集** (`_collectRecords`) — 下端（最新）から上へ `clientHeight * 0.8` ずつ移動し、各 viewport の可視メッセージを id キーの Map に確保（**全メッセージを viewport に通す**ためジャンプではなく段階移動）。上端では `LOAD_WAIT_MS` 待って古い分の prepend を待ち、`scrollHeight` が増えなくなる状態が `STABLE_ROUNDS` 連続したら終了。**毎ラウンド中止フラグ（`_cancelRequested` / `_discarded`）と遡り下限 cutoff（`sinceMs`＝対象月の月初）を確認して途中終了でき、`onProgress` でオーバーレイへ進捗を通知する**。指定月より履歴が短い場合も、取得可能な履歴の先頭で正常終了して取得できた分を保存する。`MAX_ITERATIONS` / `MAX_DURATION_MS` / `MAX_MESSAGES` はセーフティネットとして維持
+3. **時系列整列 + 送信者/ts 補完 + 月レンジフィルタ** (`_finalize`) — mid（≒epoch ms の単調増加値）→ timestamp → 収集順 の優先で sort。Teams は同一送信者連投で名前も time も 1 度しか出さないため、整列後に空 author と「判定用 ts(`_effTs`)」を直前の値で前方補完する（継続メッセージを先頭と同じ月に分類）。**補完はフィルタより前・全レコードで行う**（フィルタで先頭が落ちても継続分の著者/月分類を失わないため）。フィルタは **指定した開始月の月初 `sinceMs` から現在まで** で絞り、判定は **`time[datetime]` 由来の信頼できる ts の前方補完値**で行う（title 由来の粗い ts は判定に使わず、補完値が無いものは安全側で残す）
 4. **Markdown 生成** (`_buildMarkdown`) — 本文は `MarkdownBuilder.htmlToMarkdown`、日時は `formatTimestamp` を再利用。本文クローンから添付（画像・ファイルカード）を抜いてから変換し、二重化を防ぐ
 
 **起動 / 出力**（長時間処理のため popup ではなくページ側オーバーレイで完結させる）:
 - `startCollection({ monthsAgo, mode })` — fire-and-forget で収集を開始し `{ ok, started }` を即返す。収集・進捗表示・中止・保存/コピーは content script 側の **進捗オーバーレイ**（ページ右下のパネル）で完結する。これにより popup を閉じても収集を継続でき、いつでも「ここまでで保存」/「中止」できる（`mode='download'` は完了時にその場保存、`mode='copy'` は完了オーバーレイの操作ボタンから user 操作起点でコピー＝「popup を閉じると copy が失敗する」問題を回避）
-- 収集対象は popup の月ドロップダウン（**今月 / 先月 / 2か月前 / 3か月前**＝`monthsAgo` 0/1/2/3）で選ぶ。`startCollection` が `monthsAgo` をカレンダー月レンジ `[sinceMs, untilMs)` に変換する（今月＝月初〜現在で `untilMs=null`、それ以外＝その月の 1 日〜末日）。`count`＝収集件数で 0 件は成功扱いにしない（空ファイルの偽装防止。生 0 件＝セレクタ全滅と、レンジフィルタ後 0 件＝その月に無し、を `rawCount` で区別して文言を出し分ける）
+- 収集開始月は popup のドロップダウン（**今月 / 先月から / 2か月前から / 3か月前から**＝`monthsAgo` 0/1/2/3）で選ぶ。`startCollection` が `monthsAgo` を開始月の月初 `sinceMs` に変換し、そこから現在までを保存する。履歴が指定期間より短い場合も取得できた分を保存する。`count`＝収集件数で 0 件は成功扱いにしない（空ファイルの偽装防止。生 0 件＝セレクタ全滅と、期間フィルタ後 0 件＝指定月以降に無し、を `rawCount` で区別して文言を出し分ける）
 
 **堅牢化（暴走・OOM・取りこぼし・無言失敗の防止）**:
 - 再入ガード `_busy`（収集中の多重起動を弾く）＋ 中止フラグ `_cancelRequested`（ここまでで保存）/ `_discarded`（破棄）でいつでも安全に停止できる
 - `_collectRecords` は開始時の `location.href` が変わったら中断、`startCollection` も完了時に href を再確認して会話切替時は保存しない。`reset()`（会話切替/離脱で content_script が呼ぶ）は進行中収集を破棄しオーバーレイを閉じる（誤会話の収集・DOM 奪い合い・部分データの誤保存を防ぐ）
-- 遡り下限 cutoff（`sinceMs`）は **信頼できる `time[datetime]` 由来 ts のみで打ち切る**（title 由来の誤日付＝添付の更新日等で対象月のメッセージを取りこぼさない）。上限 `untilMs` 側も同じく前方補完した信頼 ts で判定する
+- 遡り下限 cutoff（`sinceMs`）は **信頼できる `time[datetime]` 由来 ts のみで打ち切る**（title 由来の誤日付＝添付の更新日等で対象月のメッセージを取りこぼさない）。指定月の月初より古いメッセージは前方補完した信頼 ts で除外する
 - 生収集 0 件は `console.warn`（セレクタ全滅の切り分け用ログ）
 
 **⚠️ セレクタの揮発性**: Teams の DOM クラス/属性は頻繁に変わる。**サイト固有セレクタの単一の真実の源は `teams_extractor.js` の `SELECTORS`**。`site_detector.js` の `_isTeamsChatByDom` は `TeamsExtractor.hasChatDom()` に委譲しているので、UI 変更で動かなくなったら `SELECTORS` だけを実機 DOM に合わせて調整すればよい（detect 側と extract 側でセレクタが分裂するのを防ぐ設計）。

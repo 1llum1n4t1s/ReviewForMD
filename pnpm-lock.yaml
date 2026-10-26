@@ -9,16 +9,16 @@ importers:
   .:
     devDependencies:
       '@kagayoi/support-extension':
-        specifier: 1.0.6
-        version: 1.0.6
+        specifier: 1.0.8
+        version: 1.0.8
 
 packages:
 
-  '@kagayoi/support-extension@1.0.6':
-    resolution: {integrity: sha512-nxQqhZWbfXDrmjDg8dKk4/RU7IUXyTkQ7XlcKwKNLR+srCX+KzsMEPETOsa35vDL4cQ4fWqrxl6rW8ddE/sYDQ==}
+  '@kagayoi/support-extension@1.0.8':
+    resolution: {integrity: sha512-NbEvdncBUrKG7suocyhbeO+B1QSURBaEg6OL7n6EoR0EeDKAJyOJiY37tIVUbDrtTM9A/CaOMd13/MrVwLDWeA==}
     engines: {node: '>=22'}
     hasBin: true
 
 snapshots:
 
-  '@kagayoi/support-extension@1.0.6': {}
+  '@kagayoi/support-extension@1.0.8': {}

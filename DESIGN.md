@@ -106,4 +106,4 @@ ChromeとFirefoxはソースとバージョンを共有し、background宣言を
 
 CWSはAPI V2を使用します。認証・publisher IDの設定手順は [AGENTS.md](AGENTS.md#commands) に記載します。`fetchStatus` の公開済み・提出済みrevisionとversionで重複を判定し、アップロードが非同期なら完了を確認してから `DEFAULT_PUBLISH` で審査へ提出します。失敗・不明状態・待機上限では提出せずjobを失敗させます。listingは引き続きDashboardで管理します。AMOのmetadata生成とweb-ext実行にはNode 24を使います。
 
-AMOの掲載メタデータは `webstore/*.txt`、`vava.config.json`、`package.json` から `update-amo-listing.mjs` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。公開version一覧で重複を確認しますが、審査待ちは一覧に現れないため、提出時のversion conflictも検知します。listed提出は承認を待たず、version conflictと承認待ちtimeoutだけを警告へ降格し、その他の失敗はjob失敗にします。
+AMOの掲載メタデータは `webstore/*.txt`、スクリプト内の公開メタデータ、`package.json` から `update-amo-listing.mjs` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。公開version一覧で重複を確認しますが、審査待ちは一覧に現れないため、提出時のversion conflictも検知します。listed提出は承認を待たず、version conflictと承認待ちtimeoutだけを警告へ降格し、その他の失敗はjob失敗にします。

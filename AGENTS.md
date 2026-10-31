@@ -59,3 +59,12 @@ Firefox manifest生成だけを確認する場合は `pnpm manifest:firefox` を
 - `release/x.y.z` はmanifestのversionと一致させる。公開構成と重複提出判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。
 - CWSはSecretsを持たない梱包ジョブのartifactだけを受け取り、提出ジョブでcheckoutやnpm lifecycleを実行しない。OAuth応答を出力せず、単一行のaccess tokenだけをマスクし、`set -x` を有効にしない。
 - GitHub ActionsはSHAを固定し、更新時はタグコメントも合わせる。checkoutは `persist-credentials: false` を維持する。AMOのweb-extはパッチ版を固定する。
+
+### ストア掲載情報
+
+CWS ID は `CWS_EXTENSION_ID` 環境変数で指定できる（ローカルに `.cws-id` があれば利用可）。リポジトリルートで実行する。AMO 更新は公開依頼時のみ実行し、事前に同じコマンドへ `--dry-run` を付けて入力を確認する。
+
+```powershell
+node "$HOME/.agents/skills/vava/scripts/update-amo-listing.mjs" --slug 'iroiro-md-copy' --listing 'ja=webstore/store-listing.firefox.ja.txt' --listing 'en-US=webstore/store-listing.firefox.en.txt' --privacy 'ja=docs/privacy-policy.md' --privacy 'en-US=docs/privacy-policy-en.md' --name 'ja=いろいろMDコピー' --name 'en-US=Iroiro MD Copy' --homepage 'https://github.com/1llum1n4t1s/ReviewForMD' --support-url 'https://github.com/1llum1n4t1s/ReviewForMD/issues' --category 'web-development'
+node "$HOME/.agents/skills/vava/scripts/check-store-listing.mjs" --cws --amo --slug 'iroiro-md-copy' --cws-id-file '.cws-id' --keyword 'cws.description.ja=CodeCommit' --keyword 'cws.description.ja=SharePoint' --keyword 'cws.description.ja=Teams' --keyword 'cws.description.en=CodeCommit' --keyword 'cws.description.en=SharePoint' --keyword 'cws.description.en=Teams' --keyword 'amo.summary.ja=CodeCommit' --keyword 'amo.description.ja=CodeCommit' --keyword 'amo.summary.ja=SharePoint' --keyword 'amo.description.ja=SharePoint' --keyword 'amo.summary.ja=Teams' --keyword 'amo.description.ja=Teams' --keyword 'amo.summary.en-US=CodeCommit' --keyword 'amo.description.en-US=CodeCommit' --keyword 'amo.summary.en-US=SharePoint' --keyword 'amo.description.en-US=SharePoint' --keyword 'amo.summary.en-US=Teams' --keyword 'amo.description.en-US=Teams'
+```

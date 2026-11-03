@@ -1,0 +1,16 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "review-for-md",
+      "devDependencies": {
+        "@kagayoi/support-extension": "1.0.9",
+      },
+    },
+  },
+  "trustedDependencies": [],
+  "packages": {
+    "@kagayoi/support-extension": ["@kagayoi/support-extension@1.0.9", "", { "bin": { "kagayoi-support-sync": "bin/kagayoi-support-sync.mjs" } }, "sha512-51zr97JiPTkmmqYJT8NfuqYMnnrUFyIxuyHDNCncENQdvhLhpbIoKcsWIbqy/ThWln5FjCsyPvbTY7eEBcpO2Q=="],
+  }
+}

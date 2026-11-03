@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path"
 const [sourceArgument, outputArgument] = process.argv.slice(2)
 
 if (!sourceArgument || !outputArgument) {
-  throw new Error("Usage: node scripts/create-firefox-manifest.mjs <source> <output>")
+  throw new Error("Usage: bun scripts/create-firefox-manifest.mjs <source> <output>")
 }
 
 const sourcePath = resolve(sourceArgument)

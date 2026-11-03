@@ -33,6 +33,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $scriptDir = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
+Push-Location -LiteralPath $scriptDir
+try {
+    bun run deps
+    if ($LASTEXITCODE -ne 0) { throw '依存関係の復元に失敗しました。' }
+    bun --bun run sync:support --check
+    if ($LASTEXITCODE -ne 0) { throw 'サポート共通部品が一致しません。' }
+} finally { Pop-Location }
+
 $tempRoot = [IO.Path]::GetFullPath((Join-Path $scriptDir "temp-build"))
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $tempRoot "package"))
 $chromeDir = Join-Path $buildRoot "chrome"
@@ -63,7 +71,7 @@ try {
     }
 
     Copy-Item -LiteralPath (Join-Path $scriptDir "manifest.json") -Destination (Join-Path $chromeDir "manifest.json")
-    & node (Join-Path $scriptDir "scripts\create-firefox-manifest.mjs") `
+    & bun (Join-Path $scriptDir "scripts\create-firefox-manifest.mjs") `
         (Join-Path $scriptDir "manifest.json") `
         (Join-Path $firefoxDir "manifest.json")
     if ($LASTEXITCODE -ne 0) {

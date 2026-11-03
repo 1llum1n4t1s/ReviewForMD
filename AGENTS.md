@@ -6,21 +6,25 @@
 
 ## Commands
 
-**Dependencies / shared support UI:** `pnpm install --frozen-lockfile` で依存を復元する。`src/shared/` は `@kagayoi/support-extension` から配布物へ同梱する追跡済みコピーなので、同パッケージの更新後とパッケージ作成前に `pnpm sync:support` を実行し、JSとCSSを一式で同期する。共通部品の実装変更はパッケージ側を正本とし、このリポジトリのコピーへ直接加えない。
+**Dependencies / shared support UI:** `bun run deps` で依存を復元する。`src/shared/` は `@kagayoi/support-extension` から配布物へ同梱する追跡済みコピーなので、同パッケージの更新後とパッケージ作成前に `bun --bun run sync:support` を実行し、JSとCSSを一式で同期する。共通部品の実装変更はパッケージ側を正本とし、このリポジトリのコピーへ直接加えない。
 
-**Package:** `npm run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`npm run zip:win`。
+**Package:** `bun --bun run zip` (OS 自動判定なし＝Unix側)、または直接 `.\zip.ps1` (Windows) / `./zip.sh` (Linux/macOS) → Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成。Windowsからnpm経由で実行したい場合は`bun --bun run zip:win`。
 
 **Release (自動公開):** `release/x.y.z`ブランチをpushすると`.github/workflows/publish.yml`が起動し、Chrome用ZIPをCWS、Firefox用ZIPをAMOへ渡す**2つの独立ジョブ**で公開する。両提出ジョブは共通の`package`ジョブだけに依存し、互いには依存しないので、片方のストアが失敗してももう片方は止まらない。必要なGitHub Secrets: CWSは`CWS_EXTENSION_ID` / `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`、AMOは`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`。**AMOは初回のみDeveloper Hubでのadd-on登録が必要**。バージョンバンプ＋ストアlisting同期は`/vava`スキルを使う。
 
-CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。提出状態の判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。AMO jobのNodeは24。
+CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。提出状態の判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。AMO jobはPowerShellで実行する。
 
 ローカルに自動テスト・専用リンタはない。配信CIは `.github/workflows/publish.yml` にある。実機読み込みは [README.md](README.md#インストール) を参照する。
 
-**構文サニティチェック（テスト代替）:** 自動テスト・専用リンタが無いため、JS を変更したら `node --check <file>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `node --check src/extractors/teams_extractor.js`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
+**構文サニティチェック（テスト代替）:** 自動テスト・専用リンタが無いため、JS を変更したら `bun build --no-bundle <file> --outdir <temporary-directory>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `bun build --no-bundle src/extractors/teams_extractor.js --outdir <temporary-directory>`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
 
-Firefox manifest生成だけを確認する場合は `pnpm manifest:firefox` を使う（出力: `build-firefox/manifest.json`）。梱包スクリプト自体は依存復元・Support同期を実行しないため、上記の準備を先に行う。Windows梱包は `temp-build/package` だけを作成・清掃し、`temp-build` 配下の他の成果物には触れない。
+Firefox manifest生成だけを確認する場合は `bun --bun run manifest:firefox` を使う（出力: `build-firefox/manifest.json`）。梱包スクリプトは固定依存の復元とSupport一致検査を実行する。共通部品更新後の同期は事前に行う。Windows梱包は `temp-build/package` だけを作成・清掃し、`temp-build` 配下の他の成果物には触れない。
 
 変更した機能は実機で保存・コピーまで確認する。抽出・非同期処理の変更では、抽出中のSPA遷移、通信失敗と再試行、一覧ボタンの連打、Teamsの部分保存・中止・0件を該当経路で確認し、再現手順と出力を検証結果として残す。
+
+## ストア画像生成
+
+`webstore/` の画像生成依存はルートから隔離し、ローカルの `webstore/package.json`・`bun.lock`・`bunfig.toml` と `node_modules/` は Git 管理しない。既存のローカル設定は `packageManager: bun@1.4.4`、`trustedDependencies: ["puppeteer"]`、`[install] minimumReleaseAge = 86400` を保つ。`cd webstore` 後に `bun run deps` と `bun --bun run generate-screenshots` を実行する。既存 lock の初回移行は `bun install --lockfile-only` を使い、依存版を維持する。必要な環境では `PUPPETEER_EXECUTABLE_PATH` へ Chrome/Edge の絶対パスを渡す。
 
 ## 変更時の制約
 
@@ -65,6 +69,29 @@ Firefox manifest生成だけを確認する場合は `pnpm manifest:firefox` を
 CWS ID は `CWS_EXTENSION_ID` 環境変数で指定できる（ローカルに `.cws-id` があれば利用可）。リポジトリルートで実行する。AMO 更新は公開依頼時のみ実行し、事前に同じコマンドへ `--dry-run` を付けて入力を確認する。
 
 ```powershell
-node "$HOME/.agents/skills/vava/scripts/update-amo-listing.mjs" --slug 'iroiro-md-copy' --listing 'ja=webstore/store-listing.firefox.ja.txt' --listing 'en-US=webstore/store-listing.firefox.en.txt' --privacy 'ja=docs/privacy-policy.md' --privacy 'en-US=docs/privacy-policy-en.md' --name 'ja=いろいろMDコピー' --name 'en-US=Iroiro MD Copy' --homepage 'https://github.com/1llum1n4t1s/ReviewForMD' --support-url 'https://github.com/1llum1n4t1s/ReviewForMD/issues' --category 'web-development'
-node "$HOME/.agents/skills/vava/scripts/check-store-listing.mjs" --cws --amo --slug 'iroiro-md-copy' --cws-id-file '.cws-id' --keyword 'cws.description.ja=CodeCommit' --keyword 'cws.description.ja=SharePoint' --keyword 'cws.description.ja=Teams' --keyword 'cws.description.en=CodeCommit' --keyword 'cws.description.en=SharePoint' --keyword 'cws.description.en=Teams' --keyword 'amo.summary.ja=CodeCommit' --keyword 'amo.description.ja=CodeCommit' --keyword 'amo.summary.ja=SharePoint' --keyword 'amo.description.ja=SharePoint' --keyword 'amo.summary.ja=Teams' --keyword 'amo.description.ja=Teams' --keyword 'amo.summary.en-US=CodeCommit' --keyword 'amo.description.en-US=CodeCommit' --keyword 'amo.summary.en-US=SharePoint' --keyword 'amo.description.en-US=SharePoint' --keyword 'amo.summary.en-US=Teams' --keyword 'amo.description.en-US=Teams'
+bun "$HOME/.agents/skills/vava/scripts/update-amo-listing.mjs" --slug 'iroiro-md-copy' --listing 'ja=webstore/store-listing.firefox.ja.txt' --listing 'en-US=webstore/store-listing.firefox.en.txt' --privacy 'ja=docs/privacy-policy.md' --privacy 'en-US=docs/privacy-policy-en.md' --name 'ja=いろいろMDコピー' --name 'en-US=Iroiro MD Copy' --homepage 'https://github.com/1llum1n4t1s/ReviewForMD' --support-url 'https://github.com/1llum1n4t1s/ReviewForMD/issues' --category 'web-development'
+bun "$HOME/.agents/skills/vava/scripts/check-store-listing.mjs" --cws --amo --slug 'iroiro-md-copy' --cws-id-file '.cws-id' --keyword 'cws.description.ja=CodeCommit' --keyword 'cws.description.ja=SharePoint' --keyword 'cws.description.ja=Teams' --keyword 'cws.description.en=CodeCommit' --keyword 'cws.description.en=SharePoint' --keyword 'cws.description.en=Teams' --keyword 'amo.summary.ja=CodeCommit' --keyword 'amo.description.ja=CodeCommit' --keyword 'amo.summary.ja=SharePoint' --keyword 'amo.description.ja=SharePoint' --keyword 'amo.summary.ja=Teams' --keyword 'amo.description.ja=Teams' --keyword 'amo.summary.en-US=CodeCommit' --keyword 'amo.description.en-US=CodeCommit' --keyword 'amo.summary.en-US=SharePoint' --keyword 'amo.description.en-US=SharePoint' --keyword 'amo.summary.en-US=Teams' --keyword 'amo.description.en-US=Teams'
 ```
+
+### AMO 公開のHTTP境界
+
+公開workflowはネイティブarchive builderが生成した最終XPIとそのsnapshotのSHA-256 receiptを使い、GUID・versionとともに `scripts/Publish-Amo.ps1`（PowerShell 7）へ渡す。旧web-ext sign/承認タイムアウトを成功化する手順に代えて、JWT認証・全ページの非公開listed版検査・upload検証・GUIDに対するPUT提出の受付応答まで確認する。XPIの同一snapshotをhash検証と送信に使い、保存UUIDの再利用・重複・不明な受付結果は停止する。CI成功は審査完了・ストア公開を意味しない。
+
+### CI中間成果物
+
+job間の検証済み成果物はprivate R2へSigV4で保存し、repository・commit・run・producer attemptのidentityと各ファイルのSHA-256/サイズを検証して復元する。設定は `vars.CLOUDFLARE_ACCOUNT_ID` / `vars.R2_ARTIFACT_BUCKET` と `secrets.R2_ARTIFACT_ACCESS_KEY_ID` / `secrets.R2_ARTIFACT_SECRET_ACCESS_KEY`。キーは当該bucket限定。`ci-artifacts/` は30日保持後にlifecycleで削除され、恒久配布とは区別する。
+
+CWSは `scripts/Publish-Cws.ps1`（PowerShell 7、API v2）を使う。既存OAuth secretsとpublisher/item IDを維持し、同期upload成功・応答ID・manifest版の一致を確認してpublishする。非同期uploadは版を確定できないため自動publishせず停止する。公開workflowはrepository単位の `queue: max` で最大100件まで直列化し、Dashboardや他の手動公開と並行しない。
+
+### CWS v2の再実行
+
+`Publish-Cws.ps1` は認証付きfetchStatusのitem identity・revision state・distributionChannelsのversionを検証する。PUBLISHED / PUBLISHED_TO_TESTERS / PENDING_REVIEW / STAGED の正常な登録版が今回versionと一致するときだけ、従来の再実行契約として「既に提出/公開済み・今回ZIPの新規送信なし」と明示して終了する。ストア配布bytesと今回ZIPの同一性を確認したとは扱わない。未提出draft・不明状態・非同期uploadは成功として扱わず停止する。新規送信はverifier receiptに一致するsnapshotを使い、同期uploadのID・版とpublish受付応答を確認する。公開はrepository単位で直列化し、外部Dashboard操作と並行しない。
+
+
+新規cloneでは隔離用設定は付属しない。"webstore/package.json" を private なBun 1.4.4パッケージとして作成し、puppeteer 25.14.0 を固定、trustedDependenciesはpuppeteerだけ、scripts.depsは "bun ../scripts/Install-Dependencies.mjs"、scripts["deps:resolve"]は "bun install" とする。scripts.generate-screenshotsも "bun generate-screenshots.js" にする。bunfig.tomlは最低24時間待機と [run] bun=true を指定する。初回だけ "bun run --cwd webstore deps:resolve" でlockを生成し、その後は "bun run --cwd webstore deps" で固定復元する。これらはローカル専用で強制Git追加しない。
+
+## Bun依存の脆弱性検出
+
+依存の固定復元は `bun run deps` を使う。lock欠落・破損を拒否し、`[run] bun=true` 経由で依存のpostinstallまでBunで実行する。Node.jsがあるPCでも通常の `bun install` を直接使う経路へ戻さない。
+
+日次と手動実行では `bun audit` でlock全体を監査する。ローカルでも同じコマンドで確認できる。BunはDependabotの通常の更新PRには対応するが、脆弱性起点の自動修正PRは `dependency-security.yml` が補完する。日次・手動で全件監査し、隔離領域で `bun audit fix` による候補を作成し、同じrunから既存の Dependency validation を呼ぶ。未対策アドバイザリが減少し、依存以外のmanifest・パッチ・24時間待機を保ち、全検証が成功した場合だけ、検証したマージコミットを競合検知付きの通常pushで取り込む。保護されたブランチには自動pushせず、修正版未公開・互換性・検証失敗は単一のIssueに通知して次回再試行する。生の監査は警告を除外せず、対策済みパッチの認定も監査成功とは区別してsummaryへ残す。既知のdeepmerge対策はアドバイザリ・版・パッチSHAが完全一致した場合だけ修正対象から外し、生監査には残す。通常のDependabot更新と他ecosystemの設定は維持する。

@@ -1,0 +1,9 @@
+[install]
+minimumReleaseAge = 86400
+# 明示許可した依存だけ lifecycle scripts を実行する。
+
+minimumReleaseAgeExcludes = ["@kagayoi/support-extension@1.0.9"]
+
+[run]
+# CLIのnode shebangもBunで実行する。
+bun = true

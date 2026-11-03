@@ -4,7 +4,10 @@ set -euo pipefail
 
 # ReviewForMD Chrome / Firefox パッケージ生成スクリプト
 root_dir=$(cd "$(dirname "$0")" && pwd)
+
 cd "$root_dir"
+bun run deps
+bun --bun run sync:support --check
 
 chrome_archive="$root_dir/ReviewForMD.zip"
 firefox_archive="$root_dir/ReviewForMD-firefox.zip"
@@ -30,7 +33,7 @@ zip -r "$chrome_archive" \
      "src/**/.env*" "src/**/.*" "src/**/*.env"
 
 # Firefox は同じ正本から background.scripts 形式の manifest.json を生成する。
-node scripts/create-firefox-manifest.mjs manifest.json "$temp_dir/manifest.json"
+bun scripts/create-firefox-manifest.mjs manifest.json "$temp_dir/manifest.json"
 zip -r "$firefox_archive" \
   src/ \
   icons/ \

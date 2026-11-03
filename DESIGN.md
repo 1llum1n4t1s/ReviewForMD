@@ -102,8 +102,8 @@ HTML→Markdownは深度上限80の再帰DOM走査で、見出し、文字装飾
 
 ChromeとFirefoxはソースとバージョンを共有し、background宣言を成果物生成時に分け、Firefox用では `minimum_chrome_version` も取り除きます。Chrome用ZIPは正本`manifest.json`の`service_worker`を保持し、Firefox用ZIPは生成スクリプトが同じファイルを`scripts`配列へ変換します。これによりChrome MV3へ `background.scripts` を渡さず、手編集するmanifestの重複も持ちません。
 
-公開時は最初にSecretsを持たないジョブで2つのZIPを生成し、同じartifact内でCWS / AMOジョブへ渡します。両提出ジョブは共通のpackageジョブだけに依存し、互いには依存しません。CWSはChrome用ZIPを公式APIへ直接アップロードし、AMOはFirefox用ZIPを展開して`web-ext sign --channel listed`で提出します。この依存関係により、一方のストア障害が他方の提出を止めません。
+公開時は最初にストア認証を渡さないpackageジョブで2つのZIPを生成し、同じartifact内でCWS / AMOジョブへ渡します。両提出ジョブは共通のpackageジョブだけに依存し、互いには依存しません。CWSはChrome用ZIPを公式APIへ直接アップロードし、AMOはFirefox用ZIPを展開してネイティブarchive builderでXPIと同bytesのreceiptを作り、`scripts/Publish-Amo.ps1`で提出します。この依存関係により、一方のストア障害が他方の提出を止めません。
 
-CWSはAPI V2を使用します。認証・publisher IDの設定手順は [AGENTS.md](AGENTS.md#commands) に記載します。`fetchStatus` の公開済み・提出済みrevisionとversionで重複を判定し、アップロードが非同期なら完了を確認してから `DEFAULT_PUBLISH` で審査へ提出します。失敗・不明状態・待機上限では提出せずjobを失敗させます。listingは引き続きDashboardで管理します。AMOのmetadata生成とweb-ext実行にはNode 24を使います。
+CWSはAPI V2を使用します。認証・publisher IDの設定手順は [AGENTS.md](AGENTS.md#commands) に記載します。`fetchStatus` の公開済み・提出済みrevisionとversionで重複を判定し、アップロードが非同期なら完了を確認してから `DEFAULT_PUBLISH` で審査へ提出します。失敗・不明状態・待機上限では提出せずjobを失敗させます。listingは引き続きDashboardで管理します。AMOのmetadata生成・提出にはPowerShellを使います。
 
-AMOの掲載メタデータは `webstore/*.txt`、スクリプト内の公開メタデータ、`package.json` から `update-amo-listing.mjs` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。公開version一覧で重複を確認しますが、審査待ちは一覧に現れないため、提出時のversion conflictも検知します。listed提出は承認を待たず、version conflictと承認待ちtimeoutだけを警告へ降格し、その他の失敗はjob失敗にします。
+AMOの掲載メタデータは `webstore/*.txt`、スクリプト内の公開メタデータ、`package.json` から `scripts/New-AmoMetadata.ps1` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。認証した非公開listed版も全ページ確認し、重複や不明な応答は停止します。最終XPIのSHA-256・GUID・版をPowerShellのHTTP publisherで検証し、同じsnapshotを送信します。listed提出の受付応答まで確認し、人手レビューの承認は待ちません。

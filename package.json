@@ -4,15 +4,17 @@
   "private": true,
   "description": "プルリクのタイトル・本文・レビューコメントをMarkdownでダウンロードするChrome拡張",
   "scripts": {
-    "sync:support": "node --preserve-symlinks-main ./node_modules/@kagayoi/support-extension/bin/kagayoi-support-sync.mjs",
-    "prebuild": "pnpm sync:support",
+    "deps": "bun scripts/Install-Dependencies.mjs",
+    "sync:support": "bun --preserve-symlinks-main ./node_modules/@kagayoi/support-extension/bin/kagayoi-support-sync.mjs",
     "zip:win": "pwsh -NoProfile -ExecutionPolicy Bypass -File zip.ps1",
     "zip:nix": "bash zip.sh",
-    "zip": "npm run zip:nix",
-    "manifest:firefox": "node scripts/create-firefox-manifest.mjs manifest.json build-firefox/manifest.json"
+    "zip": "bun --bun run zip:nix",
+    "manifest:firefox": "bun scripts/create-firefox-manifest.mjs manifest.json build-firefox/manifest.json"
   },
   "license": "MIT",
   "devDependencies": {
     "@kagayoi/support-extension": "1.0.9"
-  }
+  },
+  "packageManager": "bun@1.4.4",
+  "trustedDependencies": []
 }

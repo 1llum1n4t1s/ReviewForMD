@@ -6,7 +6,7 @@ icons/icon-*.png
 temp-build/
 build-firefox/
 web-ext-artifacts/
-# scripts/New-AmoMetadata.ps1 が webstore/*.txt とスクリプト内の公開メタデータ から毎回生成する中間物
+# scripts/New-AmoMetadata.mjs が webstore/*.txt とスクリプト内の公開メタデータ から毎回生成する中間物
 amo-metadata.json
 
 # ルートと隔離したストア画像生成の依存インストールを追跡しない

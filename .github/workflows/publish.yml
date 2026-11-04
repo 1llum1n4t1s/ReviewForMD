@@ -166,10 +166,15 @@ jobs:
           ls -R build-firefox | head -40
 
       - name: AMO listing メタデータを生成
+        shell: pwsh
         run: |
-          # webstore/*.txt + package.json と scripts/New-AmoMetadata.ps1 内の公開メタデータを入力として
+          ./scripts/Initialize-BunBuild.ps1 -VersionFile package.json
+          if ($LASTEXITCODE -ne 0) { throw 'Bun setup failed' }
+          bun test ./scripts/New-AmoMetadata.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'AMO metadata tests failed' }
+          # webstore/*.txt + package.json と scripts/New-AmoMetadata.mjs 内の公開メタデータを入力として
           # amo-metadata.json（名前/概要/説明/カテゴリ/homepage/support_url/version.license）を生成。
-          pwsh -NoProfile -File scripts/New-AmoMetadata.ps1
+          bun scripts/New-AmoMetadata.mjs
 
       - name: AMO へ署名 & 提出（listed）
         env:

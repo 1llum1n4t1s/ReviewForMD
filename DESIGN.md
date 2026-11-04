@@ -104,6 +104,6 @@ ChromeとFirefoxはソースとバージョンを共有し、background宣言を
 
 公開時は最初にストア認証を渡さないpackageジョブで2つのZIPを生成し、同じartifact内でCWS / AMOジョブへ渡します。両提出ジョブは共通のpackageジョブだけに依存し、互いには依存しません。CWSはChrome用ZIPを公式APIへ直接アップロードし、AMOはFirefox用ZIPを展開してネイティブarchive builderでXPIと同bytesのreceiptを作り、`scripts/Publish-Amo.ps1`で提出します。この依存関係により、一方のストア障害が他方の提出を止めません。
 
-CWSはAPI V2を使用します。認証・publisher IDの設定手順は [AGENTS.md](AGENTS.md#commands) に記載します。`fetchStatus` の公開済み・提出済みrevisionとversionで重複を判定し、アップロードが非同期なら完了を確認してから `DEFAULT_PUBLISH` で審査へ提出します。失敗・不明状態・待機上限では提出せずjobを失敗させます。listingは引き続きDashboardで管理します。AMOのmetadata生成・提出にはPowerShellを使います。
+CWSはAPI V2を使用します。認証・publisher IDの設定手順は [AGENTS.md](AGENTS.md#commands) に記載します。`scripts/Publish-Cws.ps1` は既存引数とHTTP fixture注入を受ける入口とし、ZIP・SHA-256・HTTP・状態判定は既存pwshの.NET上で読み込む `scripts/CwsPublisher.cs` が担います。C#ソースのSHA-256で型の名前空間を分け、同じpwshでの再読込と異版の共存を保ちます。`fetchStatus` のitem identity・revision・versionで重複を判定し、新規送信は検証済みsnapshotの同期upload成功・ID・版が一致した場合だけ審査へ提出します。非同期uploadはAPI V2でdraft版を要求と結び付けられないため停止し、通信結果不明時はストア状態を確認するまで再送しません。listingは引き続きDashboardで管理します。AMOのmetadata生成にはBun、提出にはPowerShellを使います。
 
-AMOの掲載メタデータは `webstore/*.txt`、スクリプト内の公開メタデータ、`package.json` から `scripts/New-AmoMetadata.ps1` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。認証した非公開listed版も全ページ確認し、重複や不明な応答は停止します。最終XPIのSHA-256・GUID・版をPowerShellのHTTP publisherで検証し、同じsnapshotを送信します。listed提出の受付応答まで確認し、人手レビューの承認は待ちません。
+AMOの掲載メタデータは `webstore/*.txt`、スクリプト内の公開メタデータ、`package.json` から `scripts/New-AmoMetadata.mjs` が生成します。初回登録手順は [AGENTS.md](AGENTS.md#commands) を参照してください。認証した非公開listed版も全ページ確認し、重複や不明な応答は停止します。最終XPIのSHA-256・GUID・版をPowerShellのHTTP publisherで検証し、同じsnapshotを送信します。listed提出の受付応答まで確認し、人手レビューの承認は待ちません。

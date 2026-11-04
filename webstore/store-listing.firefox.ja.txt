@@ -1,5 +1,5 @@
 ============================================================
-Firefox AMO 掲載情報（ja）/ scripts/New-AmoMetadata.ps1 が parse する
+Firefox AMO 掲載情報（ja）/ scripts/New-AmoMetadata.mjs が parse する
   ■ 名前 / ■ 概要 / ■ 説明（説明以降の section はすべて description に結合される）
 ============================================================
 

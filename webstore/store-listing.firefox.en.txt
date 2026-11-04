@@ -1,5 +1,5 @@
 ============================================================
-Firefox AMO listing (en-US) / parsed by scripts/New-AmoMetadata.ps1
+Firefox AMO listing (en-US) / parsed by scripts/New-AmoMetadata.mjs
   ■ Name / ■ Summary / ■ Description (everything after Description is merged into description)
 ============================================================
 

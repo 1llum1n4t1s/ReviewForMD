@@ -16,7 +16,7 @@ concurrency:
 jobs:
   package:
     name: ZIP パッケージ作成
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     outputs:
       artifact-attempt: ${{ steps.artifact-identity.outputs.attempt }}
       # version を後続 job (publish / publish-firefox) の pre-flight check に渡す。
@@ -88,7 +88,7 @@ jobs:
 
   publish:
     name: Chrome Web Store にアップロード + Submit for review
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     needs: package
     environment: chrome-web-store
     steps:
@@ -129,7 +129,7 @@ jobs:
 
   publish-firefox:
     name: Firefox AMO に submission
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     needs: package
     # Chrome publish とは依存せず、共通 ZIP の作成成功だけを前提にする。
     steps:

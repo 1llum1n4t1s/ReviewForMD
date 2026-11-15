@@ -2,7 +2,7 @@
 
 このリポジトリの作業規約、必須コマンド、検証手順、変更時の制約を扱う。利用方法は [README.md](README.md)、構造・責務・データフロー・設計判断は [DESIGN.md](DESIGN.md) を正本とする。構造や責務を変更するときは、実装と同じ変更内で設計書も更新する。
 
-「いろいろMDコピー」はVanilla JSのChrome / Firefox Manifest V3拡張。UI・コメント・Markdownのラベルは日本語を使う。
+「いろいろMDコピー」はVanilla JSのChrome / Firefox Manifest V3拡張。UIは9言語（`_locales` と `ui-localizer.js`）、コメントと生成Markdownのラベルは日本語を使う。
 
 ## Commands
 
@@ -23,6 +23,10 @@ Firefox manifest生成だけを確認する場合は `bun --bun run manifest:fir
 変更した機能は実機で保存・コピーまで確認する。抽出・非同期処理の変更では、抽出中のSPA遷移、通信失敗と再試行、一覧ボタンの連打、Teamsの部分保存・中止・0件を該当経路で確認し、再現手順と出力を検証結果として残す。
 
 ## ストア画像生成
+
+掲載画像は共通キット vitrina（`webstore/vitrina/`。Kagayoi.Support の `clients/chrome-extension/store-assets` の逐語コピーで改変しない）が `webstore/store-assets.json` と `webstore/store-assets.steps.mjs` から生成する（`bun --bun run generate-screenshots` = `bun vitrina/vitrina.mjs generate`、検証は `bun webstore/vitrina/vitrina.mjs verify`）。Chrome for Testing が無い環境では `PUPPETEER_EXECUTABLE_PATH` を指定する。
+
+**Chrome を起動するスクリプトを足すときはシード必須**: puppeteer.launch・chrome-launcher・Chrome の直接起動は、起動前に user-data-dir の `Local State` へ `{"password_manager":{"os_password_blank":false,"os_password_last_changed":"9223372036854775000"}}` を書く。Windows の Chromium は新規プロファイルごとに空パスワードで LogonUser を呼び（`password_manager_util_win.cc` の `CheckBlankPasswordWithPrefs`）、ログオン失敗（Security 4625）として数えられるため、並列・連続起動で Windows アカウントがロックされる（2026-11-15 実害）。キットの `webstore/vitrina/lib/capture.mjs` の `seedChromeProfile()` を使い、userDataDir 未指定の起動は作らない（`webstore/vitrina/` は逐語コピーで対策済み）。
 
 `webstore/` の画像生成依存はルートから隔離し、ローカルの `webstore/package.json`・`bun.lock`・`bunfig.toml` と `node_modules/` は Git 管理しない。既存のローカル設定は `packageManager: bun@1.4.4`、`trustedDependencies: ["puppeteer"]`、`[install] minimumReleaseAge = 86400` を保つ。`cd webstore` 後に `bun run deps` と `bun --bun run generate-screenshots` を実行する。既存 lock の初回移行は `bun install --lockfile-only` を使い、依存版を維持する。必要な環境では `PUPPETEER_EXECUTABLE_PATH` へ Chrome/Edge の絶対パスを渡す。
 
@@ -80,14 +84,26 @@ bun "$HOME/.agents/skills/vava/scripts/update-amo-listing.mjs" --slug 'iroiro-md
 
 job間の検証済み成果物はprivate R2へSigV4で保存し、repository・commit・run・producer attemptのidentityと各ファイルのSHA-256/サイズを検証して復元する。設定は `vars.CLOUDFLARE_ACCOUNT_ID` / `vars.R2_ARTIFACT_BUCKET` と `secrets.R2_ARTIFACT_ACCESS_KEY_ID` / `secrets.R2_ARTIFACT_SECRET_ACCESS_KEY`。キーは当該bucket限定。`ci-artifacts/` は30日保持後にlifecycleで削除され、恒久配布とは区別する。
 
-CWSは `scripts/Publish-Cws.ps1`（PowerShell 7、API v2）を使う。既存OAuth secretsとpublisher/item IDを維持し、同期upload成功・応答ID・manifest版の一致を確認してpublishする。非同期uploadは版を確定できないため自動publishせず停止する。公開workflowはrepository単位の `queue: max` で最大100件まで直列化し、Dashboardや他の手動公開と並行しない。
+CWSは `scripts/Publish-Cws.ps1`（PowerShell 7、API v2）を使う。既存OAuth secretsとpublisher/item IDを維持し、同期upload成功・応答ID・manifest版の一致を確認する（CIは `-Stage Upload` でアップロードだけを行い、publishは `cws-submit.yml` の `-Stage Publish`）。非同期uploadは版を確定できないため自動publishせず停止する。公開workflowはrepository単位の `queue: max` で最大100件まで直列化し、Dashboardや他の手動公開と並行しない。
 
 ### CWS v2の再実行
 
 `Publish-Cws.ps1` は認証付きfetchStatusのitem identity・revision state・distributionChannelsのversionを検証する。PUBLISHED / PUBLISHED_TO_TESTERS / PENDING_REVIEW / STAGED の正常な登録版が今回versionと一致するときだけ、従来の再実行契約として「既に提出/公開済み・今回ZIPの新規送信なし」と明示して終了する。ストア配布bytesと今回ZIPの同一性を確認したとは扱わない。未提出draft・不明状態・非同期uploadは成功として扱わず停止する。新規送信はverifier receiptに一致するsnapshotを使い、同期uploadのID・版とpublish受付応答を確認する。公開はrepository単位で直列化し、外部Dashboard操作と並行しない。
 
 
-新規cloneでは隔離用設定は付属しない。"webstore/package.json" を private なBun 1.4.4パッケージとして作成し、puppeteer 25.14.0 を固定、trustedDependenciesはpuppeteerだけ、scripts.depsは "bun ../scripts/Install-Dependencies.mjs"、scripts["deps:resolve"]は "bun install" とする。scripts.generate-screenshotsも "bun generate-screenshots.js" にする。bunfig.tomlは最低24時間待機と [run] bun=true を指定する。初回だけ "bun run --cwd webstore deps:resolve" でlockを生成し、その後は "bun run --cwd webstore deps" で固定復元する。これらはローカル専用で強制Git追加しない。
+新規cloneでは隔離用設定は付属しない。"webstore/package.json" を private なBun 1.4.4パッケージとして作成し、puppeteer 25.14.0 を固定、trustedDependenciesはpuppeteerだけ、scripts.depsは "bun ../scripts/Install-Dependencies.mjs"、scripts["deps:resolve"]は "bun install" とする。scripts.generate-screenshotsは "bun vitrina/vitrina.mjs generate" にする。bunfig.tomlは最低24時間待機と [run] bun=true を指定する。初回だけ "bun run --cwd webstore deps:resolve" でlockを生成し、その後は "bun run --cwd webstore deps" で固定復元する。これらはローカル専用で強制Git追加しない。
+
+### CWS のアップロードと申請の分離
+
+`publish.yml`（release ブランチ push）は検証済みZIPを `-Stage Upload` で下書きとしてアップロードするだけで、審査へは申請しない。新ロケールの掲載画像欄はアップロード後でないと Dashboard に出ないため、申請は別workflow `.github/workflows/cws-submit.yml`（手動実行、`-Stage Publish`）で行う。
+
+1. `release/x.y.z` を push する（publish.yml がアップロードする）
+2. Dashboard（Edictora: `edictora push --only images`）でロケール別の掲載画像を下書き保存する
+3. `gh workflow run cws-submit.yml -f version=x.y.z --ref release/x.y.z` で申請する
+
+- API v2 は未申請の下書き版を返さないため、下書きの版そのものは確認できない。`cws-submit.yml` は次を満たす場合だけ `:publish` する: 実行 ref が `release/<version>` で manifest.json の版が入力と一致する。`publish.yml` の直近のアップロード成功 run（固定ステップ名 `Chrome Web Store にアップロード（下書き）`。`actions: read` で履歴を参照）が同じ commit である。fetchStatus で item identity・直近アップロード状態・公開/審査中の版を確認できる。
+- 同版が申請済み・公開済み（PENDING_REVIEW / STAGED / PUBLISHED / PUBLISHED_TO_TESTERS）なら再送せず成功終了する。別版の審査中、より新しい版の存在、直近アップロードの進行中・失敗、状態不明は申請せず停止する。
+- Dashboard で手動アップロードした下書きなど、同じ commit のアップロード成功 run が無い場合は申請されない。その場合は Dashboard から手動で申請する。
 
 ## Bun依存の脆弱性検出
 

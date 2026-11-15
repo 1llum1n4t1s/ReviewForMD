@@ -14,7 +14,7 @@ GitHub / Azure DevOps / AWS CodeCommit の PR を Markdown、SharePoint の会�
 ■ 説明（16,000文字以内）
 
 複数サイトの情報を Markdown / VTT でダウンロードできる Chrome 拡張機能です。
-GitHub・Azure DevOps の PR レビュー、SharePoint Stream の Teams 会議録画字幕（VTT）、
+GitHub・Azure DevOps・AWS CodeCommit の PR レビュー、SharePoint Stream の Teams 会議録画字幕（VTT）、
 そして Microsoft Teams のチャット履歴まで、ワンクリックで手元に保存できます。
 
 【できること】
@@ -23,12 +23,12 @@ GitHub・Azure DevOps の PR レビュー、SharePoint Stream の Teams 会議�
 ポップアップは今いるサイトを判定し、そのサイトに合ったボタンを自動で出し分けます。
 
 ▼ Markdown でダウンロード / コピー（PR レビュー）
-GitHub / Azure DevOps の PR ページでアイコンをクリックすると、ポップアップに
+GitHub / Azure DevOps / AWS CodeCommit の PR ページでアイコンをクリックすると、ポップアップに
 「MDでダウンロード」「MDコピー」が出ます。タイトル・本文・全レビューコメントを
 1つの .md ファイルで保存、またはクリップボードにコピーできます。
 
 ▼ PR 一覧ページからも直接ダウンロード
-PR 一覧ページでは各行にダウンロードボタンが表示され、PR を開かずに直接取得できます。
+GitHub / Azure DevOps の PR 一覧ページでは各行にダウンロードボタンが表示され、PR を開かずに直接取得できます。
 
 ▼ レビューコメントを完全に取得
 投稿者名・日時・対象ファイルパス・差分コード（diff）付きで取得します。
@@ -38,40 +38,45 @@ Azure DevOps では DOM から取得できない場合に REST API へ自動フ�
 ▼ GitHub / Azure DevOps / AWS CodeCommit 対応
 ・GitHub（github.com）
 ・Azure DevOps（dev.azure.com / *.visualstudio.com）
-・カスタムドメインの Azure DevOps
+・カスタムドメインの Azure DevOps（ポップアップの「このサイトでの動作を許可する」から、そのサイトだけを許可して使います）
 ・AWS CodeCommit（AWS マネジメントコンソールの PR 詳細ページ。詳細ページ専用）
 SPA（シングルページアプリケーション）のページ遷移にも追従します。
 
 ▼ SharePoint Stream（Teams 会議録画）対応
 会議録画ページでアイコンをクリックすると、ポップアップに「VTTでダウンロード」「VTTコピー」が
 出ます。トランスクリプト（字幕）を .vtt で保存／コピーできます。議事録作成の下書きに便利です。
+トランスクリプトがない録画では使えません。
 
 ▼ Microsoft Teams チャット対応
 Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャット・チャネルで
 アイコンをクリックすると、ポップアップに次のボタンが出ます。
 ・「MDでダウンロード」「MDコピー」: 自動スクロールで指定した開始月から現在までを収集し、送信者・日時・本文・
   リアクション・添付リンクを 1つの .md ファイルで保存／コピー。
-・今月／先月から／2か月前から／3か月前からを選択できます。履歴が短い場合も取得できる分を保存します。
+・収集開始月は 今月／先月から／2か月前から／3か月前から を選択できます。履歴が短い場合も取得できる分を保存します。
+・収集中はページ右下に進捗パネルが出ます。「ここまでで保存」で取得済みの分だけを保存、「中止」で保存せずに終了できます。
+  収集はページ側で続くため、ポップアップは閉じても大丈夫です。
 ・保存名は「チャット名_yyyyMMdd.md」です。収集の上限に達した場合は、途中までの保存であることを表示します。
 
 【こんな場面で役立ちます】
 ・コードレビューの記録をチームで共有したい
 ・PR の内容をドキュメントや議事録に転記したい
 ・レビューの振り返り資料を作りたい
-・複数の PR をまとめて Markdown ファイルで保存したい
+・PR を開かずに、一覧から Markdown ファイルで保存したい
 ・Teams 会議の内容を字幕データから議事録に起こしたい
 ・Teams のチャット履歴をバックアップ・記録として残したい
 
 【使い方】
 1. Chrome Web Store からインストール
-2. 対応ページ（GitHub / Azure DevOps の PR、SharePoint Stream の会議録画、Microsoft Teams の
+2. 対応ページ（GitHub / Azure DevOps / AWS CodeCommit の PR、SharePoint Stream の会議録画、Microsoft Teams の
    チャット・チャネル）を開く
 3. ツールバーの拡張機能アイコンをクリック → ポップアップにそのサイト用のボタンが表示されます
    - PR: 「MDでダウンロード」「MDコピー」
    - SharePoint 会議録画: 「VTTでダウンロード」「VTTコピー」
    - Teams チャット: 「MDでダウンロード」「MDコピー」
-   ※ PR 一覧ページでは各行のダウンロードボタンからも直接保存できます
+   ※ GitHub / Azure DevOps の PR 一覧ページでは各行のダウンロードボタンからも直接保存できます
 4. ボタンをクリック → .md / .vtt ファイルが保存（またはコピー）されます
+
+不具合のご報告やご質問は、ポップアップ下部の「お問い合わせ」から送れます。
 
 【プライバシーについて】
 ・PR・字幕・チャットの取得とファイル生成はブラウザ内で処理します
@@ -79,8 +84,7 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 ・広告・解析・テレメトリ目的の収集や送信は行いません
 ・PR ページ / SharePoint Stream / Teams ページの DOM・公式 API の読み取りと、
   クリップボードへの書き込み・ファイルのダウンロードのみを行います
-・Teams の添付取得はユーザー自身の既存ログインセッションを用い、Microsoft 関連ドメインに
-  限定して行います（第三者への送信はありません）
+・Teams の添付は画面に表示されているリンクを記録するだけで、ファイル本体はダウンロードしません
 ・すべてのコードは拡張機能パッケージ内に含まれています
 
 ■ カテゴリ
@@ -117,12 +121,15 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 はい
 
 ■ 単一の目的の説明
-閲覧中のページ（PR レビュー / Teams 会議録画 / Teams チャット）の内容を Markdown・VTT 形式でダウンロードまたはコピーする
+閲覧中のページ（GitHub / Azure DevOps / AWS CodeCommit の PR、SharePoint の会議録画、Microsoft Teams のチャット）の内容を Markdown・VTT 形式でダウンロードまたはコピーする
 
 ■ データの使用に関する開示
 
-  ・個人を特定できる情報を収集しますか？
-    はい。任意のお問い合わせフォームを利用者が送信した場合に限り、メールアドレスと任意入力のお名前を受け取ります。
+  ・収集するデータの種類（ダッシュボードでチェックするもの）
+    - 個人を特定できる情報: はい。任意のお問い合わせフォームを利用者が送信した場合に限り、メールアドレスと任意入力のお名前を受け取ります。
+    - 認証に関する情報: はい。お問い合わせフォームの 6 桁の確認コードと Kagayoi Support のアクセストークンを、問い合わせの認証のために扱います。
+    - 個人的コミュニケーション: はい。お問い合わせフォームを利用者が送信した場合に限り、入力された件名・本文を受け取ります。
+    - 上記以外（健康に関する情報・財務状況や支払いに関する情報・位置情報・ウェブ履歴・ユーザーのアクティビティ・ウェブサイトのコンテンツ）: 収集しない
 
   ・ユーザーのデータをどのように扱いますか？
     - ユーザーデータの販売: しない
@@ -132,42 +139,22 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
 ■ 権限の正当性
 
   activeTab:
-  ユーザーがポップアップから操作した際に、現在のタブの対応ページ
-  （PR / SharePoint 会議録画 / Teams チャット）の内容を読み取り、
-  Markdown・VTT 形式へ変換するために使用します。
+  ユーザーがツールバーアイコンからポップアップを開いたときに、現在のタブの URL を確認して対応ページかどうかを判定し、未許可のカスタムドメインの Azure DevOps では権限の許可を案内するために使用します。ユーザーの操作なしにタブへアクセスすることはありません。
 
   scripting:
-  カスタムドメインのAzure DevOpsや、別サービスから遷移したAWS CodeCommitの
-  ページにコンテンツスクリプトを動的に注入するために使用します。
+  カスタムドメインの Azure DevOps や、AWS CodeCommit のページにコンテンツスクリプトを動的に注入するために使用します。
 
   webNavigation:
-  SPA（シングルページアプリケーション）のページ遷移を検出し、
-  PR一覧の行ダウンロードボタンの再表示やコンテンツスクリプトの
-  再初期化を適切なタイミングで行うために使用します。
+  SPA（シングルページアプリケーション）のページ遷移を検出し、PR 一覧の行ダウンロードボタンの再表示やコンテンツスクリプトの再初期化を適切なタイミングで行うために使用します。
 
   clipboardWrite:
-  ポップアップの「コピー」操作で、整形した Markdown / VTT テキストを
-  クリップボードに書き込むために使用します（読み取りは行いません）。
+  ポップアップの「コピー」操作で、整形した Markdown / VTT テキストをクリップボードに書き込むために使用します（読み取りは行いません）。
 
-  host_permissions (github.com / *.github.com / dev.azure.com / *.visualstudio.com):
-  PRページのタイトル・本文・レビューコメントを読み取り、Markdown に整形するために使用します。
+  ホスト権限:
+  GitHub / Azure DevOps の PR ページ、AWS CodeCommit の PR 詳細ページからタイトル・本文・レビューコメントを読み取り Markdown に整形します。SharePoint Stream の会議録画ページでは VTT 字幕取得用の Microsoft 公式 API を呼び出します。Microsoft Teams のチャット/チャネルではメッセージ履歴（送信者・日時・本文・リアクション・添付リンク）を読み取り Markdown に整形します。support.kagayoi.com は、ユーザーがお問い合わせフォームを送信したときのメール確認とチケット作成の通信にだけ使います。任意のホスト権限（https://*/*）は、社内ホストの Azure DevOps などカスタムドメインで、ユーザーがポップアップの『このサイトでの動作を許可する』を押したオリジンに対してだけ要求します。
 
-  host_permissions (console.aws.amazon.com / *.console.aws.amazon.com):
-  AWS マネジメントコンソールの CodeCommit PR 詳細ページからタイトル・本文・
-  レビューコメントを読み取り、Markdown に整形するために使用します。
-
-  host_permissions (*.sharepoint.com):
-  SharePoint Streamの会議録画ページで、トランスクリプト (VTT 字幕) 取得用の
-  Microsoft 公式 API を呼び出すために使用します。
-
-  host_permissions (teams.microsoft.com / *.teams.microsoft.com / teams.live.com / teams.cloud.microsoft):
-  Microsoft Teams のチャット/チャネルでメッセージ履歴を読み取り、Markdown に整形するために使用します。
-
-  optional_host_permissions (カスタムドメイン):
-  社内ホストされた Azure DevOps などのカスタムドメインを個別に許可していただくために、
-  拡張機能アイコンのポップアップから「このサイトで動作を許可する」ボタンを押した場合のみ、
-  そのオリジンに対してのみ権限を取得します。ユーザーが明示的に許可していない
-  ドメインでは一切動作しません。
+■ プライバシーポリシー URL
+https://mdcopy.kagayoi.com/privacy
 
 ■ リモートコードを使用していますか？
 いいえ

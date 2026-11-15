@@ -570,11 +570,11 @@ var TeamsExtractor = TeamsExtractor || (() => {
   /** 正常な先頭到達と、途中までの保存を出力と表示の両方で区別する。 */
   function _collectionNote(reason) {
     const notes = {
-      'time-limit': '収集時間の上限に達したため、指定期間の履歴は一部のみです。',
-      'message-limit': '収集件数の上限に達したため、指定期間の履歴は一部のみです。',
-      'iteration-limit': 'スクロール回数の上限に達したため、指定期間の履歴は一部のみです。',
-      'visible-only': 'スクロール領域を確認できなかったため、画面に表示された履歴のみです。',
-      'user-stopped': '「ここまでで保存」で停止したため、取得済みの履歴のみです。',
+      'time-limit': Localizer.t('teamsNoteTimeLimit', undefined, 'The collection time limit was reached, so the history for the selected period is only partial.'),
+      'message-limit': Localizer.t('teamsNoteMessageLimit', undefined, 'The message count limit was reached, so the history for the selected period is only partial.'),
+      'iteration-limit': Localizer.t('teamsNoteIterationLimit', undefined, 'The scroll count limit was reached, so the history for the selected period is only partial.'),
+      'visible-only': Localizer.t('teamsNoteVisibleOnly', undefined, 'The scroll area could not be found, so only the history visible on screen was collected.'),
+      'user-stopped': Localizer.t('teamsNoteUserStopped', undefined, 'You stopped with Save so far, so only the history collected so far is included.'),
     };
     return notes[reason] || '';
   }
@@ -709,6 +709,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
     const lines = [];
     lines.push(`# ${_escapeMdInline(title)}`);
     lines.push('');
+    // l10n-ignore: 生成する Markdown の見出し行（生成物の文言は今回の対象外）
     lines.push(`> Microsoft Teams チャット書き出し / メッセージ数: ${records.length}`);
     if (note) lines.push(`> ※ ${note}`);
     lines.push('');
@@ -719,6 +720,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
             ? MarkdownBuilder.formatTimestamp(r.tsRaw)
             : r.tsRaw)
         : '';
+      // l10n-ignore: 生成する Markdown の送信者フォールバック（生成物の文言は今回の対象外）
       const author = _escapeMdInline(r.author || '不明');
       const head = ts ? `**${author}** · ${ts}` : `**${author}**`;
       lines.push(`### ${head}`);
@@ -741,6 +743,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
         lines.push('');
       }
       if (r.reactions.length) {
+        // l10n-ignore: 生成する Markdown のリアクション行（生成物の文言は今回の対象外）
         lines.push(`*リアクション: ${r.reactions.join(' / ')}*`);
         lines.push('');
       }
@@ -793,7 +796,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
     if (_overlayActionsEl) {
       _overlayActionsEl.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     }
-    if (_overlayProgressEl) _overlayProgressEl.textContent = '停止して書き出しています…';
+    if (_overlayProgressEl) _overlayProgressEl.textContent = Localizer.t('teamsOverlayStopping', undefined, 'Stopping and exporting…');
   }
 
   /** 「中止」: 破棄フラグを立てて、保存せずオーバーレイを閉じる。 */
@@ -810,18 +813,18 @@ var TeamsExtractor = TeamsExtractor || (() => {
     const head = _el('div', 'rfmd-teams-overlay__head');
     const spinner = _el('span', 'rfmd-teams-overlay__spinner');
     spinner.setAttribute('aria-hidden', 'true');
-    head.append(spinner, _el('span', 'rfmd-teams-overlay__title', 'Teams チャットを収集中'));
+    head.append(spinner, _el('span', 'rfmd-teams-overlay__title', Localizer.t('teamsOverlayTitle', undefined, 'Collecting Teams chat')));
 
     const sub = _el('div', 'rfmd-teams-overlay__sub', title || '');
     // ライブリージョンは進捗テキストだけに限定する（操作ボタンをライブ領域に含めない）。
-    const progress = _el('div', 'rfmd-teams-overlay__progress', '0 件 · 0 秒');
+    const progress = _el('div', 'rfmd-teams-overlay__progress', Localizer.t('teamsOverlayProgress', ['0', '0'], '$1 messages · $2 s'));
     progress.setAttribute('role', 'status');
     progress.setAttribute('aria-live', 'polite');
 
     const actions = _el('div', 'rfmd-teams-overlay__actions');
     actions.append(
-      _overlayButton('ここまでで保存', 'primary', _onClickSave),
-      _overlayButton('中止', 'ghost', _onClickDiscard)
+      _overlayButton(Localizer.t('teamsOverlaySaveSoFar', undefined, 'Save so far'), 'primary', _onClickSave),
+      _overlayButton(Localizer.t('teamsOverlayCancel', undefined, 'Cancel'), 'ghost', _onClickDiscard)
     );
 
     root.append(head, sub, progress, actions);
@@ -835,7 +838,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
   function _updateOverlayProgress(info) {
     if (!_overlayProgressEl || _cancelRequested) return;
     const sec = Math.floor((info.elapsedMs || 0) / 1000);
-    _overlayProgressEl.textContent = `${info.count} 件 · ${sec} 秒`;
+    _overlayProgressEl.textContent = Localizer.t('teamsOverlayProgress', [String(info.count), String(sec)], '$1 messages · $2 s');
   }
 
   /** spinner を止めて完了/エラー見た目にする。 */
@@ -859,8 +862,10 @@ var TeamsExtractor = TeamsExtractor || (() => {
   function _overlayComplete({ markdown, count, mode, title, note = '' }) {
     if (!_overlayEl || !_overlayActionsEl || !_overlayProgressEl) return;
     _markOverlayDone(false);
-    const describe = (text) => note ? `${text}（一部）\n${note}` : text;
-    _overlayProgressEl.textContent = describe(`✓ ${count} 件を収集しました`);
+    const describe = (text) => note
+      ? `${Localizer.t('teamsOverlayPartial', [String(text)], '$1 (partial)')}\n${note}`
+      : text;
+    _overlayProgressEl.textContent = describe(Localizer.t('teamsOverlayCollected', [String(count)], '✓ Collected $1 messages'));
     _overlayActionsEl.replaceChildren();
 
     const clip = _clip();
@@ -870,36 +875,40 @@ var TeamsExtractor = TeamsExtractor || (() => {
     const filename = `${_safeName(title, 'teams-chat')}_${date}.md`;
 
     if (mode === 'copy') {
-      const copyBtn = _overlayButton('クリップボードにコピー', 'primary', async () => {
+      const copyBtn = _overlayButton(Localizer.t('teamsOverlayCopyButton', undefined, 'Copy to clipboard'), 'primary', async () => {
         // await 中にユーザーが「閉じる」/会話切替で _removeOverlay が走ると参照が null 化される。
         // 進捗要素はローカルに退避し、解決後に生存（isConnected）を確認してから触る。
         const progressEl = _overlayProgressEl;
         const ok = clip ? await clip.copy(markdown) : false;
         if (!progressEl || !progressEl.isConnected) return;
-        progressEl.textContent = describe(ok ? `✓ コピーしました（${count} 件）` : 'コピーに失敗しました');
+        progressEl.textContent = describe(ok
+          ? Localizer.t('teamsOverlayCopied', [String(count)], '✓ Copied ($1 messages)')
+          : Localizer.t('teamsOverlayCopyFailed', undefined, 'Copy failed'));
         if (ok) { copyBtn.disabled = true; if (!note) _autoClose(); }
       });
-      _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
+      _overlayActionsEl.append(copyBtn, _overlayButton(Localizer.t('teamsOverlayClose', undefined, 'Close'), 'ghost', _removeOverlay));
       return;
     }
 
     // download
     const ok = clip ? clip.download(markdown, filename) : false;
     if (ok) {
-      _overlayProgressEl.textContent = describe(`✓ ${count} 件をダウンロードしました`);
-      _overlayActionsEl.append(_overlayButton('閉じる', 'ghost', _removeOverlay));
+      _overlayProgressEl.textContent = describe(Localizer.t('teamsOverlayDownloaded', [String(count)], '✓ Downloaded $1 messages'));
+      _overlayActionsEl.append(_overlayButton(Localizer.t('teamsOverlayClose', undefined, 'Close'), 'ghost', _removeOverlay));
       if (!note) _autoClose();
     } else {
       // 保存失敗時はコピーで救済できる手段を出す
-      _overlayProgressEl.textContent = describe('ダウンロードに失敗しました');
-      const copyBtn = _overlayButton('コピーで保存', 'primary', async () => {
+      _overlayProgressEl.textContent = describe(Localizer.t('teamsOverlayDownloadFailed', undefined, 'Download failed'));
+      const copyBtn = _overlayButton(Localizer.t('teamsOverlaySaveByCopy', undefined, 'Save by copying'), 'primary', async () => {
         const progressEl = _overlayProgressEl; // copy 分岐と同様、await 後の null 参照を防ぐ
         const c = clip ? await clip.copy(markdown) : false;
         if (!progressEl || !progressEl.isConnected) return;
-        progressEl.textContent = describe(c ? `✓ コピーしました（${count} 件）` : 'コピーにも失敗しました');
+        progressEl.textContent = describe(c
+          ? Localizer.t('teamsOverlayCopied', [String(count)], '✓ Copied ($1 messages)')
+          : Localizer.t('teamsOverlayCopyFailedAgain', undefined, 'Copying failed as well'));
         if (c) copyBtn.disabled = true;
       });
-      _overlayActionsEl.append(copyBtn, _overlayButton('閉じる', 'ghost', _removeOverlay));
+      _overlayActionsEl.append(copyBtn, _overlayButton(Localizer.t('teamsOverlayClose', undefined, 'Close'), 'ghost', _removeOverlay));
     }
   }
 
@@ -910,7 +919,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
     if (_overlayProgressEl) _overlayProgressEl.textContent = msg;
     if (_overlayActionsEl) {
       _overlayActionsEl.replaceChildren();
-      _overlayActionsEl.append(_overlayButton('閉じる', 'ghost', _removeOverlay));
+      _overlayActionsEl.append(_overlayButton(Localizer.t('teamsOverlayClose', undefined, 'Close'), 'ghost', _removeOverlay));
     }
   }
 
@@ -991,7 +1000,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
   function startCollection(opts = {}) {
     if (_busy) {
       _flashOverlay();
-      return { ok: false, error: 'すでに収集中です。完了するか中止してからお試しください' };
+      return { ok: false, error: Localizer.t('teamsErrorBusy', undefined, 'Collection is already running. Wait for it to finish or cancel it, then try again') };
     }
     _busy = true;
     _cancelRequested = false;
@@ -1027,8 +1036,8 @@ var TeamsExtractor = TeamsExtractor || (() => {
         if (records.length === 0) {
           _overlayError(
             rawCount > 0
-              ? '選択した期間にメッセージがありませんでした。収集開始月を前にしてお試しください。'
-              : 'メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）。'
+              ? Localizer.t('teamsErrorNoMessagesInPeriod', undefined, 'No messages in the selected period. Choose an earlier start month and try again.')
+              : Localizer.t('teamsErrorNoMessages', undefined, 'Could not extract any messages (the Teams layout may have changed).')
           );
           return;
         }
@@ -1040,7 +1049,7 @@ var TeamsExtractor = TeamsExtractor || (() => {
           _removeOverlay();
           return;
         }
-        _overlayError('収集中にエラーが発生しました: ' + (e?.message || e));
+        _overlayError(Localizer.t('teamsErrorCollect', [String(e?.message || e)], 'An error occurred while collecting: $1'));
       } finally {
         _busy = false;
       }

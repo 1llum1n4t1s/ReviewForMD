@@ -48,7 +48,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
 
   function _assertCurrentContext(context) {
     if (!_isCurrentContext(context)) {
-      throw new Error('動画ページが切り替わったため、取得を中止しました');
+      throw new Error(Localizer.t('errorVideoPageSwitched', undefined, 'The video page changed, so retrieval was stopped'));
     }
   }
 
@@ -226,7 +226,7 @@ var SharePointExtractor = SharePointExtractor || (() => {
       `?select=media/transcripts&$expand=media/transcripts`;
     // _origin() はページホストなので同一オリジン確定。念のためホワイトリストを経由。
     if (!_isSharePointOrigin(url)) {
-      throw new Error('SharePoint 以外のオリジンへのリクエストは許可されていません');
+      throw new Error(Localizer.t('errorNonSharepointOrigin', undefined, 'Requests to origins other than SharePoint are not allowed'));
     }
     const { response: res, json } = await RfmdFetch.withJson(url, {
       credentials: 'include',
@@ -364,33 +364,33 @@ var SharePointExtractor = SharePointExtractor || (() => {
       const resolved = await _resolveTranscript(context);
       _assertCurrentContext(context);
       if (resolved.reason === 'no-ids') {
-        throw new Error('Drive ID / File ID が見つかりません');
+        throw new Error(Localizer.t('errorDriveIdMissing', undefined, 'Drive ID / File ID not found'));
       }
       if (!resolved.ids) {
-        throw new Error('トランスクリプトが見つかりません');
+        throw new Error(Localizer.t('errorTranscriptNotFound', undefined, 'Transcript not found'));
       }
       ids = { ...resolved.ids, pageUrl: context.pageUrl };
       _selectedIds = ids;
       transcripts = resolved.transcripts;
     }
     if (!ids) {
-      throw new Error('Drive ID / File ID が見つかりません');
+      throw new Error(Localizer.t('errorDriveIdMissing', undefined, 'Drive ID / File ID not found'));
     }
     if (transcripts.length === 0) {
-      throw new Error('トランスクリプトが見つかりません');
+      throw new Error(Localizer.t('errorTranscriptNotFound', undefined, 'Transcript not found'));
     }
     // temporaryDownloadUrl が欠落しているケース（権限不足でメタデータだけ返る等）で
     // _normalizeStreamUrl が TypeError になると、ユーザーに切り分け不能な例外が出る。
     const rawUrl = transcripts[0].temporaryDownloadUrl;
     if (typeof rawUrl !== 'string' || rawUrl === '') {
-      throw new Error('トランスクリプトのダウンロード URL が取得できませんでした');
+      throw new Error(Localizer.t('errorTranscriptUrlMissing', undefined, 'Could not get the transcript download URL'));
     }
     const streamUrl = _normalizeStreamUrl(rawUrl);
     // サーバー応答 (temporaryDownloadUrl) をそのまま credentials 付きで叩くと、
     // サーバー側で URL を差し替えられたときに cookie が外部オリジンへ流出しうる。
     // 必ず *.sharepoint.com ドメインに限定してから fetch する。
     if (!_isSharePointOrigin(streamUrl)) {
-      throw new Error('VTT ダウンロード URL が SharePoint オリジンではありません');
+      throw new Error(Localizer.t('errorVttUrlNotSharepoint', undefined, 'The VTT download URL is not a SharePoint origin'));
     }
     const { response: res, text } = await RfmdFetch.withText(streamUrl, {
       // _normalizeStreamUrl が元 URL のクエリ文字列を ?is=1&applymediaedits=false で
@@ -407,9 +407,11 @@ var SharePointExtractor = SharePointExtractor || (() => {
       try { await res.body?.cancel(); } catch { /* 接続解放 */ }
       _assertCurrentContext(context);
       const hint = (res.status === 401 || res.status === 403)
-        ? 'ログインし直してからページを再読み込みしてください'
+        ? Localizer.t('errorVttReloginHint', undefined, 'Sign in again and reload the page')
         : '';
-      throw new Error(`VTT の取得に失敗しました (HTTP ${res.status})${hint ? '。' + hint : ''}`);
+      throw new Error(hint
+        ? Localizer.t('errorVttFetchFailedHint', [String(res.status), hint], 'Failed to fetch the VTT (HTTP $1). $2')
+        : Localizer.t('errorVttFetchFailed', [String(res.status)], 'Failed to fetch the VTT (HTTP $1)'));
     }
     const filename = _filenameFromContentDisposition(
       res.headers.get('Content-Disposition')

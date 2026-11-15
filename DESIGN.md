@@ -98,6 +98,14 @@ DevOpsはDOMコメントがない・不十分な場合にthreadsとiterationsの
 
 HTML→Markdownは深度上限80の再帰DOM走査で、見出し、文字装飾、言語付きコード、相対URL解決、画像、ネストしたリスト、表、引用、チェックボックスを変換します。リスト・表は専用変換へ深度を引き継ぎ、一度だけ走査します。危険なURIスキームを除き、リンク文字列とURLをエスケープし、data URI画像はプレースホルダへ置き換え、GitHub Code Review Agentのバッジ画像を除きます。Teams本文は変換前に添付画像・ファイルカードをクローンから除き、添付の二重出力を防ぎます。
 
+## 多言語化
+
+UIは `en ja zh_CN zh_TW ko es fr de pt_BR` の9言語に対応し、`default_locale` は `en` です。拡張名と説明は `__MSG_appName__` / `__MSG_appDescription__` で、全manifest（Firefox用を含む）が同じ参照を使います。文言は `_locales/<言語>/messages.json` が正本で、キー集合と順序は全言語で `en` に揃えます。
+
+共通モジュール `src/shared/ui-localizer.js`（Kagayoi共通の正本を逐語コピー。直接編集しない）が `chrome.i18n.getMessage` を差し替え、popupの言語切替（`#uiLanguage`、`chrome.storage.local` に保存）を実行時に反映します。popupは `data-i18n` / `data-i18n-attr` と `Localizer.t` を使い、content scriptは各配列の先頭に読み込んで `Localizer.ready` 後に一覧ボタンを作り、`Localizer.onChange` で作り直します。service workerは `importScripts`、Firefoxは `background.scripts` の先頭で同じファイルを読み、onInstalledで `ensureFresh()` を呼びます。選択言語の保存に `storage` 権限を使います。
+
+生成するMarkdownの見出し・ラベル（`本文`、`投稿者` など）とページ照合用の文字列は翻訳対象外で、`l10n.config.json` の `ignore` と `l10n-ignore` コメントで理由を残します。ただしTeams収集の部分履歴の注記（`_collectionNote`）は、画面表示と同じ文言をMarkdownにも入れるため、UI言語で出力されます。梱包（`zip.sh`・`zip.ps1`）は `_locales/` と `src/shared/ui-localizer.js` を必ず含め、検証は `bun <Kagayoi.Support>/clients/chrome-extension/l10n/verify-l10n.mjs --repo <このリポジトリ> --archive <zip>` で行います。
+
 ## 配布設計
 
 ChromeとFirefoxはソースとバージョンを共有し、background宣言を成果物生成時に分け、Firefox用では `minimum_chrome_version` も取り除きます。Chrome用ZIPは正本`manifest.json`の`service_worker`を保持し、Firefox用ZIPは生成スクリプトが同じファイルを`scripts`配列へ変換します。これによりChrome MV3へ `background.scripts` を渡さず、手編集するmanifestの重複も持ちません。

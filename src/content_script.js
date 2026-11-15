@@ -237,7 +237,7 @@
           } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
         }
         _retries = 0;
-        init();
+        Localizer.ready.then(init);
       }, NAV_REINIT_DEBOUNCE_MS);
     };
 
@@ -266,7 +266,9 @@
           }
           // Popup からのアクション実行依頼（抽出 + ダウンロード/コピー）
           if (msg?.type === 'rfmd:extract') {
-            Promise.resolve(ButtonInjector.runAction({ kind: msg.kind, mode: msg.mode, monthsAgo: msg.monthsAgo }))
+            // 選択言語の辞書が読み込まれる前に実行すると、エラー文言などが標準言語になるため待つ。
+            Localizer.ready
+              .then(() => ButtonInjector.runAction({ kind: msg.kind, mode: msg.mode, monthsAgo: msg.monthsAgo }))
               .then((r) => sendResponse(r))
               .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
             return true; // 非同期 sendResponse
@@ -328,5 +330,15 @@
 
   // 起動
   _watchNavigation();
-  init();
+  // 注入する一覧ボタンの文言は選択言語で作る。辞書の読み込み完了後に初期化する
+  // （先に作ると標準言語で一瞬表示されてしまう）。
+  Localizer.ready.then(init);
+  // popup で言語を変えたら、注入済みの一覧ボタンを作り直して新しい言語にする。
+  try {
+    Localizer.onChange(() => {
+      document.querySelectorAll('.rfmd-list-btn-wrap').forEach((el) => el.remove());
+      _retries = 0;
+      init();
+    });
+  } catch { /* 拡張コンテキスト無効化時は黙殺 */ }
 })();

@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "いろいろMDコピー"
+  },
+  "appDescription": {
+    "message": "PRレビュー・Teams会議録画(VTT)・Teamsチャットを Markdown / VTT でダウンロードできるChrome拡張機能"
+  },
+  "popupStatusOpenSupported": {
+    "message": "対応ページを開いてください"
+  },
+  "popupGrantButton": {
+    "message": "このサイトでの動作を許可する"
+  },
+  "popupGrantHintLine1": {
+    "message": "カスタムドメインの Azure DevOps を検出しました。"
+  },
+  "popupGrantHintLine2": {
+    "message": "動作させるにはホスト権限を許可してください（一度だけ）。"
+  },
+  "popupCapsHeading": {
+    "message": "対応プラットフォーム"
+  },
+  "popupCapsPr": {
+    "message": "GitHub / Azure DevOps / AWS CodeCommit の PR"
+  },
+  "popupCapsVtt": {
+    "message": "SharePoint Stream（Teams 会議録画 VTT）"
+  },
+  "popupCapsTeams": {
+    "message": "Microsoft Teams チャット（MD / 添付リンク）"
+  },
+  "siteSharepointMeeting": {
+    "message": "SharePoint 会議録画"
+  },
+  "popupPeriodLabel": {
+    "message": "収集開始月"
+  },
+  "popupPeriodThisMonth": {
+    "message": "今月"
+  },
+  "popupPeriodLastMonth": {
+    "message": "先月から"
+  },
+  "popupPeriodTwoMonths": {
+    "message": "2か月前から"
+  },
+  "popupPeriodThreeMonths": {
+    "message": "3か月前から"
+  },
+  "popupButtonStarting": {
+    "message": "開始しています…"
+  },
+  "popupButtonFetching": {
+    "message": "取得中…"
+  },
+  "popupErrorRunFailed": {
+    "message": "実行に失敗しました"
+  },
+  "popupErrorCopyFailed": {
+    "message": "クリップボードにコピーできませんでした"
+  },
+  "popupErrorStalePage": {
+    "message": "拡張機能が更新されたか、ページが古い可能性があります。ページを再読み込みしてからお試しください"
+  },
+  "popupButtonStartedOnPage": {
+    "message": "ページで収集開始"
+  },
+  "popupNoteTeamsStarted": {
+    "message": "ページ右下のパネルに進捗が出ます。そこで「ここまでで保存」や「中止」ができます。このポップアップは閉じても大丈夫です。"
+  },
+  "popupNoteList": {
+    "message": "PR を開くと、ここからダウンロード／コピーできます。一覧の各行のボタンからも直接ダウンロードできます。"
+  },
+  "popupStatusPr": {
+    "message": "$SITE$ の PR",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusPrWithTitle": {
+    "message": "$SITE$ の PR：$TITLE$",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      },
+      "title": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupStatusPrList": {
+    "message": "$SITE$ のPR一覧",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusSharepointDetected": {
+    "message": "SharePoint 会議録画を検出しました"
+  },
+  "buttonDownloadMd": {
+    "message": "MDでダウンロード"
+  },
+  "buttonCopyMd": {
+    "message": "MDコピー"
+  },
+  "buttonDownloadVtt": {
+    "message": "VTTでダウンロード"
+  },
+  "buttonCopyVtt": {
+    "message": "VTTコピー"
+  },
+  "popupUnavailableNoTranscript": {
+    "message": "この録画にはトランスクリプトがありません"
+  },
+  "popupUnavailableOpenChat": {
+    "message": "チャット／チャネルを開いてください"
+  },
+  "popupStatusTeamsWithTitle": {
+    "message": "Teams：$TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusTeamsChat": {
+    "message": "Teams チャット"
+  },
+  "popupNoteTeams": {
+    "message": "選んだ月から現在まで、取得できる履歴を収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。"
+  },
+  "popupUnavailableFetchFailed": {
+    "message": "情報の取得に失敗しました。ログイン状態を確認し、ページを再読み込みしてからお試しください。"
+  },
+  "popupFeedbackDone": {
+    "message": "完了"
+  },
+  "popupFeedbackFailed": {
+    "message": "失敗"
+  },
+  "popupErrorPrefix": {
+    "message": "エラー: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusVerifyingDevops": {
+    "message": "Azure DevOps を検証中..."
+  },
+  "popupStatusDevopsVerifyFailed": {
+    "message": "Azure DevOps として検証できませんでした"
+  },
+  "popupStatusInjecting": {
+    "message": "コンテンツスクリプトを注入中..."
+  },
+  "popupStatusInjected": {
+    "message": "注入しました。ページを再読み込みしてください"
+  },
+  "popupStatusInjectFailed": {
+    "message": "注入に失敗しました。ページを再読み込みしてください"
+  },
+  "popupStatusReloadPage": {
+    "message": "ページを再読み込みしてからお試しください"
+  },
+  "popupStatusNeedsPermission": {
+    "message": "カスタムドメインを検出しました。下のボタンで権限を許可してください"
+  },
+  "popupGrantRequesting": {
+    "message": "許可をリクエスト中..."
+  },
+  "popupPermissionCancelled": {
+    "message": "権限取得がキャンセルされました"
+  },
+  "popupPermissionRevoked": {
+    "message": "Azure DevOps として検証できませんでした。権限は返上しました"
+  },
+  "popupStatusChecking": {
+    "message": "確認中..."
+  },
+  "popupStatusTabUnavailable": {
+    "message": "タブ情報を取得できませんでした"
+  },
+  "listButtonTitle": {
+    "message": "この PR を Markdown ファイルでダウンロード"
+  },
+  "listFeedbackDownloadDone": {
+    "message": "ダウンロード完了"
+  },
+  "listFeedbackCopyDone": {
+    "message": "コピー完了"
+  },
+  "listFeedbackDownloadFailed": {
+    "message": "ダウンロード失敗"
+  },
+  "listFeedbackCopyFailed": {
+    "message": "コピー失敗"
+  },
+  "teamsOverlayTitle": {
+    "message": "Teams チャットを収集中"
+  },
+  "teamsOverlayProgress": {
+    "message": "$COUNT$ 件 · $SECONDS$ 秒",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "teamsOverlaySaveSoFar": {
+    "message": "ここまでで保存"
+  },
+  "teamsOverlayCancel": {
+    "message": "中止"
+  },
+  "teamsOverlayClose": {
+    "message": "閉じる"
+  },
+  "teamsOverlayStopping": {
+    "message": "停止して書き出しています…"
+  },
+  "teamsOverlayCollected": {
+    "message": "✓ $COUNT$ 件を収集しました",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayPartial": {
+    "message": "$TEXT$（一部）",
+    "placeholders": {
+      "text": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyButton": {
+    "message": "クリップボードにコピー"
+  },
+  "teamsOverlayCopied": {
+    "message": "✓ コピーしました（$COUNT$ 件）",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyFailed": {
+    "message": "コピーに失敗しました"
+  },
+  "teamsOverlayDownloaded": {
+    "message": "✓ $COUNT$ 件をダウンロードしました",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayDownloadFailed": {
+    "message": "ダウンロードに失敗しました"
+  },
+  "teamsOverlaySaveByCopy": {
+    "message": "コピーで保存"
+  },
+  "teamsOverlayCopyFailedAgain": {
+    "message": "コピーにも失敗しました"
+  },
+  "teamsErrorBusy": {
+    "message": "すでに収集中です。完了するか中止してからお試しください"
+  },
+  "teamsErrorNoMessagesInPeriod": {
+    "message": "選択した期間にメッセージがありませんでした。収集開始月を前にしてお試しください。"
+  },
+  "teamsErrorNoMessages": {
+    "message": "メッセージを抽出できませんでした（Teams の画面構成が変わった可能性があります）。"
+  },
+  "teamsErrorCollect": {
+    "message": "収集中にエラーが発生しました: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsNoteTimeLimit": {
+    "message": "収集時間の上限に達したため、指定期間の履歴は一部のみです。"
+  },
+  "teamsNoteMessageLimit": {
+    "message": "収集件数の上限に達したため、指定期間の履歴は一部のみです。"
+  },
+  "teamsNoteIterationLimit": {
+    "message": "スクロール回数の上限に達したため、指定期間の履歴は一部のみです。"
+  },
+  "teamsNoteVisibleOnly": {
+    "message": "スクロール領域を確認できなかったため、画面に表示された履歴のみです。"
+  },
+  "teamsNoteUserStopped": {
+    "message": "「ここまでで保存」で停止したため、取得済みの履歴のみです。"
+  },
+  "errorPageSwitchedPr": {
+    "message": "PR ページが切り替わったため、抽出を中止しました"
+  },
+  "errorPageSwitchedAction": {
+    "message": "抽出中にページが切り替わりました。現在のページで再実行してください。"
+  },
+  "errorVideoPageSwitched": {
+    "message": "動画ページが切り替わったため、取得を中止しました"
+  },
+  "errorCrossOriginRequest": {
+    "message": "クロスオリジンリクエストは許可されていません: $ORIGIN$",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorNonSharepointOrigin": {
+    "message": "SharePoint 以外のオリジンへのリクエストは許可されていません"
+  },
+  "errorDriveIdMissing": {
+    "message": "Drive ID / File ID が見つかりません"
+  },
+  "errorTranscriptNotFound": {
+    "message": "トランスクリプトが見つかりません"
+  },
+  "errorTranscriptUrlMissing": {
+    "message": "トランスクリプトのダウンロード URL が取得できませんでした"
+  },
+  "errorVttUrlNotSharepoint": {
+    "message": "VTT ダウンロード URL が SharePoint オリジンではありません"
+  },
+  "errorVttFetchFailed": {
+    "message": "VTT の取得に失敗しました (HTTP $STATUS$)",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorVttFetchFailedHint": {
+    "message": "VTT の取得に失敗しました (HTTP $STATUS$)。$HINT$",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      },
+      "hint": {
+        "content": "$2"
+      }
+    }
+  },
+  "errorVttReloginHint": {
+    "message": "ログインし直してからページを再読み込みしてください"
+  },
+  "errorDevopsUrlParse": {
+    "message": "DevOps PR URL を解析できません: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorDevopsPrFetch": {
+    "message": "DevOps PR 情報の取得に失敗しました ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubUrlInvalid": {
+    "message": "GitHub PR URL の形式が不正です: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorCrossOriginPrUrl": {
+    "message": "クロスオリジンの PR URL はサポートされていません: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubPageUnavailable": {
+    "message": "GitHub PR ページを確認できませんでした。ログイン状態を確認してください。"
+  },
+  "errorExtractorPr": {
+    "message": "PR ページの extractor が見つかりません"
+  },
+  "errorExtractorSharepoint": {
+    "message": "SharePoint extractor が見つかりません"
+  },
+  "errorExtractorTeams": {
+    "message": "Teams extractor が見つかりません"
+  },
+  "errorDownloadFailed": {
+    "message": "ダウンロードに失敗しました"
+  },
+  "errorUnknownAction": {
+    "message": "未知のアクション: $KIND$",
+    "placeholders": {
+      "kind": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeNeedPermissionTitle": {
+    "message": "$APP$: このサイトでの動作を許可するには拡張機能アイコンをクリック",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      }
+    }
+  },
+  "languageAuto": {
+    "message": "自動（ブラウザ）"
+  },
+  "languageSelectLabel": {
+    "message": "言語"
+  },
+  "languageSelectTitle": {
+    "message": "言語（開いているページは再読み込みで反映）"
+  },
+  "kagayoiSupportContact": {
+    "message": "お問い合わせ"
+  },
+  "kagayoiSupportRate": {
+    "message": "評価をお願いします！"
+  }
+}

@@ -70,7 +70,6 @@ CWS ID は `CWS_EXTENSION_ID` 環境変数で指定できる（ローカルに `
 
 ```powershell
 bun "$HOME/.agents/skills/vava/scripts/update-amo-listing.mjs" --slug 'iroiro-md-copy' --listing 'ja=webstore/store-listing.firefox.ja.txt' --listing 'en-US=webstore/store-listing.firefox.en.txt' --privacy 'ja=docs/privacy-policy.md' --privacy 'en-US=docs/privacy-policy-en.md' --name 'ja=いろいろMDコピー' --name 'en-US=Iroiro MD Copy' --homepage 'https://github.com/1llum1n4t1s/ReviewForMD' --support-url 'https://github.com/1llum1n4t1s/ReviewForMD/issues' --category 'web-development'
-bun "$HOME/.agents/skills/vava/scripts/check-store-listing.mjs" --cws --amo --slug 'iroiro-md-copy' --cws-id-file '.cws-id' --keyword 'cws.description.ja=CodeCommit' --keyword 'cws.description.ja=SharePoint' --keyword 'cws.description.ja=Teams' --keyword 'cws.description.en=CodeCommit' --keyword 'cws.description.en=SharePoint' --keyword 'cws.description.en=Teams' --keyword 'amo.summary.ja=CodeCommit' --keyword 'amo.description.ja=CodeCommit' --keyword 'amo.summary.ja=SharePoint' --keyword 'amo.description.ja=SharePoint' --keyword 'amo.summary.ja=Teams' --keyword 'amo.description.ja=Teams' --keyword 'amo.summary.en-US=CodeCommit' --keyword 'amo.description.en-US=CodeCommit' --keyword 'amo.summary.en-US=SharePoint' --keyword 'amo.description.en-US=SharePoint' --keyword 'amo.summary.en-US=Teams' --keyword 'amo.description.en-US=Teams'
 ```
 
 ### AMO 公開のHTTP境界

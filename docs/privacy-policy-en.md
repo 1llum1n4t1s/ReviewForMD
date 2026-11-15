@@ -44,6 +44,10 @@ Used to detect page navigation in SPAs (Single Page Applications) in order to re
 
 Used by the popup's "Copy" action to write the formatted Markdown / VTT text to the user's clipboard. Clipboard writes occur only when the user clicks a button; the clipboard is never read.
 
+### storage
+
+Used to save the display language chosen in the popup (one of 9 languages) and its display dictionary in the browser (chrome.storage.local). The data stays on the device and is never sent externally. The content of PRs or chats that you download or copy is not stored.
+
 ### host_permissions
 
 Content scripts only operate on the following domains:

@@ -24,17 +24,23 @@ const RE_SHAREPOINT_HOST = /^https?:\/\/[^/]+\.sharepoint\.com\//;
 const RE_SHAREPOINT_STREAM = /\/stream\.aspx/i;
 const RE_TEAMS_HOST = /^https?:\/\/([^/]+\.)?(teams\.microsoft\.com|teams\.live\.com|teams\.cloud\.microsoft)\//;
 
+// 言語: <html lang> を同期で合わせる（kagayoi-support の module script より前に実行される classic script）。
+Localizer.applyDocumentLang();
+
 /** アクション完了フィードバックの表示時間 (ms) */
 const FEEDBACK_MS = 1500;
 
-/** SiteType → 表示名 */
-const SITE_LABEL = {
-  github: 'GitHub',
-  devops: 'Azure DevOps',
-  codecommit: 'AWS CodeCommit',
-  sharepoint_teams: 'SharePoint 会議録画',
-  teams_chat: 'Microsoft Teams',
-};
+/** SiteType → 表示名（SharePoint 会議録画だけ翻訳対象。他は製品名なので全言語で同一） */
+function _siteLabel(siteType) {
+  switch (siteType) {
+    case 'github': return 'GitHub';
+    case 'devops': return 'Azure DevOps';
+    case 'codecommit': return 'AWS CodeCommit';
+    case 'sharepoint_teams': return Localizer.t('siteSharepointMeeting', undefined, 'SharePoint meeting recording');
+    case 'teams_chat': return 'Microsoft Teams';
+    default: return '';
+  }
+}
 
 /**
  * アクションアイコン（Lucide 風の stroke SVG マークアップ）。
@@ -131,12 +137,17 @@ function _addTeamsPeriodControl() {
   const label = document.createElement('label');
   label.className = 'pop-period__label';
   label.setAttribute('for', 'teams-period');
-  label.textContent = '収集開始月';
+  label.textContent = Localizer.t('popupPeriodLabel', undefined, 'Collection start month');
 
   const select = document.createElement('select');
   select.id = 'teams-period';
   select.className = 'pop-period__select';
-  [['0', '今月'], ['1', '先月から'], ['2', '2か月前から'], ['3', '3か月前から']].forEach(([value, text]) => {
+  [
+    ['0', Localizer.t('popupPeriodThisMonth', undefined, 'This month')],
+    ['1', Localizer.t('popupPeriodLastMonth', undefined, 'From last month')],
+    ['2', Localizer.t('popupPeriodTwoMonths', undefined, 'From 2 months ago')],
+    ['3', Localizer.t('popupPeriodThreeMonths', undefined, 'From 3 months ago')],
+  ].forEach(([value, text]) => {
     const opt = document.createElement('option');
     opt.value = value;
     opt.textContent = text;
@@ -186,7 +197,9 @@ async function _runAction(btn, kind, mode) {
   const isTeams = kind === 'teams-md';
   const labelEl = btn.querySelector('.pop-label');
   if (labelEl) {
-    labelEl.textContent = isTeams ? '開始しています…' : '取得中…';
+    labelEl.textContent = isTeams
+      ? Localizer.t('popupButtonStarting', undefined, 'Starting…')
+      : Localizer.t('popupButtonFetching', undefined, 'Fetching…');
   }
 
   // Teams は収集開始月（0=今月 / 1=先月から / 2=2か月前から / 3=3か月前から）を渡す
@@ -202,14 +215,14 @@ async function _runAction(btn, kind, mode) {
   try {
     const res = await chrome.tabs.sendMessage(_currentTabId, { type: 'rfmd:extract', kind, mode, monthsAgo });
     if (!res || !res.ok) {
-      errMsg = res?.error || '実行に失敗しました';
+      errMsg = res?.error || Localizer.t('popupErrorRunFailed', undefined, 'The action failed to run');
     } else if (res.started) {
       // Teams: 収集はページ側オーバーレイで継続する。popup は用済み（閉じても継続・中止可）。
       _showStartedFeedback(btn, allBtns);
       return;
     } else if (mode === 'copy') {
       success = await _copyToClipboard(res.text || '');
-      if (!success) errMsg = 'クリップボードにコピーできませんでした';
+      if (!success) errMsg = Localizer.t('popupErrorCopyFailed', undefined, 'Could not copy to the clipboard');
     } else {
       success = true;
     }
@@ -217,7 +230,7 @@ async function _runAction(btn, kind, mode) {
     errMsg = e?.message || String(e);
     // コンテンツスクリプトが応答しない / 拡張更新で context 無効化（ページ再読込が必要）
     if (/Receiving end does not exist|message port closed|context invalidated/i.test(errMsg)) {
-      errMsg = '拡張機能が更新されたか、ページが古い可能性があります。ページを再読み込みしてからお試しください';
+      errMsg = Localizer.t('popupErrorStalePage', undefined, 'The extension was updated or the page is out of date. Reload the page and try again.');
     }
   }
 
@@ -230,8 +243,8 @@ async function _runAction(btn, kind, mode) {
  */
 function _showStartedFeedback(btn, allBtns) {
   btn.classList.add('pop-btn--success');
-  _setPopBtnContent(btn, ICON.check, 'ページで収集開始');
-  _setNote('ページ右下のパネルに進捗が出ます。そこで「ここまでで保存」や「中止」ができます。このポップアップは閉じても大丈夫です。');
+  _setPopBtnContent(btn, ICON.check, Localizer.t('popupButtonStartedOnPage', undefined, 'Started on the page'));
+  _setNote(Localizer.t('popupNoteTeamsStarted', undefined, 'Progress appears in the panel at the bottom right of the page. You can safely close this popup.'));
   setTimeout(() => {
     btn.classList.remove('pop-btn--success');
     _setPopBtnContent(btn, btn._origIcon, btn._origLabel);
@@ -243,8 +256,12 @@ function _showFeedback(btn, success, errMsg, allBtns) {
   btn.classList.add(success ? 'pop-btn--success' : 'pop-btn--error');
   // 成功時はアイコンをチェックに化けさせる（達成感のマイクロインタラクション）。
   // 失敗時は元アイコンのまま色だけ警告色に。
-  _setPopBtnContent(btn, success ? ICON.check : btn._origIcon, success ? '完了' : '失敗');
-  if (!success && errMsg) _setNote('エラー: ' + errMsg);
+  _setPopBtnContent(
+    btn,
+    success ? ICON.check : btn._origIcon,
+    success ? Localizer.t('popupFeedbackDone', undefined, 'Done') : Localizer.t('popupFeedbackFailed', undefined, 'Failed')
+  );
+  if (!success && errMsg) _setNote(Localizer.t('popupErrorPrefix', [errMsg], 'Error: $1'));
 
   setTimeout(() => {
     btn.classList.remove('pop-btn--success', 'pop-btn--error');
@@ -262,7 +279,7 @@ function _showFeedback(btn, success, errMsg, allBtns) {
 function _unavailableMessage(status, defaultMsg) {
   const reason = status && status.reason ? String(status.reason) : '';
   if (/^error:|timeout|abort|\b401\b|\b403\b|network/i.test(reason)) {
-    return '情報の取得に失敗しました。ログイン状態を確認し、ページを再読み込みしてからお試しください。';
+    return Localizer.t('popupUnavailableFetchFailed', undefined, 'Failed to fetch the information. Check that you are signed in, reload the page and try again.');
   }
   return defaultMsg;
 }
@@ -273,49 +290,53 @@ function _renderForStatus(status) {
   const { siteType, pageType, available, title } = status || {};
 
   if (!siteType || siteType === 'unknown') {
-    _setInactive('対応ページを開いてください');
+    _setInactive(Localizer.t('popupStatusOpenSupported', undefined, 'Open a supported page'));
     return;
   }
 
   // PR 一覧ページ: “どの PR か” が定まらないので案内のみ（行ボタンはページ側に残してある）
   if (pageType === 'list') {
-    _setActive(`${SITE_LABEL[siteType] || siteType} のPR一覧`);
-    _setNote('PR を開くと、ここからダウンロード／コピーできます。一覧の各行のボタンからも直接ダウンロードできます。');
+    _setActive(Localizer.t('popupStatusPrList', [_siteLabel(siteType) || siteType], '$1 PR list'));
+    _setNote(Localizer.t('popupNoteList', undefined, 'Open a PR to download or copy it here. You can also download directly from the button on each row of the list.'));
     return;
   }
 
   if (siteType === 'github' || siteType === 'devops' || siteType === 'codecommit') {
-    _setActive(`${SITE_LABEL[siteType]} の PR${title ? '：' + title : ''}`);
-    _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'pr', mode: 'download', primary: true });
-    _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'pr', mode: 'copy' });
+    _setActive(title
+      ? Localizer.t('popupStatusPrWithTitle', [_siteLabel(siteType), title], '$1 PR: $2')
+      : Localizer.t('popupStatusPr', [_siteLabel(siteType)], '$1 PR'));
+    _addActionButton({ label: Localizer.t('buttonDownloadMd', undefined, 'Download as MD'), icon: ICON.download, kind: 'pr', mode: 'download', primary: true });
+    _addActionButton({ label: Localizer.t('buttonCopyMd', undefined, 'Copy MD'), icon: ICON.copy, kind: 'pr', mode: 'copy' });
     return;
   }
 
   if (siteType === 'sharepoint_teams') {
     if (!available) {
-      _setInactive(_unavailableMessage(status, 'この録画にはトランスクリプトがありません'));
+      _setInactive(_unavailableMessage(status, Localizer.t('popupUnavailableNoTranscript', undefined, 'This recording has no transcript')));
       return;
     }
-    _setActive('SharePoint 会議録画を検出しました');
-    _addActionButton({ label: 'VTTでダウンロード', icon: ICON.download, kind: 'vtt', mode: 'download', primary: true });
-    _addActionButton({ label: 'VTTコピー', icon: ICON.copy, kind: 'vtt', mode: 'copy' });
+    _setActive(Localizer.t('popupStatusSharepointDetected', undefined, 'SharePoint meeting recording detected'));
+    _addActionButton({ label: Localizer.t('buttonDownloadVtt', undefined, 'Download as VTT'), icon: ICON.download, kind: 'vtt', mode: 'download', primary: true });
+    _addActionButton({ label: Localizer.t('buttonCopyVtt', undefined, 'Copy VTT'), icon: ICON.copy, kind: 'vtt', mode: 'copy' });
     return;
   }
 
   if (siteType === 'teams_chat') {
     if (!available) {
-      _setInactive(_unavailableMessage(status, 'チャット／チャネルを開いてください'));
+      _setInactive(_unavailableMessage(status, Localizer.t('popupUnavailableOpenChat', undefined, 'Open a chat or channel')));
       return;
     }
-    _setActive(`Teams${title ? '：' + title : ' チャット'}`);
+    _setActive(title
+      ? Localizer.t('popupStatusTeamsWithTitle', [title], 'Teams: $1')
+      : Localizer.t('popupStatusTeamsChat', undefined, 'Teams chat'));
     _addTeamsPeriodControl();
-    _addActionButton({ label: 'MDでダウンロード', icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
-    _addActionButton({ label: 'MDコピー', icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
-    _setNote('選んだ月から現在まで、取得できる履歴を収集します。進捗・中止はページ右下のパネルで操作でき、このポップアップは閉じても大丈夫です。');
+    _addActionButton({ label: Localizer.t('buttonDownloadMd', undefined, 'Download as MD'), icon: ICON.download, kind: 'teams-md', mode: 'download', primary: true });
+    _addActionButton({ label: Localizer.t('buttonCopyMd', undefined, 'Copy MD'), icon: ICON.copy, kind: 'teams-md', mode: 'copy' });
+    _setNote(Localizer.t('popupNoteTeams', undefined, 'Collects the history that can be retrieved from the selected month up to now.'));
     return;
   }
 
-  _setInactive('対応ページを開いてください');
+  _setInactive(Localizer.t('popupStatusOpenSupported', undefined, 'Open a supported page'));
 }
 
 /* ── コンテンツスクリプト未到達時（URL ベースのフォールバック）──── */
@@ -392,21 +413,21 @@ async function _handleNoContentScript(tab) {
   if (_isDevOpsPRPath(url) && !RE_DEVOPS_HOST.test(url)) {
     const granted = await _hasOriginPermission(url);
     if (granted) {
-      _setInactive('Azure DevOps を検証中...');
+      _setInactive(Localizer.t('popupStatusVerifyingDevops', undefined, 'Verifying Azure DevOps…'));
       const isDevOps = await _verifyAzureDevOpsInTab(tab.id);
       if (!isDevOps) {
-        _setInactive('Azure DevOps として検証できませんでした');
+        _setInactive(Localizer.t('popupStatusDevopsVerifyFailed', undefined, 'Could not verify this as Azure DevOps'));
         return;
       }
-      _setInactive('コンテンツスクリプトを注入中...');
+      _setInactive(Localizer.t('popupStatusInjecting', undefined, 'Injecting the content script…'));
       const ok = await _injectContentScriptsInTab(tab.id, url);
       if (ok) {
         // 注入後に状態を取り直してボタンを描画
         const status = await _queryStatus(tab.id);
         if (status) _renderForStatus(status);
-        else _setInactive('注入しました。ページを再読み込みしてください');
+        else _setInactive(Localizer.t('popupStatusInjected', undefined, 'Injected. Reload the page.'));
       } else {
-        _setInactive('注入に失敗しました。ページを再読み込みしてください');
+        _setInactive(Localizer.t('popupStatusInjectFailed', undefined, 'Injection failed. Reload the page.'));
       }
       return;
     }
@@ -423,42 +444,42 @@ async function _handleNoContentScript(tab) {
     RE_TEAMS_HOST.test(url);
 
   if (isKnownTarget) {
-    _setInactive('ページを再読み込みしてからお試しください');
+    _setInactive(Localizer.t('popupStatusReloadPage', undefined, 'Reload the page and try again'));
     return;
   }
 
-  _setInactive('対応ページを開いてください');
+  _setInactive(Localizer.t('popupStatusOpenSupported', undefined, 'Open a supported page'));
 }
 
 /** カスタムドメイン許可ボタンの提示とハンドラ結線 */
 function _showGrantFlow(tab, url) {
   const grantBtn = document.getElementById('grant-btn');
   const grantHint = document.getElementById('grant-hint');
-  _setNeedsPermission('カスタムドメインを検出しました。下のボタンで権限を許可してください');
+  _setNeedsPermission(Localizer.t('popupStatusNeedsPermission', undefined, 'Custom domain detected. Allow the permission with the button below'));
   grantBtn.classList.add('grant-btn--visible');
   grantHint.classList.add('grant-hint--visible');
 
   // onclick 代入で冪等化（_showGrantFlow が複数回呼ばれてもリスナー多重登録しない）
   grantBtn.onclick = async () => {
     grantBtn.disabled = true;
-    grantBtn.textContent = '許可をリクエスト中...';
+    grantBtn.textContent = Localizer.t('popupGrantRequesting', undefined, 'Requesting permission…');
     const origin = new URL(url).origin + '/*';
     try {
       // chrome.permissions.request は user gesture (クリック) 内でのみ呼べる
       const permOk = await chrome.permissions.request({ origins: [origin] });
       if (!permOk) {
         grantBtn.disabled = false;
-        grantBtn.textContent = 'このサイトでの動作を許可する';
-        _setNeedsPermission('権限取得がキャンセルされました');
+        grantBtn.textContent = Localizer.t('popupGrantButton', undefined, 'Allow on this site');
+        _setNeedsPermission(Localizer.t('popupPermissionCancelled', undefined, 'The permission request was cancelled'));
         return;
       }
-      grantBtn.textContent = 'Azure DevOps を検証中...';
+      grantBtn.textContent = Localizer.t('popupStatusVerifyingDevops', undefined, 'Verifying Azure DevOps…');
       const isDevOps = await _verifyAzureDevOpsInTab(tab.id);
       if (!isDevOps) {
         try { await chrome.permissions.remove({ origins: [origin] }); } catch {}
         grantBtn.disabled = false;
-        grantBtn.textContent = 'このサイトでの動作を許可する';
-        _setNeedsPermission('Azure DevOps として検証できませんでした。権限は返上しました');
+        grantBtn.textContent = Localizer.t('popupGrantButton', undefined, 'Allow on this site');
+        _setNeedsPermission(Localizer.t('popupPermissionRevoked', undefined, 'Could not verify this as Azure DevOps. The permission was revoked'));
         return;
       }
       // 検証OK → タブをリロードして service_worker 経由で正規ルートで注入
@@ -466,8 +487,8 @@ function _showGrantFlow(tab, url) {
       window.close();
     } catch (e) {
       grantBtn.disabled = false;
-      grantBtn.textContent = 'このサイトでの動作を許可する';
-      _setNeedsPermission('エラー: ' + (e?.message || e));
+      grantBtn.textContent = Localizer.t('popupGrantButton', undefined, 'Allow on this site');
+      _setNeedsPermission(Localizer.t('popupErrorPrefix', [String(e?.message || e)], 'Error: $1'));
     }
   };
 }
@@ -483,11 +504,17 @@ async function _queryStatus(tabId) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  _setStatus('確認中...', 'inactive');
+  // 保存済みの表示言語を読み込み、HTML の静的文言を置換してから言語切替 UI を組み立てる。
+  await Localizer.ready;
+  await Localizer.ensureFresh();
+  Localizer.localizeDocument();
+  Localizer.mountLanguageSelect(document.getElementById('uiLanguage'));
+
+  _setStatus(Localizer.t('popupStatusChecking', undefined, 'Checking…'), 'inactive');
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) {
-      _setInactive('タブ情報を取得できませんでした');
+      _setInactive(Localizer.t('popupStatusTabUnavailable', undefined, 'Could not get the tab information'));
       return;
     }
     _currentTabId = tab.id;
@@ -499,6 +526,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       await _handleNoContentScript(tab);
     }
   } catch {
-    _setInactive('タブ情報を取得できませんでした');
+    _setInactive(Localizer.t('popupStatusTabUnavailable', undefined, 'Could not get the tab information'));
   }
 });

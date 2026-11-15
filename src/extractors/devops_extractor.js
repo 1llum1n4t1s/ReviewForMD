@@ -292,7 +292,9 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    * @returns {string}
    */
   function _formatLineRange(start, end) {
+    // l10n-ignore: 生成する Markdown の対象行ラベル（生成物の文言は今回の対象外）
     if (start && end && start !== end) return `行 ${start}-${end}`;
+    // l10n-ignore: 生成する Markdown の対象行ラベル（生成物の文言は今回の対象外）
     if (start) return `行 ${start}`;
     return '';
   }
@@ -428,7 +430,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
 
   async function _fetchJson(url) {
     if (!_isSameOrigin(url)) {
-      throw new Error(`クロスオリジンリクエストは許可されていません: ${new URL(url, location.origin).origin}`);
+      throw new Error(Localizer.t('errorCrossOriginRequest', [String(new URL(url, location.origin).origin)], 'Cross-origin requests are not allowed: $1'));
     }
     const { response: res, json } = await RfmdFetch.withJson(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1077,7 +1079,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
   async function extractAll() {
     const pageUrl = location.href;
     const assertCurrentPage = () => {
-      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+      if (location.href !== pageUrl) throw new Error(Localizer.t('errorPageSwitchedPr', undefined, 'The PR page changed, so extraction was stopped'));
     };
     let domTitle = getTitle();
     let body = getBody();
@@ -1169,7 +1171,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
    */
   async function extractByPrUrl(prUrl) {
     const urlInfo = _parseDevOpsUrl(prUrl);
-    if (!urlInfo) throw new Error('DevOps PR URL を解析できません: ' + prUrl);
+    if (!urlInfo) throw new Error(Localizer.t('errorDevopsUrlParse', [String(prUrl)], 'Could not parse the DevOps PR URL: $1'));
 
     // prData と threads は別々のパーミッション境界を持つ (403/404 が別々に起こる)。
     // Promise.all だと片方の失敗でもう一方のデータが捨てられ、原因不明のエラーになる。
@@ -1184,7 +1186,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     ]);
     if (prResult.status === 'rejected') {
       const reason = prResult.reason?.message || prResult.reason;
-      throw new Error(`DevOps PR 情報の取得に失敗しました (${reason})`);
+      throw new Error(Localizer.t('errorDevopsPrFetch', [String(reason)], 'Failed to fetch DevOps PR information ($1)'));
     }
     const prData = prResult.value;
     const threadsData = threadsResult.status === 'fulfilled'
@@ -1212,6 +1214,7 @@ var DevOpsExtractor = DevOpsExtractor || (() => {
     const fullTitle = `${title} #${prNum}`;
     // スレッド取得失敗時は Markdown に警告セクションを付与してユーザーに伝える
     const warningNote = threadsFetchFailed
+      // l10n-ignore: 生成する Markdown に付与する警告文（生成物の文言は今回の対象外）
       ? '\n\n> ⚠️ レビューコメントの取得に失敗しました。PR ページを直接開いてダウンロードしてください。'
       : '';
     const markdown = MarkdownBuilder.buildFullMarkdown({

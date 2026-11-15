@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "다용도 Markdown 복사"
+  },
+  "appDescription": {
+    "message": "PR 리뷰, Teams 회의 녹화(VTT), Teams 채팅을 클릭 한 번으로 Markdown / VTT 파일로 다운로드합니다."
+  },
+  "popupStatusOpenSupported": {
+    "message": "지원되는 페이지를 여세요"
+  },
+  "popupGrantButton": {
+    "message": "이 사이트에서 동작 허용"
+  },
+  "popupGrantHintLine1": {
+    "message": "사용자 지정 도메인의 Azure DevOps를 감지했습니다."
+  },
+  "popupGrantHintLine2": {
+    "message": "사용하려면 호스트 권한을 허용하세요(한 번만)."
+  },
+  "popupCapsHeading": {
+    "message": "지원 플랫폼"
+  },
+  "popupCapsPr": {
+    "message": "GitHub / Azure DevOps / AWS CodeCommit의 PR"
+  },
+  "popupCapsVtt": {
+    "message": "SharePoint Stream(Teams 회의 녹화 VTT)"
+  },
+  "popupCapsTeams": {
+    "message": "Microsoft Teams 채팅(MD / 첨부 링크)"
+  },
+  "siteSharepointMeeting": {
+    "message": "SharePoint 회의 녹화"
+  },
+  "popupPeriodLabel": {
+    "message": "수집 시작 월"
+  },
+  "popupPeriodThisMonth": {
+    "message": "이번 달"
+  },
+  "popupPeriodLastMonth": {
+    "message": "지난달부터"
+  },
+  "popupPeriodTwoMonths": {
+    "message": "2개월 전부터"
+  },
+  "popupPeriodThreeMonths": {
+    "message": "3개월 전부터"
+  },
+  "popupButtonStarting": {
+    "message": "시작하는 중…"
+  },
+  "popupButtonFetching": {
+    "message": "가져오는 중…"
+  },
+  "popupErrorRunFailed": {
+    "message": "실행하지 못했습니다"
+  },
+  "popupErrorCopyFailed": {
+    "message": "클립보드에 복사하지 못했습니다"
+  },
+  "popupErrorStalePage": {
+    "message": "확장 프로그램이 업데이트되었거나 페이지가 오래되었을 수 있습니다. 페이지를 새로고침한 후 다시 시도하세요."
+  },
+  "popupButtonStartedOnPage": {
+    "message": "페이지에서 수집 시작됨"
+  },
+  "popupNoteTeamsStarted": {
+    "message": "진행 상황은 페이지 오른쪽 아래 패널에 표시되며, 거기에서 “여기까지 저장” 또는 “취소”을(를) 사용할 수 있습니다. 이 팝업은 닫아도 됩니다."
+  },
+  "popupNoteList": {
+    "message": "PR을 열면 여기에서 다운로드하거나 복사할 수 있습니다. 목록 각 행의 버튼으로도 바로 다운로드할 수 있습니다."
+  },
+  "popupStatusPr": {
+    "message": "$SITE$ PR",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusPrWithTitle": {
+    "message": "$SITE$ PR: $TITLE$",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      },
+      "title": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupStatusPrList": {
+    "message": "$SITE$ PR 목록",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusSharepointDetected": {
+    "message": "SharePoint 회의 녹화를 감지했습니다"
+  },
+  "buttonDownloadMd": {
+    "message": "MD로 다운로드"
+  },
+  "buttonCopyMd": {
+    "message": "MD 복사"
+  },
+  "buttonDownloadVtt": {
+    "message": "VTT로 다운로드"
+  },
+  "buttonCopyVtt": {
+    "message": "VTT 복사"
+  },
+  "popupUnavailableNoTranscript": {
+    "message": "이 녹화에는 대화 내용 기록이 없습니다"
+  },
+  "popupUnavailableOpenChat": {
+    "message": "채팅 또는 채널을 여세요"
+  },
+  "popupStatusTeamsWithTitle": {
+    "message": "Teams: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusTeamsChat": {
+    "message": "Teams 채팅"
+  },
+  "popupNoteTeams": {
+    "message": "선택한 달부터 현재까지 가져올 수 있는 기록을 수집합니다. 진행 상황 확인과 취소는 페이지 오른쪽 아래 패널에서 할 수 있으며, 이 팝업은 닫아도 됩니다."
+  },
+  "popupUnavailableFetchFailed": {
+    "message": "정보를 가져오지 못했습니다. 로그인 상태를 확인하고 페이지를 새로고침한 후 다시 시도하세요."
+  },
+  "popupFeedbackDone": {
+    "message": "완료"
+  },
+  "popupFeedbackFailed": {
+    "message": "실패"
+  },
+  "popupErrorPrefix": {
+    "message": "오류: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusVerifyingDevops": {
+    "message": "Azure DevOps 확인 중…"
+  },
+  "popupStatusDevopsVerifyFailed": {
+    "message": "Azure DevOps로 확인하지 못했습니다"
+  },
+  "popupStatusInjecting": {
+    "message": "콘텐츠 스크립트를 삽입하는 중…"
+  },
+  "popupStatusInjected": {
+    "message": "삽입했습니다. 페이지를 새로고침하세요."
+  },
+  "popupStatusInjectFailed": {
+    "message": "삽입하지 못했습니다. 페이지를 새로고침하세요."
+  },
+  "popupStatusReloadPage": {
+    "message": "페이지를 새로고침한 후 다시 시도하세요"
+  },
+  "popupStatusNeedsPermission": {
+    "message": "사용자 지정 도메인을 감지했습니다. 아래 버튼으로 권한을 허용하세요"
+  },
+  "popupGrantRequesting": {
+    "message": "권한을 요청하는 중…"
+  },
+  "popupPermissionCancelled": {
+    "message": "권한 요청이 취소되었습니다"
+  },
+  "popupPermissionRevoked": {
+    "message": "Azure DevOps로 확인하지 못해 권한을 반납했습니다"
+  },
+  "popupStatusChecking": {
+    "message": "확인하는 중…"
+  },
+  "popupStatusTabUnavailable": {
+    "message": "탭 정보를 가져오지 못했습니다"
+  },
+  "listButtonTitle": {
+    "message": "이 PR을 Markdown 파일로 다운로드"
+  },
+  "listFeedbackDownloadDone": {
+    "message": "다운로드 완료"
+  },
+  "listFeedbackCopyDone": {
+    "message": "복사 완료"
+  },
+  "listFeedbackDownloadFailed": {
+    "message": "다운로드 실패"
+  },
+  "listFeedbackCopyFailed": {
+    "message": "복사 실패"
+  },
+  "teamsOverlayTitle": {
+    "message": "Teams 채팅 수집 중"
+  },
+  "teamsOverlayProgress": {
+    "message": "$COUNT$개 · $SECONDS$초",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "teamsOverlaySaveSoFar": {
+    "message": "여기까지 저장"
+  },
+  "teamsOverlayCancel": {
+    "message": "취소"
+  },
+  "teamsOverlayClose": {
+    "message": "닫기"
+  },
+  "teamsOverlayStopping": {
+    "message": "중지하고 내보내는 중…"
+  },
+  "teamsOverlayCollected": {
+    "message": "✓ 메시지 $COUNT$개를 수집했습니다",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayPartial": {
+    "message": "$TEXT$(일부)",
+    "placeholders": {
+      "text": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyButton": {
+    "message": "클립보드에 복사"
+  },
+  "teamsOverlayCopied": {
+    "message": "✓ 복사했습니다(메시지 $COUNT$개)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyFailed": {
+    "message": "복사하지 못했습니다"
+  },
+  "teamsOverlayDownloaded": {
+    "message": "✓ 메시지 $COUNT$개를 다운로드했습니다",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayDownloadFailed": {
+    "message": "다운로드하지 못했습니다"
+  },
+  "teamsOverlaySaveByCopy": {
+    "message": "복사로 저장"
+  },
+  "teamsOverlayCopyFailedAgain": {
+    "message": "복사도 실패했습니다"
+  },
+  "teamsErrorBusy": {
+    "message": "이미 수집 중입니다. 완료되거나 취소된 후 다시 시도하세요"
+  },
+  "teamsErrorNoMessagesInPeriod": {
+    "message": "선택한 기간에 메시지가 없습니다. 시작 월을 더 이전으로 선택한 후 다시 시도하세요."
+  },
+  "teamsErrorNoMessages": {
+    "message": "메시지를 추출하지 못했습니다(Teams의 화면 구성이 변경되었을 수 있습니다)."
+  },
+  "teamsErrorCollect": {
+    "message": "수집 중 오류가 발생했습니다: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsNoteTimeLimit": {
+    "message": "수집 시간 한도에 도달하여 선택한 기간의 기록은 일부만 포함됩니다."
+  },
+  "teamsNoteMessageLimit": {
+    "message": "수집 건수 한도에 도달하여 선택한 기간의 기록은 일부만 포함됩니다."
+  },
+  "teamsNoteIterationLimit": {
+    "message": "스크롤 횟수 한도에 도달하여 선택한 기간의 기록은 일부만 포함됩니다."
+  },
+  "teamsNoteVisibleOnly": {
+    "message": "스크롤 영역을 확인하지 못해 화면에 표시된 기록만 수집했습니다."
+  },
+  "teamsNoteUserStopped": {
+    "message": "“여기까지 저장”으로 중지했으므로 수집한 기록만 포함됩니다."
+  },
+  "errorPageSwitchedPr": {
+    "message": "PR 페이지가 전환되어 추출을 중단했습니다"
+  },
+  "errorPageSwitchedAction": {
+    "message": "추출 중에 페이지가 전환되었습니다. 현재 페이지에서 다시 실행하세요."
+  },
+  "errorVideoPageSwitched": {
+    "message": "동영상 페이지가 전환되어 가져오기를 중단했습니다"
+  },
+  "errorCrossOriginRequest": {
+    "message": "교차 출처 요청은 허용되지 않습니다: $ORIGIN$",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorNonSharepointOrigin": {
+    "message": "SharePoint 이외의 출처로의 요청은 허용되지 않습니다"
+  },
+  "errorDriveIdMissing": {
+    "message": "Drive ID / File ID를 찾을 수 없습니다"
+  },
+  "errorTranscriptNotFound": {
+    "message": "대화 내용 기록을 찾을 수 없습니다"
+  },
+  "errorTranscriptUrlMissing": {
+    "message": "대화 내용 기록의 다운로드 URL을 가져오지 못했습니다"
+  },
+  "errorVttUrlNotSharepoint": {
+    "message": "VTT 다운로드 URL이 SharePoint 출처가 아닙니다"
+  },
+  "errorVttFetchFailed": {
+    "message": "VTT를 가져오지 못했습니다(HTTP $STATUS$)",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorVttFetchFailedHint": {
+    "message": "VTT를 가져오지 못했습니다(HTTP $STATUS$). $HINT$",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      },
+      "hint": {
+        "content": "$2"
+      }
+    }
+  },
+  "errorVttReloginHint": {
+    "message": "다시 로그인한 후 페이지를 새로고침하세요"
+  },
+  "errorDevopsUrlParse": {
+    "message": "DevOps PR URL을 분석할 수 없습니다: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorDevopsPrFetch": {
+    "message": "DevOps PR 정보를 가져오지 못했습니다($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubUrlInvalid": {
+    "message": "GitHub PR URL 형식이 올바르지 않습니다: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorCrossOriginPrUrl": {
+    "message": "교차 출처 PR URL은 지원되지 않습니다: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubPageUnavailable": {
+    "message": "GitHub PR 페이지를 확인하지 못했습니다. 로그인 상태를 확인하세요."
+  },
+  "errorExtractorPr": {
+    "message": "이 PR 페이지의 추출기를 찾을 수 없습니다"
+  },
+  "errorExtractorSharepoint": {
+    "message": "SharePoint 추출기를 찾을 수 없습니다"
+  },
+  "errorExtractorTeams": {
+    "message": "Teams 추출기를 찾을 수 없습니다"
+  },
+  "errorDownloadFailed": {
+    "message": "다운로드하지 못했습니다"
+  },
+  "errorUnknownAction": {
+    "message": "알 수 없는 동작: $KIND$",
+    "placeholders": {
+      "kind": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeNeedPermissionTitle": {
+    "message": "$APP$: 이 사이트에서 동작을 허용하려면 확장 프로그램 아이콘을 클릭하세요",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      }
+    }
+  },
+  "languageAuto": {
+    "message": "자동(브라우저)"
+  },
+  "languageSelectLabel": {
+    "message": "언어"
+  },
+  "languageSelectTitle": {
+    "message": "언어(열려 있는 페이지는 새로고침 후 적용)"
+  },
+  "kagayoiSupportContact": {
+    "message": "문의하기"
+  },
+  "kagayoiSupportRate": {
+    "message": "평가해 주세요!"
+  }
+}

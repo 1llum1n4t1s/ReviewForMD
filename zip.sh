@@ -27,6 +27,7 @@ fi
 # Chrome は Manifest V3 service worker のみを宣言する正本をそのまま梱包する。
 zip -r "$chrome_archive" \
   manifest.json \
+  _locales/ \
   src/ \
   icons/ \
   -x "*.DS_Store" "*.swp" "*~" \
@@ -35,6 +36,7 @@ zip -r "$chrome_archive" \
 # Firefox は同じ正本から background.scripts 形式の manifest.json を生成する。
 bun scripts/create-firefox-manifest.mjs manifest.json "$temp_dir/manifest.json"
 zip -r "$firefox_archive" \
+  _locales/ \
   src/ \
   icons/ \
   -x "*.DS_Store" "*.swp" "*~" \

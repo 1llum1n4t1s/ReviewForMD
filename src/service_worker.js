@@ -10,6 +10,13 @@
  *   - SharePoint Stream (Teams 会議録画) ページ
  */
 
+// 多言語化: Chrome の service worker は importScripts で共通モジュールを読む。
+// Firefox の background.scripts には importScripts が無く、manifest の scripts 先頭で
+// 同じファイルを読み込み済み（scripts/create-firefox-manifest.mjs）なので何もしない。
+if (typeof importScripts === 'function') {
+  importScripts('/src/shared/ui-localizer.js');
+}
+
 /** ナビゲーション対象ページの URL パターン（パス部分のみ） */
 const NAV_PATH_PATTERNS = [
   /\/pull\/\d+/,                           // GitHub PR 詳細
@@ -171,9 +178,15 @@ async function showNeedPermissionBadge(tabId) {
   try {
     await chrome.action.setBadgeText({ tabId, text: '!' });
     await chrome.action.setBadgeBackgroundColor({ tabId, color: '#cf222e' });
+    // 選択中の表示言語で案内する（辞書の読み込み完了を待つ）。
+    await Localizer.ready;
     await chrome.action.setTitle({
       tabId,
-      title: 'ReviewForMD: このサイトでの動作を許可するには拡張機能アイコンをクリック',
+      title: Localizer.t(
+        'badgeNeedPermissionTitle',
+        [Localizer.t('appName', undefined, 'Multi Markdown Copy')],
+        'Click the extension icon to allow it on this site'
+      ),
     });
   } catch {
     // タブが閉じた等
@@ -247,6 +260,7 @@ async function injectContentScripts(tabId, url) {
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [
+        'src/shared/ui-localizer.js',
         'src/lib/site_detector.js',
         'src/lib/markdown_builder.js',
         'src/lib/clipboard.js',
@@ -339,6 +353,16 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   if (!_shouldInject(details.tabId, details.url)) return;
   injectContentScripts(details.tabId, details.url);
 }, NAV_URL_FILTERS);
+
+// 拡張の更新後に保存済みの言語辞書が古いままにならないよう、インストール・更新時に作り直す。
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    await Localizer.ready;
+    await Localizer.ensureFresh();
+  } catch (e) {
+    console.debug('[ReviewForMD] Localizer.ensureFresh failed:', e?.message || e);
+  }
+});
 
 // popup / content script から「権限取得後に注入してね」リクエストを受信。
 // セキュリティ:

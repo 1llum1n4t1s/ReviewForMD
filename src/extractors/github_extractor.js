@@ -35,7 +35,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
     const url = new URL(prUrl, baseUrl);
     const match = url.pathname.match(/^(\/[^/]+\/[^/]+\/pull\/\d+)(?:\/|$)/);
     if (!match) {
-      throw new Error('GitHub PR URL の形式が不正です: ' + prUrl);
+      throw new Error(Localizer.t('errorGithubUrlInvalid', [String(prUrl)], 'Invalid GitHub PR URL format: $1'));
     }
     url.pathname = match[1];
     url.search = '';
@@ -395,7 +395,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
   async function extractAll() {
     const pageUrl = location.href;
     const assertCurrentPage = () => {
-      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+      if (location.href !== pageUrl) throw new Error(Localizer.t('errorPageSwitchedPr', undefined, 'The PR page changed, so extraction was stopped'));
     };
     // 折りたたまれた会話を展開してから抽出
     await _loadHiddenConversations(assertCurrentPage);
@@ -479,7 +479,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
   async function extractByPrUrl(prUrl) {
     // 外部から渡される prUrl は念のためオリジン一致を検証してから credentials 付き fetch
     if (!_isSameOrigin(prUrl, location.href)) {
-      throw new Error('クロスオリジンの PR URL はサポートされていません: ' + prUrl);
+      throw new Error(Localizer.t('errorCrossOriginPrUrl', [String(prUrl)], 'Cross-origin PR URLs are not supported: $1'));
     }
     const normalizedPrUrl = _normalizePrConversationUrl(prUrl, location.href);
     let { response: res, text: html } = await RfmdFetch.withText(
@@ -496,7 +496,7 @@ var GitHubExtractor = GitHubExtractor || (() => {
     // タイトルが無い 200 応答はログイン画面や soft 404 とみなし、成功ファイルを作らない。
     const title = getTitle(doc);
     if (!title) {
-      throw new Error('GitHub PR ページを確認できませんでした。ログイン状態を確認してください。');
+      throw new Error(Localizer.t('errorGithubPageUnavailable', undefined, 'Could not load the GitHub PR page. Check that you are signed in.'));
     }
 
     // hidden conversations（turbo-frame）の追加読み込み

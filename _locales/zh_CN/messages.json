@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "多功能Markdown复制"
+  },
+  "appDescription": {
+    "message": "一键将PR评审、Teams会议录制（VTT）和Teams聊天下载为Markdown / VTT文件。"
+  },
+  "popupStatusOpenSupported": {
+    "message": "请打开受支持的页面"
+  },
+  "popupGrantButton": {
+    "message": "允许在此网站上运行"
+  },
+  "popupGrantHintLine1": {
+    "message": "检测到自定义域名上的Azure DevOps。"
+  },
+  "popupGrantHintLine2": {
+    "message": "请允许主机权限以启用（仅需一次）。"
+  },
+  "popupCapsHeading": {
+    "message": "支持的平台"
+  },
+  "popupCapsPr": {
+    "message": "GitHub / Azure DevOps / AWS CodeCommit的PR"
+  },
+  "popupCapsVtt": {
+    "message": "SharePoint Stream（Teams会议录制VTT）"
+  },
+  "popupCapsTeams": {
+    "message": "Microsoft Teams聊天（MD / 附件链接）"
+  },
+  "siteSharepointMeeting": {
+    "message": "SharePoint会议录制"
+  },
+  "popupPeriodLabel": {
+    "message": "收集起始月份"
+  },
+  "popupPeriodThisMonth": {
+    "message": "本月"
+  },
+  "popupPeriodLastMonth": {
+    "message": "从上个月起"
+  },
+  "popupPeriodTwoMonths": {
+    "message": "从2个月前起"
+  },
+  "popupPeriodThreeMonths": {
+    "message": "从3个月前起"
+  },
+  "popupButtonStarting": {
+    "message": "正在开始…"
+  },
+  "popupButtonFetching": {
+    "message": "正在获取…"
+  },
+  "popupErrorRunFailed": {
+    "message": "执行失败"
+  },
+  "popupErrorCopyFailed": {
+    "message": "无法复制到剪贴板"
+  },
+  "popupErrorStalePage": {
+    "message": "扩展程序可能已更新，或页面已过期。请刷新页面后重试。"
+  },
+  "popupButtonStartedOnPage": {
+    "message": "已在页面中开始收集"
+  },
+  "popupNoteTeamsStarted": {
+    "message": "进度会显示在页面右下角的面板中，您可以在那里使用“保存当前进度”或“取消”。可以放心关闭此弹出窗口。"
+  },
+  "popupNoteList": {
+    "message": "打开PR后，可在此下载或复制。也可以直接使用列表中每一行的按钮下载。"
+  },
+  "popupStatusPr": {
+    "message": "$SITE$的PR",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusPrWithTitle": {
+    "message": "$SITE$的PR：$TITLE$",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      },
+      "title": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupStatusPrList": {
+    "message": "$SITE$的PR列表",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusSharepointDetected": {
+    "message": "检测到SharePoint会议录制"
+  },
+  "buttonDownloadMd": {
+    "message": "下载为MD"
+  },
+  "buttonCopyMd": {
+    "message": "复制MD"
+  },
+  "buttonDownloadVtt": {
+    "message": "下载为VTT"
+  },
+  "buttonCopyVtt": {
+    "message": "复制VTT"
+  },
+  "popupUnavailableNoTranscript": {
+    "message": "此录制没有转录文本"
+  },
+  "popupUnavailableOpenChat": {
+    "message": "请打开聊天或频道"
+  },
+  "popupStatusTeamsWithTitle": {
+    "message": "Teams：$TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusTeamsChat": {
+    "message": "Teams聊天"
+  },
+  "popupNoteTeams": {
+    "message": "收集从所选月份到现在可获取的历史记录。进度查看和取消均可在页面右下角的面板中操作，可以关闭此弹出窗口。"
+  },
+  "popupUnavailableFetchFailed": {
+    "message": "获取信息失败。请确认已登录，刷新页面后重试。"
+  },
+  "popupFeedbackDone": {
+    "message": "完成"
+  },
+  "popupFeedbackFailed": {
+    "message": "失败"
+  },
+  "popupErrorPrefix": {
+    "message": "错误：$MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusVerifyingDevops": {
+    "message": "正在验证Azure DevOps…"
+  },
+  "popupStatusDevopsVerifyFailed": {
+    "message": "无法确认这是Azure DevOps"
+  },
+  "popupStatusInjecting": {
+    "message": "正在注入内容脚本…"
+  },
+  "popupStatusInjected": {
+    "message": "已注入。请刷新页面。"
+  },
+  "popupStatusInjectFailed": {
+    "message": "注入失败。请刷新页面。"
+  },
+  "popupStatusReloadPage": {
+    "message": "请刷新页面后重试"
+  },
+  "popupStatusNeedsPermission": {
+    "message": "检测到自定义域名。请使用下方按钮允许权限"
+  },
+  "popupGrantRequesting": {
+    "message": "正在请求权限…"
+  },
+  "popupPermissionCancelled": {
+    "message": "权限请求已取消"
+  },
+  "popupPermissionRevoked": {
+    "message": "无法确认这是Azure DevOps，已撤销权限"
+  },
+  "popupStatusChecking": {
+    "message": "正在确认…"
+  },
+  "popupStatusTabUnavailable": {
+    "message": "无法获取标签页信息"
+  },
+  "listButtonTitle": {
+    "message": "将此PR下载为Markdown文件"
+  },
+  "listFeedbackDownloadDone": {
+    "message": "下载完成"
+  },
+  "listFeedbackCopyDone": {
+    "message": "复制完成"
+  },
+  "listFeedbackDownloadFailed": {
+    "message": "下载失败"
+  },
+  "listFeedbackCopyFailed": {
+    "message": "复制失败"
+  },
+  "teamsOverlayTitle": {
+    "message": "正在收集Teams聊天"
+  },
+  "teamsOverlayProgress": {
+    "message": "$COUNT$条 · $SECONDS$秒",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "teamsOverlaySaveSoFar": {
+    "message": "保存当前进度"
+  },
+  "teamsOverlayCancel": {
+    "message": "取消"
+  },
+  "teamsOverlayClose": {
+    "message": "关闭"
+  },
+  "teamsOverlayStopping": {
+    "message": "正在停止并导出…"
+  },
+  "teamsOverlayCollected": {
+    "message": "✓ 已收集$COUNT$条消息",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayPartial": {
+    "message": "$TEXT$（部分）",
+    "placeholders": {
+      "text": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyButton": {
+    "message": "复制到剪贴板"
+  },
+  "teamsOverlayCopied": {
+    "message": "✓ 已复制（$COUNT$条）",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyFailed": {
+    "message": "复制失败"
+  },
+  "teamsOverlayDownloaded": {
+    "message": "✓ 已下载$COUNT$条消息",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayDownloadFailed": {
+    "message": "下载失败"
+  },
+  "teamsOverlaySaveByCopy": {
+    "message": "改为复制保存"
+  },
+  "teamsOverlayCopyFailedAgain": {
+    "message": "复制也失败了"
+  },
+  "teamsErrorBusy": {
+    "message": "正在收集中。请等待完成或取消后再试"
+  },
+  "teamsErrorNoMessagesInPeriod": {
+    "message": "所选期间内没有消息。请选择更早的起始月份后重试。"
+  },
+  "teamsErrorNoMessages": {
+    "message": "无法提取消息（Teams的页面结构可能已更改）。"
+  },
+  "teamsErrorCollect": {
+    "message": "收集时发生错误：$ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsNoteTimeLimit": {
+    "message": "已达到收集时间上限，所选期间的历史记录仅为一部分。"
+  },
+  "teamsNoteMessageLimit": {
+    "message": "已达到收集条数上限，所选期间的历史记录仅为一部分。"
+  },
+  "teamsNoteIterationLimit": {
+    "message": "已达到滚动次数上限，所选期间的历史记录仅为一部分。"
+  },
+  "teamsNoteVisibleOnly": {
+    "message": "未能找到滚动区域，因此仅收集了屏幕上显示的历史记录。"
+  },
+  "teamsNoteUserStopped": {
+    "message": "已通过“保存当前进度”停止，因此仅包含已收集的历史记录。"
+  },
+  "errorPageSwitchedPr": {
+    "message": "PR页面已切换，已中止提取"
+  },
+  "errorPageSwitchedAction": {
+    "message": "提取过程中页面已切换。请在当前页面重新执行。"
+  },
+  "errorVideoPageSwitched": {
+    "message": "视频页面已切换，已中止获取"
+  },
+  "errorCrossOriginRequest": {
+    "message": "不允许跨源请求：$ORIGIN$",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorNonSharepointOrigin": {
+    "message": "不允许向SharePoint以外的来源发送请求"
+  },
+  "errorDriveIdMissing": {
+    "message": "未找到Drive ID / File ID"
+  },
+  "errorTranscriptNotFound": {
+    "message": "未找到转录文本"
+  },
+  "errorTranscriptUrlMissing": {
+    "message": "无法获取转录文本的下载URL"
+  },
+  "errorVttUrlNotSharepoint": {
+    "message": "VTT下载URL不是SharePoint来源"
+  },
+  "errorVttFetchFailed": {
+    "message": "获取VTT失败（HTTP $STATUS$）",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorVttFetchFailedHint": {
+    "message": "获取VTT失败（HTTP $STATUS$）。$HINT$",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      },
+      "hint": {
+        "content": "$2"
+      }
+    }
+  },
+  "errorVttReloginHint": {
+    "message": "请重新登录后刷新页面"
+  },
+  "errorDevopsUrlParse": {
+    "message": "无法解析DevOps PR的URL：$URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorDevopsPrFetch": {
+    "message": "获取DevOps PR信息失败（$REASON$）",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubUrlInvalid": {
+    "message": "GitHub PR的URL格式无效：$URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorCrossOriginPrUrl": {
+    "message": "不支持跨源的PR URL：$URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubPageUnavailable": {
+    "message": "无法确认GitHub PR页面。请检查登录状态。"
+  },
+  "errorExtractorPr": {
+    "message": "未找到此PR页面的提取器"
+  },
+  "errorExtractorSharepoint": {
+    "message": "未找到SharePoint提取器"
+  },
+  "errorExtractorTeams": {
+    "message": "未找到Teams提取器"
+  },
+  "errorDownloadFailed": {
+    "message": "下载失败"
+  },
+  "errorUnknownAction": {
+    "message": "未知操作：$KIND$",
+    "placeholders": {
+      "kind": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeNeedPermissionTitle": {
+    "message": "$APP$：要在此网站上运行，请点击扩展程序图标进行允许",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      }
+    }
+  },
+  "languageAuto": {
+    "message": "自动（跟随浏览器）"
+  },
+  "languageSelectLabel": {
+    "message": "语言"
+  },
+  "languageSelectTitle": {
+    "message": "语言（已打开的页面需刷新后生效）"
+  },
+  "kagayoiSupportContact": {
+    "message": "联系支持"
+  },
+  "kagayoiSupportRate": {
+    "message": "请给我们评分！"
+  }
+}

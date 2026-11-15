@@ -1,0 +1,12 @@
+{
+  "localesDir": "_locales",
+  "manifests": ["manifest.json"],
+  "localizerPath": "src/shared/ui-localizer.js",
+  "languageSwitcher": true,
+  "ignore": [
+    {
+      "path": "src/lib/markdown_builder.js",
+      "reason": "生成する Markdown の見出し・ラベル（本文・レビューコメント・投稿者など）と画像代替表記。生成物の文言は今回の対象外で、AGENTS.md でも固定ラベルとして定められている"
+    }
+  ]
+}

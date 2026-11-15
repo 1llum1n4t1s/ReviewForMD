@@ -47,7 +47,7 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
       '[data-testid*="description"]',
     ],
     // 見出しテキストから説明本文へ辿るフォールバック用（小文字で前方一致判定）
-    descriptionHeadingText: ['description', '説明'],
+    descriptionHeadingText: ['description', '説明'], // l10n-ignore: ページ上の見出しと照合するための文字列（表示しない）
     // コメント 1 件分のコンテナ（Activity タブ／インライン）
     commentContainer: [
       '[data-testid*="comment-card"]',
@@ -61,8 +61,8 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
     // インラインコメントの対象ファイルパス（取れたら付与）
     commentFilePath: ['[data-testid*="file-path"]', '[class*="filePath"]', '[class*="file-path"]'],
     // タブ見出しテキスト（小文字・前方一致で判定）。本文＝Details、コメント＝Activity が別タブのため。
-    detailsTabText: ['details', '詳細'],
-    activityTabText: ['activity', 'アクティビティ'],
+    detailsTabText: ['details', '詳細'], // l10n-ignore: ページ上のタブ見出しと照合するための文字列（表示しない）
+    activityTabText: ['activity', 'アクティビティ'], // l10n-ignore: ページ上のタブ見出しと照合するための文字列（表示しない）
   };
 
   /** タブ切替後の描画待ち (ms)。 */
@@ -318,7 +318,7 @@ var CodeCommitExtractor = CodeCommitExtractor || (() => {
   async function extractAll() {
     const pageUrl = location.href;
     const assertCurrentPage = () => {
-      if (location.href !== pageUrl) throw new Error('PR ページが切り替わったため、抽出を中止しました');
+      if (location.href !== pageUrl) throw new Error(Localizer.t('errorPageSwitchedPr', undefined, 'The PR page changed, so extraction was stopped'));
     };
     // Details タブを開いてから本文を取る（Activity 開始時の本文欠落を防ぐ）
     await _activateTab(SELECTORS.detailsTabText);

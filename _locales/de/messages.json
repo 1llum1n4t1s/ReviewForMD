@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "Vielseitiger Markdown-Kopierer"
+  },
+  "appDescription": {
+    "message": "Laden Sie PR-Reviews, Teams-Besprechungsaufzeichnungen (VTT) und Teams-Chats mit einem Klick als Markdown-/VTT-Dateien herunter."
+  },
+  "popupStatusOpenSupported": {
+    "message": "Öffnen Sie eine unterstützte Seite"
+  },
+  "popupGrantButton": {
+    "message": "Auf dieser Website zulassen"
+  },
+  "popupGrantHintLine1": {
+    "message": "Azure DevOps auf einer benutzerdefinierten Domain erkannt."
+  },
+  "popupGrantHintLine2": {
+    "message": "Erteilen Sie die Host-Berechtigung, um es zu aktivieren (nur einmal)."
+  },
+  "popupCapsHeading": {
+    "message": "Unterstützte Plattformen"
+  },
+  "popupCapsPr": {
+    "message": "PRs in GitHub / Azure DevOps / AWS CodeCommit"
+  },
+  "popupCapsVtt": {
+    "message": "SharePoint Stream (VTT von Teams-Besprechungsaufzeichnungen)"
+  },
+  "popupCapsTeams": {
+    "message": "Microsoft-Teams-Chat (MD / Anhangslinks)"
+  },
+  "siteSharepointMeeting": {
+    "message": "SharePoint-Besprechungsaufzeichnung"
+  },
+  "popupPeriodLabel": {
+    "message": "Startmonat der Erfassung"
+  },
+  "popupPeriodThisMonth": {
+    "message": "Dieser Monat"
+  },
+  "popupPeriodLastMonth": {
+    "message": "Ab letztem Monat"
+  },
+  "popupPeriodTwoMonths": {
+    "message": "Ab 2 Monaten zuvor"
+  },
+  "popupPeriodThreeMonths": {
+    "message": "Ab 3 Monaten zuvor"
+  },
+  "popupButtonStarting": {
+    "message": "Wird gestartet…"
+  },
+  "popupButtonFetching": {
+    "message": "Wird abgerufen…"
+  },
+  "popupErrorRunFailed": {
+    "message": "Die Aktion konnte nicht ausgeführt werden"
+  },
+  "popupErrorCopyFailed": {
+    "message": "Das Kopieren in die Zwischenablage ist fehlgeschlagen"
+  },
+  "popupErrorStalePage": {
+    "message": "Die Erweiterung wurde möglicherweise aktualisiert oder die Seite ist veraltet. Laden Sie die Seite neu und versuchen Sie es erneut."
+  },
+  "popupButtonStartedOnPage": {
+    "message": "Erfassung auf der Seite gestartet"
+  },
+  "popupNoteTeamsStarted": {
+    "message": "Der Fortschritt erscheint im Bereich unten rechts auf der Seite, wo Sie „Bis hierher speichern“ oder „Abbrechen“ verwenden können. Sie können dieses Popup ruhig schließen."
+  },
+  "popupNoteList": {
+    "message": "Öffnen Sie einen PR, um ihn hier herunterzuladen oder zu kopieren. Sie können ihn auch direkt über die Schaltfläche in jeder Zeile der Liste herunterladen."
+  },
+  "popupStatusPr": {
+    "message": "$SITE$-PR",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusPrWithTitle": {
+    "message": "$SITE$-PR: $TITLE$",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      },
+      "title": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupStatusPrList": {
+    "message": "$SITE$-PR-Liste",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusSharepointDetected": {
+    "message": "SharePoint-Besprechungsaufzeichnung erkannt"
+  },
+  "buttonDownloadMd": {
+    "message": "Als MD herunterladen"
+  },
+  "buttonCopyMd": {
+    "message": "MD kopieren"
+  },
+  "buttonDownloadVtt": {
+    "message": "Als VTT herunterladen"
+  },
+  "buttonCopyVtt": {
+    "message": "VTT kopieren"
+  },
+  "popupUnavailableNoTranscript": {
+    "message": "Diese Aufzeichnung enthält kein Transkript"
+  },
+  "popupUnavailableOpenChat": {
+    "message": "Öffnen Sie einen Chat oder Kanal"
+  },
+  "popupStatusTeamsWithTitle": {
+    "message": "Teams: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusTeamsChat": {
+    "message": "Teams-Chat"
+  },
+  "popupNoteTeams": {
+    "message": "Erfasst den abrufbaren Verlauf vom gewählten Monat bis jetzt. Fortschritt und Abbruch finden Sie im Bereich unten rechts auf der Seite; Sie können dieses Popup schließen."
+  },
+  "popupUnavailableFetchFailed": {
+    "message": "Die Informationen konnten nicht abgerufen werden. Prüfen Sie, ob Sie angemeldet sind, laden Sie die Seite neu und versuchen Sie es erneut."
+  },
+  "popupFeedbackDone": {
+    "message": "Fertig"
+  },
+  "popupFeedbackFailed": {
+    "message": "Fehlgeschlagen"
+  },
+  "popupErrorPrefix": {
+    "message": "Fehler: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusVerifyingDevops": {
+    "message": "Azure DevOps wird überprüft…"
+  },
+  "popupStatusDevopsVerifyFailed": {
+    "message": "Die Seite konnte nicht als Azure DevOps bestätigt werden"
+  },
+  "popupStatusInjecting": {
+    "message": "Content-Skript wird eingefügt…"
+  },
+  "popupStatusInjected": {
+    "message": "Eingefügt. Laden Sie die Seite neu."
+  },
+  "popupStatusInjectFailed": {
+    "message": "Einfügen fehlgeschlagen. Laden Sie die Seite neu."
+  },
+  "popupStatusReloadPage": {
+    "message": "Laden Sie die Seite neu und versuchen Sie es erneut"
+  },
+  "popupStatusNeedsPermission": {
+    "message": "Benutzerdefinierte Domain erkannt. Erteilen Sie die Berechtigung mit der Schaltfläche unten"
+  },
+  "popupGrantRequesting": {
+    "message": "Berechtigung wird angefordert…"
+  },
+  "popupPermissionCancelled": {
+    "message": "Die Berechtigungsanfrage wurde abgebrochen"
+  },
+  "popupPermissionRevoked": {
+    "message": "Die Seite konnte nicht als Azure DevOps bestätigt werden. Die Berechtigung wurde zurückgegeben"
+  },
+  "popupStatusChecking": {
+    "message": "Wird geprüft…"
+  },
+  "popupStatusTabUnavailable": {
+    "message": "Die Tab-Informationen konnten nicht abgerufen werden"
+  },
+  "listButtonTitle": {
+    "message": "Diesen PR als Markdown-Datei herunterladen"
+  },
+  "listFeedbackDownloadDone": {
+    "message": "Download abgeschlossen"
+  },
+  "listFeedbackCopyDone": {
+    "message": "Kopieren abgeschlossen"
+  },
+  "listFeedbackDownloadFailed": {
+    "message": "Download fehlgeschlagen"
+  },
+  "listFeedbackCopyFailed": {
+    "message": "Kopieren fehlgeschlagen"
+  },
+  "teamsOverlayTitle": {
+    "message": "Teams-Chat wird erfasst"
+  },
+  "teamsOverlayProgress": {
+    "message": "$COUNT$ Nachrichten · $SECONDS$ s",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "teamsOverlaySaveSoFar": {
+    "message": "Bis hierher speichern"
+  },
+  "teamsOverlayCancel": {
+    "message": "Abbrechen"
+  },
+  "teamsOverlayClose": {
+    "message": "Schließen"
+  },
+  "teamsOverlayStopping": {
+    "message": "Wird gestoppt und exportiert…"
+  },
+  "teamsOverlayCollected": {
+    "message": "✓ $COUNT$ Nachrichten erfasst",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayPartial": {
+    "message": "$TEXT$ (teilweise)",
+    "placeholders": {
+      "text": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyButton": {
+    "message": "In die Zwischenablage kopieren"
+  },
+  "teamsOverlayCopied": {
+    "message": "✓ Kopiert ($COUNT$ Nachrichten)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyFailed": {
+    "message": "Kopieren fehlgeschlagen"
+  },
+  "teamsOverlayDownloaded": {
+    "message": "✓ $COUNT$ Nachrichten heruntergeladen",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayDownloadFailed": {
+    "message": "Download fehlgeschlagen"
+  },
+  "teamsOverlaySaveByCopy": {
+    "message": "Per Kopieren speichern"
+  },
+  "teamsOverlayCopyFailedAgain": {
+    "message": "Auch das Kopieren ist fehlgeschlagen"
+  },
+  "teamsErrorBusy": {
+    "message": "Es läuft bereits eine Erfassung. Warten Sie, bis sie fertig ist, oder brechen Sie sie ab, und versuchen Sie es erneut"
+  },
+  "teamsErrorNoMessagesInPeriod": {
+    "message": "Im gewählten Zeitraum gibt es keine Nachrichten. Wählen Sie einen früheren Startmonat und versuchen Sie es erneut."
+  },
+  "teamsErrorNoMessages": {
+    "message": "Es konnten keine Nachrichten extrahiert werden (das Teams-Layout hat sich möglicherweise geändert)."
+  },
+  "teamsErrorCollect": {
+    "message": "Bei der Erfassung ist ein Fehler aufgetreten: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsNoteTimeLimit": {
+    "message": "Das Zeitlimit für die Erfassung wurde erreicht, daher ist der Verlauf des gewählten Zeitraums nur teilweise vorhanden."
+  },
+  "teamsNoteMessageLimit": {
+    "message": "Die maximale Nachrichtenzahl wurde erreicht, daher ist der Verlauf des gewählten Zeitraums nur teilweise vorhanden."
+  },
+  "teamsNoteIterationLimit": {
+    "message": "Die maximale Anzahl an Scrollvorgängen wurde erreicht, daher ist der Verlauf des gewählten Zeitraums nur teilweise vorhanden."
+  },
+  "teamsNoteVisibleOnly": {
+    "message": "Der Scrollbereich wurde nicht gefunden, daher wurde nur der auf dem Bildschirm sichtbare Verlauf erfasst."
+  },
+  "teamsNoteUserStopped": {
+    "message": "Sie haben mit „Bis hierher speichern“ gestoppt, daher ist nur der bis dahin erfasste Verlauf enthalten."
+  },
+  "errorPageSwitchedPr": {
+    "message": "Die PR-Seite hat gewechselt, daher wurde die Extraktion abgebrochen"
+  },
+  "errorPageSwitchedAction": {
+    "message": "Die Seite hat während der Extraktion gewechselt. Führen Sie den Vorgang auf der aktuellen Seite erneut aus."
+  },
+  "errorVideoPageSwitched": {
+    "message": "Die Videoseite hat gewechselt, daher wurde der Abruf abgebrochen"
+  },
+  "errorCrossOriginRequest": {
+    "message": "Cross-Origin-Anfragen sind nicht erlaubt: $ORIGIN$",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorNonSharepointOrigin": {
+    "message": "Anfragen an andere Ursprünge als SharePoint sind nicht erlaubt"
+  },
+  "errorDriveIdMissing": {
+    "message": "Drive-ID / File-ID nicht gefunden"
+  },
+  "errorTranscriptNotFound": {
+    "message": "Transkript nicht gefunden"
+  },
+  "errorTranscriptUrlMissing": {
+    "message": "Die Download-URL des Transkripts konnte nicht abgerufen werden"
+  },
+  "errorVttUrlNotSharepoint": {
+    "message": "Die VTT-Download-URL stammt nicht von einem SharePoint-Ursprung"
+  },
+  "errorVttFetchFailed": {
+    "message": "Das VTT konnte nicht abgerufen werden (HTTP $STATUS$)",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorVttFetchFailedHint": {
+    "message": "Das VTT konnte nicht abgerufen werden (HTTP $STATUS$). $HINT$",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      },
+      "hint": {
+        "content": "$2"
+      }
+    }
+  },
+  "errorVttReloginHint": {
+    "message": "Melden Sie sich erneut an und laden Sie die Seite neu"
+  },
+  "errorDevopsUrlParse": {
+    "message": "Die DevOps-PR-URL konnte nicht ausgewertet werden: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorDevopsPrFetch": {
+    "message": "Die DevOps-PR-Informationen konnten nicht abgerufen werden ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubUrlInvalid": {
+    "message": "Ungültiges GitHub-PR-URL-Format: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorCrossOriginPrUrl": {
+    "message": "Cross-Origin-PR-URLs werden nicht unterstützt: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubPageUnavailable": {
+    "message": "Die GitHub-PR-Seite konnte nicht geladen werden. Prüfen Sie, ob Sie angemeldet sind."
+  },
+  "errorExtractorPr": {
+    "message": "Der Extraktor für diese PR-Seite wurde nicht gefunden"
+  },
+  "errorExtractorSharepoint": {
+    "message": "Der SharePoint-Extraktor wurde nicht gefunden"
+  },
+  "errorExtractorTeams": {
+    "message": "Der Teams-Extraktor wurde nicht gefunden"
+  },
+  "errorDownloadFailed": {
+    "message": "Download fehlgeschlagen"
+  },
+  "errorUnknownAction": {
+    "message": "Unbekannte Aktion: $KIND$",
+    "placeholders": {
+      "kind": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeNeedPermissionTitle": {
+    "message": "$APP$: Klicken Sie auf das Erweiterungssymbol, um sie auf dieser Website zuzulassen",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      }
+    }
+  },
+  "languageAuto": {
+    "message": "Automatisch (Browser)"
+  },
+  "languageSelectLabel": {
+    "message": "Sprache"
+  },
+  "languageSelectTitle": {
+    "message": "Sprache (geöffnete Seiten übernehmen sie nach dem Neuladen)"
+  },
+  "kagayoiSupportContact": {
+    "message": "Support kontaktieren"
+  },
+  "kagayoiSupportRate": {
+    "message": "Bitte bewerten Sie uns!"
+  }
+}

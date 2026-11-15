@@ -13,8 +13,8 @@ var ButtonInjector = ButtonInjector || (() => {
   const CHECK_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
   const DOWNLOAD_ICON_SVG = `<svg class="rfmd-btn-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06Z"/></svg>`;
 
-  /** ダウンロードボタンのラベルテキスト（アイコンは別途 DOM 構築）。 */
-  const DOWNLOAD_TEXT = 'MDでダウンロード';
+  /** ダウンロードボタンのラベルテキスト（アイコンは別途 DOM 構築）。表示時の選択言語で引く。 */
+  const _downloadText = () => Localizer.t('buttonDownloadMd', undefined, 'Download as MD');
 
   /** フィードバックアニメーション表示時間 (ms)。 */
   const FEEDBACK_DURATION_MS = 1500;
@@ -59,8 +59,12 @@ var ButtonInjector = ButtonInjector || (() => {
     const isDownload = btn.dataset.rfmdAction === 'download';
     const cls = success ? 'rfmd-btn--success' : 'rfmd-btn--error';
     const text = success
-      ? (isDownload ? 'ダウンロード完了' : 'コピー完了')
-      : (isDownload ? 'ダウンロード失敗' : 'コピー失敗');
+      ? (isDownload
+        ? Localizer.t('listFeedbackDownloadDone', undefined, 'Download complete')
+        : Localizer.t('listFeedbackCopyDone', undefined, 'Copy complete'))
+      : (isDownload
+        ? Localizer.t('listFeedbackDownloadFailed', undefined, 'Download failed')
+        : Localizer.t('listFeedbackCopyFailed', undefined, 'Copy failed'));
 
     btn.classList.add(cls);
     _setButtonContent(btn, success ? CHECK_ICON_SVG : null, text);
@@ -111,6 +115,9 @@ var ButtonInjector = ButtonInjector || (() => {
     btn.className = className;
     btn.setAttribute('data-rfmd', dataRfmd);
     btn.setAttribute('aria-label', title);
+    // 表示言語を要素の lang に付ける。ホストページは英語などの lang のままなので、付けないと
+    // zh・ko の文言が別言語（日本語など）向けの字形・フォントで描かれてしまう。自動（null）は付けない。
+    if (Localizer.code) btn.lang = Localizer.toTag(Localizer.code);
     // フィードバック後の復元用に元のアイコン/テキストを保持してから内容を構築する
     btn._rfmdIcon = iconSvg;
     btn._rfmdText = text;
@@ -232,8 +239,8 @@ var ButtonInjector = ButtonInjector || (() => {
         dataRfmd: 'list-dl',
         action: 'download',
         iconSvg: DOWNLOAD_ICON_SVG,
-        text: DOWNLOAD_TEXT,
-        title: 'この PR を Markdown ファイルでダウンロード',
+        text: _downloadText(),
+        title: Localizer.t('listButtonTitle', undefined, 'Download this PR as a Markdown file'),
         extractFn: () => GitHubExtractor.extractByPrUrl(prUrl),
       });
 
@@ -261,8 +268,8 @@ var ButtonInjector = ButtonInjector || (() => {
         dataRfmd: 'list-dl',
         action: 'download',
         iconSvg: DOWNLOAD_ICON_SVG,
-        text: DOWNLOAD_TEXT,
-        title: 'この PR を Markdown ファイルでダウンロード',
+        text: _downloadText(),
+        title: Localizer.t('listButtonTitle', undefined, 'Download this PR as a Markdown file'),
         extractFn: () => DevOpsExtractor.extractByPrUrl(prUrl),
       });
 
@@ -358,7 +365,7 @@ var ButtonInjector = ButtonInjector || (() => {
     const generation = _actionGeneration;
     const requireSamePage = () => {
       if (location.href !== startHref || generation !== _actionGeneration) {
-        throw new Error('抽出中にページが切り替わりました。現在のページで再実行してください。');
+        throw new Error(Localizer.t('errorPageSwitchedAction', undefined, 'The page changed during extraction. Run it again on the current page.'));
       }
     };
     try {
@@ -366,18 +373,18 @@ var ButtonInjector = ButtonInjector || (() => {
         // 現在の PR ページ（GitHub or Azure DevOps）を判定して抽出
         const siteType = SiteDetector.detect();
         const extractor = _getExtractor(siteType);
-        if (!extractor) return { ok: false, error: 'PR ページの extractor が見つかりません' };
+        if (!extractor) return { ok: false, error: Localizer.t('errorExtractorPr', undefined, 'The extractor for this PR page was not found') };
         const title = extractor.getTitle();
         const markdown = await extractor.extractAll();
         requireSamePage();
         if (mode === 'copy') return { ok: true, text: markdown };
         const ok = RfmdClipboard.download(markdown, _sanitizeFilename(title) + '.md');
-        return ok ? { ok: true } : { ok: false, error: 'ダウンロードに失敗しました' };
+        return ok ? { ok: true } : { ok: false, error: Localizer.t('errorDownloadFailed', undefined, 'Download failed') };
       }
 
       if (kind === 'vtt') {
         const extractor = _getExtractor(SiteDetector.SiteType.SHAREPOINT_TEAMS);
-        if (!extractor) return { ok: false, error: 'SharePoint extractor が見つかりません' };
+        if (!extractor) return { ok: false, error: Localizer.t('errorExtractorSharepoint', undefined, 'The SharePoint extractor was not found') };
         const { text, filename } = await extractor.downloadTranscript();
         requireSamePage();
         if (mode === 'copy') return { ok: true, text };
@@ -386,13 +393,13 @@ var ButtonInjector = ButtonInjector || (() => {
           _sanitizeDownloadFilename(filename, '.vtt'),
           'text/vtt;charset=utf-8'
         );
-        return ok ? { ok: true } : { ok: false, error: 'ダウンロードに失敗しました' };
+        return ok ? { ok: true } : { ok: false, error: Localizer.t('errorDownloadFailed', undefined, 'Download failed') };
       }
 
       if (kind === 'teams-md') {
         const extractor = _getExtractor(SiteDetector.SiteType.TEAMS_CHAT);
         if (!extractor || typeof extractor.startCollection !== 'function') {
-          return { ok: false, error: 'Teams extractor が見つかりません' };
+          return { ok: false, error: Localizer.t('errorExtractorTeams', undefined, 'The Teams extractor was not found') };
         }
         // Teams は全履歴の自動スクロール収集で長時間（数十秒〜数分）かかる。収集・進捗表示・
         // 中止・保存/コピーはページ側オーバーレイで完結させ、ここでは開始だけして即返す
@@ -400,7 +407,7 @@ var ButtonInjector = ButtonInjector || (() => {
         return extractor.startCollection({ monthsAgo, mode });
       }
 
-      return { ok: false, error: '未知のアクション: ' + kind };
+      return { ok: false, error: Localizer.t('errorUnknownAction', [kind], 'Unknown action: $1') };
     } catch (e) {
       return { ok: false, error: e?.message || String(e) };
     }

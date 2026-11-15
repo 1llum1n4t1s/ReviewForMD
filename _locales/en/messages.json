@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "Multi Markdown Copy"
+  },
+  "appDescription": {
+    "message": "Download PR reviews, Teams meeting recordings (VTT) and Teams chats as Markdown / VTT files with one click."
+  },
+  "popupStatusOpenSupported": {
+    "message": "Open a supported page"
+  },
+  "popupGrantButton": {
+    "message": "Allow on this site"
+  },
+  "popupGrantHintLine1": {
+    "message": "Azure DevOps detected on a custom domain."
+  },
+  "popupGrantHintLine2": {
+    "message": "Allow host permission to enable it (one time only)."
+  },
+  "popupCapsHeading": {
+    "message": "Supported platforms"
+  },
+  "popupCapsPr": {
+    "message": "PRs on GitHub / Azure DevOps / AWS CodeCommit"
+  },
+  "popupCapsVtt": {
+    "message": "SharePoint Stream (Teams meeting recording VTT)"
+  },
+  "popupCapsTeams": {
+    "message": "Microsoft Teams chat (MD / attachment links)"
+  },
+  "siteSharepointMeeting": {
+    "message": "SharePoint meeting recording"
+  },
+  "popupPeriodLabel": {
+    "message": "Collection start month"
+  },
+  "popupPeriodThisMonth": {
+    "message": "This month"
+  },
+  "popupPeriodLastMonth": {
+    "message": "From last month"
+  },
+  "popupPeriodTwoMonths": {
+    "message": "From 2 months ago"
+  },
+  "popupPeriodThreeMonths": {
+    "message": "From 3 months ago"
+  },
+  "popupButtonStarting": {
+    "message": "Starting…"
+  },
+  "popupButtonFetching": {
+    "message": "Fetching…"
+  },
+  "popupErrorRunFailed": {
+    "message": "The action failed to run"
+  },
+  "popupErrorCopyFailed": {
+    "message": "Could not copy to the clipboard"
+  },
+  "popupErrorStalePage": {
+    "message": "The extension was updated or the page is out of date. Reload the page and try again."
+  },
+  "popupButtonStartedOnPage": {
+    "message": "Started on the page"
+  },
+  "popupNoteTeamsStarted": {
+    "message": "Progress appears in the panel at the bottom right of the page, where you can use “Save so far” or “Cancel”. You can safely close this popup."
+  },
+  "popupNoteList": {
+    "message": "Open a PR to download or copy it here. You can also download directly from the button on each row of the list."
+  },
+  "popupStatusPr": {
+    "message": "$SITE$ PR",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusPrWithTitle": {
+    "message": "$SITE$ PR: $TITLE$",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      },
+      "title": {
+        "content": "$2"
+      }
+    }
+  },
+  "popupStatusPrList": {
+    "message": "$SITE$ PR list",
+    "placeholders": {
+      "site": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusSharepointDetected": {
+    "message": "SharePoint meeting recording detected"
+  },
+  "buttonDownloadMd": {
+    "message": "Download as MD"
+  },
+  "buttonCopyMd": {
+    "message": "Copy MD"
+  },
+  "buttonDownloadVtt": {
+    "message": "Download as VTT"
+  },
+  "buttonCopyVtt": {
+    "message": "Copy VTT"
+  },
+  "popupUnavailableNoTranscript": {
+    "message": "This recording has no transcript"
+  },
+  "popupUnavailableOpenChat": {
+    "message": "Open a chat or channel"
+  },
+  "popupStatusTeamsWithTitle": {
+    "message": "Teams: $TITLE$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusTeamsChat": {
+    "message": "Teams chat"
+  },
+  "popupNoteTeams": {
+    "message": "Collects the history that can be retrieved from the selected month up to now. Track progress and cancel in the panel at the bottom right of the page; you can close this popup."
+  },
+  "popupUnavailableFetchFailed": {
+    "message": "Failed to fetch the information. Check that you are signed in, reload the page and try again."
+  },
+  "popupFeedbackDone": {
+    "message": "Done"
+  },
+  "popupFeedbackFailed": {
+    "message": "Failed"
+  },
+  "popupErrorPrefix": {
+    "message": "Error: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popupStatusVerifyingDevops": {
+    "message": "Verifying Azure DevOps…"
+  },
+  "popupStatusDevopsVerifyFailed": {
+    "message": "Could not verify this as Azure DevOps"
+  },
+  "popupStatusInjecting": {
+    "message": "Injecting the content script…"
+  },
+  "popupStatusInjected": {
+    "message": "Injected. Reload the page."
+  },
+  "popupStatusInjectFailed": {
+    "message": "Injection failed. Reload the page."
+  },
+  "popupStatusReloadPage": {
+    "message": "Reload the page and try again"
+  },
+  "popupStatusNeedsPermission": {
+    "message": "Custom domain detected. Allow the permission with the button below"
+  },
+  "popupGrantRequesting": {
+    "message": "Requesting permission…"
+  },
+  "popupPermissionCancelled": {
+    "message": "The permission request was cancelled"
+  },
+  "popupPermissionRevoked": {
+    "message": "Could not verify this as Azure DevOps. The permission was revoked"
+  },
+  "popupStatusChecking": {
+    "message": "Checking…"
+  },
+  "popupStatusTabUnavailable": {
+    "message": "Could not get the tab information"
+  },
+  "listButtonTitle": {
+    "message": "Download this PR as a Markdown file"
+  },
+  "listFeedbackDownloadDone": {
+    "message": "Download complete"
+  },
+  "listFeedbackCopyDone": {
+    "message": "Copy complete"
+  },
+  "listFeedbackDownloadFailed": {
+    "message": "Download failed"
+  },
+  "listFeedbackCopyFailed": {
+    "message": "Copy failed"
+  },
+  "teamsOverlayTitle": {
+    "message": "Collecting Teams chat"
+  },
+  "teamsOverlayProgress": {
+    "message": "$COUNT$ messages · $SECONDS$ s",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "seconds": {
+        "content": "$2"
+      }
+    }
+  },
+  "teamsOverlaySaveSoFar": {
+    "message": "Save so far"
+  },
+  "teamsOverlayCancel": {
+    "message": "Cancel"
+  },
+  "teamsOverlayClose": {
+    "message": "Close"
+  },
+  "teamsOverlayStopping": {
+    "message": "Stopping and exporting…"
+  },
+  "teamsOverlayCollected": {
+    "message": "✓ Collected $COUNT$ messages",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayPartial": {
+    "message": "$TEXT$ (partial)",
+    "placeholders": {
+      "text": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyButton": {
+    "message": "Copy to clipboard"
+  },
+  "teamsOverlayCopied": {
+    "message": "✓ Copied ($COUNT$ messages)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayCopyFailed": {
+    "message": "Copy failed"
+  },
+  "teamsOverlayDownloaded": {
+    "message": "✓ Downloaded $COUNT$ messages",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsOverlayDownloadFailed": {
+    "message": "Download failed"
+  },
+  "teamsOverlaySaveByCopy": {
+    "message": "Save by copying"
+  },
+  "teamsOverlayCopyFailedAgain": {
+    "message": "Copying failed as well"
+  },
+  "teamsErrorBusy": {
+    "message": "Collection is already running. Wait for it to finish or cancel it, then try again"
+  },
+  "teamsErrorNoMessagesInPeriod": {
+    "message": "No messages in the selected period. Choose an earlier start month and try again."
+  },
+  "teamsErrorNoMessages": {
+    "message": "Could not extract any messages (the Teams layout may have changed)."
+  },
+  "teamsErrorCollect": {
+    "message": "An error occurred while collecting: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamsNoteTimeLimit": {
+    "message": "The collection time limit was reached, so the history for the selected period is only partial."
+  },
+  "teamsNoteMessageLimit": {
+    "message": "The message count limit was reached, so the history for the selected period is only partial."
+  },
+  "teamsNoteIterationLimit": {
+    "message": "The scroll count limit was reached, so the history for the selected period is only partial."
+  },
+  "teamsNoteVisibleOnly": {
+    "message": "The scroll area could not be found, so only the history visible on screen was collected."
+  },
+  "teamsNoteUserStopped": {
+    "message": "You stopped with “Save so far”, so only the history collected so far is included."
+  },
+  "errorPageSwitchedPr": {
+    "message": "The PR page changed, so extraction was stopped"
+  },
+  "errorPageSwitchedAction": {
+    "message": "The page changed during extraction. Run it again on the current page."
+  },
+  "errorVideoPageSwitched": {
+    "message": "The video page changed, so retrieval was stopped"
+  },
+  "errorCrossOriginRequest": {
+    "message": "Cross-origin requests are not allowed: $ORIGIN$",
+    "placeholders": {
+      "origin": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorNonSharepointOrigin": {
+    "message": "Requests to origins other than SharePoint are not allowed"
+  },
+  "errorDriveIdMissing": {
+    "message": "Drive ID / File ID not found"
+  },
+  "errorTranscriptNotFound": {
+    "message": "Transcript not found"
+  },
+  "errorTranscriptUrlMissing": {
+    "message": "Could not get the transcript download URL"
+  },
+  "errorVttUrlNotSharepoint": {
+    "message": "The VTT download URL is not a SharePoint origin"
+  },
+  "errorVttFetchFailed": {
+    "message": "Failed to fetch the VTT (HTTP $STATUS$)",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorVttFetchFailedHint": {
+    "message": "Failed to fetch the VTT (HTTP $STATUS$). $HINT$",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      },
+      "hint": {
+        "content": "$2"
+      }
+    }
+  },
+  "errorVttReloginHint": {
+    "message": "Sign in again and reload the page"
+  },
+  "errorDevopsUrlParse": {
+    "message": "Could not parse the DevOps PR URL: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorDevopsPrFetch": {
+    "message": "Failed to fetch DevOps PR information ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubUrlInvalid": {
+    "message": "Invalid GitHub PR URL format: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorCrossOriginPrUrl": {
+    "message": "Cross-origin PR URLs are not supported: $URL$",
+    "placeholders": {
+      "url": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorGithubPageUnavailable": {
+    "message": "Could not load the GitHub PR page. Check that you are signed in."
+  },
+  "errorExtractorPr": {
+    "message": "The extractor for this PR page was not found"
+  },
+  "errorExtractorSharepoint": {
+    "message": "The SharePoint extractor was not found"
+  },
+  "errorExtractorTeams": {
+    "message": "The Teams extractor was not found"
+  },
+  "errorDownloadFailed": {
+    "message": "Download failed"
+  },
+  "errorUnknownAction": {
+    "message": "Unknown action: $KIND$",
+    "placeholders": {
+      "kind": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeNeedPermissionTitle": {
+    "message": "$APP$: Click the extension icon to allow it on this site",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      }
+    }
+  },
+  "languageAuto": {
+    "message": "Auto (browser)"
+  },
+  "languageSelectLabel": {
+    "message": "Language"
+  },
+  "languageSelectTitle": {
+    "message": "Language. Open pages need a reload to update."
+  },
+  "kagayoiSupportContact": {
+    "message": "Contact support"
+  },
+  "kagayoiSupportRate": {
+    "message": "Please rate us!"
+  }
+}

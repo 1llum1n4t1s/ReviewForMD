@@ -67,6 +67,8 @@ try {
     foreach ($directory in @($chromeDir, $firefoxDir)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $scriptDir "src") -Destination $directory -Recurse
+        # 多言語化: _locales（9言語の messages.json）も同梱する。無いと __MSG_*__ が解決できず読み込みに失敗する。
+        Copy-Item -LiteralPath (Join-Path $scriptDir "_locales") -Destination $directory -Recurse
         Copy-Item -LiteralPath (Join-Path $scriptDir "icons") -Destination $directory -Recurse
     }
 

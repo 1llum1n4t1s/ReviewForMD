@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="vitrina-fixture" content="md-preview">
+<title></title>
+<!--
+  ストア画像用の固定ページ: 「MDコピー」で得られる Markdown の例。
+  構成・ラベルは src/lib/markdown_builder.js の出力そのまま（ラベルは全言語で固定の日本語）。
+  内容は架空（example）で、他社 UI・ロゴは描かない。拡張の content script が動く URL では開かない。
+-->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #14171f; }
+  #doc { width: 600px; padding: 24px 28px 28px; background: #14171f; color: #d8dee9; font: 14px/1.6 "Cascadia Mono", Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-word; }
+  .h { color: #5fd49a; font-weight: 700; }
+  .k { color: #f5b942; }
+  .c { color: #8b93a7; }
+  .a { color: #7fb4ff; }
+  .add { color: #6fdc8c; }
+  .del { color: #ff8a8a; }
+  .fence { color: #8b93a7; }
+</style>
+</head>
+<body>
+<div id="doc"><span class="h"># Add retry to the upload queue #42</span>
+
+<span class="h">## 本文</span>
+
+<span class="k">**投稿者:**</span> alice
+<span class="k">**日時:**</span> 2026/02/17 10:30
+
+Retry failed uploads up to three times.
+
+<span class="h">## レビューコメント</span>
+
+<span class="h">### コメント 1</span>
+
+<span class="k">**投稿者:**</span> bob
+<span class="k">**日時:**</span> 2026/02/17 11:00
+<span class="k">**ファイル:**</span> <span class="a">`src/upload/queue.ts`</span>
+
+<span class="k">**対象行:**</span> L24-L26
+
+<span class="fence">```diff</span>
+<span class="del">-  await send(item);</span>
+<span class="add">+  await retry(() => send(item), 3);</span>
+<span class="fence">```</span>
+
+Please add a test for the retry limit.
+</div>
+</body>
+</html>

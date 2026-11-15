@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="vitrina-fixture" content="pr-list">
+<title></title>
+<!--
+  ストア画像用の固定ページ（PR 一覧の中立的な骨組み）。
+  文字・ロゴ・商標は描かず、灰色のバーだけで行を表す。拡張の注入先として GitHub の一覧と同じ
+  セレクタ（.js-issue-row / a[data-hovercard-type="pull_request"] / .flex-auto.min-width-0）を置き、
+  実際の content script が各行へダウンロードボタンを注入する（ボタンは実UI）。
+-->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; overflow: hidden; }
+  .top { height: 64px; display: flex; align-items: center; padding: 0 32px; gap: 20px; background: #f6f8fa; border-bottom: 1px solid #d8dee4; }
+  .logo { width: 32px; height: 32px; border-radius: 50%; background: #d0d7de; }
+  .box { width: 360px; height: 30px; border-radius: 6px; border: 1px solid #d0d7de; background: #fff; }
+  .avatar { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: #d0d7de; }
+  .tabs { display: flex; gap: 24px; padding: 0 32px; height: 44px; align-items: flex-end; background: #f6f8fa; border-bottom: 1px solid #d8dee4; }
+  .tabs i { display: block; width: 64px; height: 8px; border-radius: 4px; background: #d0d7de; margin-bottom: 18px; }
+  .tabs i:nth-child(3) { background: #8c959f; box-shadow: 0 17px 0 -1px #fd8c73; }
+  .list { margin: 28px 32px 0; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }
+  .head { height: 52px; display: flex; align-items: center; gap: 24px; padding: 0 16px; background: #f6f8fa; border-bottom: 1px solid #d0d7de; }
+  .head i { display: block; width: 88px; height: 9px; border-radius: 5px; background: #c8d0d8; }
+  .head i:first-child { width: 112px; background: #8c959f; }
+  .js-issue-row { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px 12px; border-bottom: 1px solid #d8dee4; }
+  .js-issue-row:last-child { border-bottom: 0; }
+  .state { flex: none; width: 16px; height: 16px; margin-top: 3px; border-radius: 50%; border: 2px solid #1a7f37; }
+  .state.merged { border-color: #8250df; background: #8250df; }
+  .flex-auto.min-width-0 { display: flex; flex-wrap: wrap; align-items: center; row-gap: 8px; min-width: 0; flex: 1; }
+  /* タイトルは文字の代わりの灰色バー（リンクとしての href だけを持たせる） */
+  a[data-hovercard-type="pull_request"] { display: block; flex: 0 0 auto; width: var(--w, 52%); height: 16px; border-radius: 8px; background: #b6c2d1; }
+  .meta { order: 3; flex: 1 0 100%; display: flex; gap: 12px; }
+  .meta i { display: block; height: 8px; border-radius: 4px; background: #e1e5ea; }
+  .reviewers { flex: none; display: flex; margin-top: 2px; }
+  .reviewers b { width: 20px; height: 20px; margin-left: -6px; border-radius: 50%; border: 2px solid #fff; background: #d0d7de; }
+</style>
+</head>
+<body>
+  <div class="top"><div class="logo"></div><div class="box"></div><div class="avatar"></div></div>
+  <div class="tabs"><i></i><i></i><i></i><i></i></div>
+  <div class="list">
+    <div class="head"><i></i><i></i><i></i><i></i></div>
+    <div class="js-issue-row"><span class="state"></span><div class="flex-auto min-width-0"><a data-hovercard-type="pull_request" href="/example/app/pull/48" style="--w:46%"></a><div class="meta"><i style="width:150px"></i><i style="width:96px"></i><i style="width:120px"></i></div></div><div class="reviewers"><b></b><b></b></div></div>
+    <div class="js-issue-row"><span class="state"></span><div class="flex-auto min-width-0"><a data-hovercard-type="pull_request" href="/example/app/pull/47" style="--w:58%"></a><div class="meta"><i style="width:132px"></i><i style="width:110px"></i><i style="width:88px"></i></div></div><div class="reviewers"><b></b></div></div>
+    <div class="js-issue-row"><span class="state merged"></span><div class="flex-auto min-width-0"><a data-hovercard-type="pull_request" href="/example/app/pull/46" style="--w:40%"></a><div class="meta"><i style="width:160px"></i><i style="width:84px"></i><i style="width:126px"></i></div></div><div class="reviewers"><b></b><b></b><b></b></div></div>
+    <div class="js-issue-row"><span class="state merged"></span><div class="flex-auto min-width-0"><a data-hovercard-type="pull_request" href="/example/app/pull/45" style="--w:52%"></a><div class="meta"><i style="width:140px"></i><i style="width:100px"></i><i style="width:112px"></i></div></div><div class="reviewers"><b></b><b></b></div></div>
+    <div class="js-issue-row"><span class="state"></span><div class="flex-auto min-width-0"><a data-hovercard-type="pull_request" href="/example/app/pull/44" style="--w:62%"></a><div class="meta"><i style="width:120px"></i><i style="width:92px"></i><i style="width:136px"></i></div></div><div class="reviewers"><b></b></div></div>
+  </div>
+</body>
+</html>

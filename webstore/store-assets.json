@@ -1,0 +1,302 @@
+{
+  "brand": "Multi Markdown Copy",
+  "icon": "icons/icon.svg",
+  "extensionDir": ".",
+  "palette": {
+    "primary": "#22B573",
+    "secondary": "#F5B942"
+  },
+  "locales": [
+    "en",
+    "ja",
+    "zh_CN",
+    "zh_TW",
+    "ko",
+    "es",
+    "fr",
+    "de",
+    "pt_BR"
+  ],
+  "captures": [
+    {
+      "id": "popup-pr",
+      "kind": "popup",
+      "page": "src/popup/popup.html"
+    },
+    {
+      "id": "popup-vtt",
+      "kind": "popup",
+      "page": "src/popup/popup.html"
+    },
+    {
+      "id": "popup-teams",
+      "kind": "popup",
+      "page": "src/popup/popup.html",
+      "maxHeight": 700
+    },
+    {
+      "id": "pr-list",
+      "kind": "page",
+      "url": "https://github.com/example/app/pulls",
+      "fixture": "pr-list.html",
+      "waitFor": "[data-rfmd=\"list-dl\"]",
+      "width": 1120,
+      "height": 524
+    },
+    {
+      "id": "md-preview",
+      "kind": "page",
+      "url": "https://preview.test/review.md",
+      "fixture": "md-preview.html",
+      "waitFor": "#doc",
+      "width": 600,
+      "height": 700,
+      "clip": {
+        "selector": "#doc",
+        "pad": 0
+      }
+    }
+  ],
+  "slides": [
+    {
+      "layout": "hero",
+      "capture": "popup-pr",
+      "product": {
+        "en": "Multi Markdown Copy",
+        "ja": "いろいろMDコピー",
+        "zh_CN": "多功能Markdown复制",
+        "zh_TW": "多功能Markdown複製",
+        "ko": "다용도 Markdown 복사",
+        "es": "Multi Markdown Copy",
+        "fr": "Multi Markdown Copy",
+        "de": "Multi Markdown Copy",
+        "pt_BR": "Multi Markdown Copy"
+      },
+      "tagline": {
+        "msg": "appDescription"
+      },
+      "chips": [
+        "GitHub · Azure DevOps · CodeCommit",
+        "Markdown / VTT",
+        {
+          "en": "Download or copy",
+          "ja": "ダウンロードもコピーも",
+          "zh_CN": "可下载，也可复制",
+          "zh_TW": "可下載，也可複製",
+          "ko": "다운로드도 복사도",
+          "es": "Descargar o copiar",
+          "fr": "Télécharger ou copier",
+          "de": "Herunterladen oder kopieren",
+          "pt_BR": "Baixar ou copiar"
+        }
+      ]
+    },
+    {
+      "layout": "feature",
+      "capture": "md-preview",
+      "kicker": {
+        "msg": "buttonCopyMd"
+      },
+      "title": {
+        "en": "Review comments, ready as Markdown",
+        "ja": "レビューコメントをそのままMarkdownに",
+        "zh_CN": "将PR评审意见一键转为Markdown",
+        "zh_TW": "將PR審查意見[[一鍵]]轉為Markdown",
+        "ko": "리뷰 코멘트를 Markdown으로 그대로",
+        "es": "Los comentarios de revisión, listos en Markdown",
+        "fr": "Les commentaires de revue, prêts en Markdown",
+        "de": "[[Review-Kommentare]] als fertiges Markdown",
+        "pt_BR": "Comentários de revisão prontos em Markdown"
+      },
+      "body": {
+        "en": "Title, description and review comments go into one file, with who wrote them and when.",
+        "ja": "タイトル・本文・レビューコメントを、投稿者と日時つきで1つのファイルにまとめます。",
+        "zh_CN": "标题、正文和评审意见会汇总到一个文件中，并附上作者和时间。",
+        "zh_TW": "標題、內文和審查意見會彙整到一個檔案中，並附上作者和時間。",
+        "ko": "제목, 본문, 리뷰 코멘트를 작성자와 시각과 함께 파일 하나에 담습니다.",
+        "es": "El título, la descripción y los comentarios de revisión se reúnen en un solo archivo, con su autor y fecha.",
+        "fr": "Le titre, la description et les commentaires de revue sont réunis dans un seul fichier, avec leur auteur et leur date.",
+        "de": "Titel, Beschreibung und Review-Kommentare landen in einer Datei, jeweils mit Autor und Zeitpunkt.",
+        "pt_BR": "Título, descrição e comentários de revisão ficam em um único arquivo, com autor e data."
+      },
+      "bullets": [
+        {
+          "en": "File path and diff code when available",
+          "ja": "取得できる場合は対象ファイルと差分コードも",
+          "zh_CN": "可获取时附带文件路径和差异代码",
+          "zh_TW": "可取得時附帶檔案路徑和差異程式碼",
+          "ko": "가져올 수 있으면 파일 경로와 diff 코드도",
+          "es": "Ruta del archivo y código del diff si están disponibles",
+          "fr": "Chemin du fichier et code du diff lorsqu’ils sont disponibles",
+          "de": "Dateipfad und Diff-Code, sofern verfügbar",
+          "pt_BR": "Caminho do arquivo e código do diff, quando disponíveis"
+        },
+        {
+          "en": "Replies stay threaded under each comment",
+          "ja": "返信はコメントごとにまとまります",
+          "zh_CN": "回复会归在对应意见之下",
+          "zh_TW": "回覆會歸在對應意見之下",
+          "ko": "답글은 코멘트별로 묶입니다",
+          "es": "Las respuestas quedan agrupadas bajo cada comentario",
+          "fr": "Les réponses restent regroupées sous chaque commentaire",
+          "de": "Antworten bleiben unter dem jeweiligen Kommentar",
+          "pt_BR": "As respostas ficam agrupadas em cada comentário"
+        },
+        {
+          "en": "Save as .md or copy to the clipboard",
+          "ja": ".mdで保存、またはクリップボードへコピー",
+          "zh_CN": "可保存为.md，也可复制到剪贴板",
+          "zh_TW": "可儲存為.md，也可複製到剪貼簿",
+          "ko": ".md로 저장하거나 클립보드에 복사",
+          "es": "Guárdelo como .md o cópielo al portapapeles",
+          "fr": "Enregistrez en .md ou copiez dans le [[presse-papiers]]",
+          "de": "Als .md speichern oder in die Zwischenablage kopieren",
+          "pt_BR": "Salve como .md ou copie para a área de transferência"
+        }
+      ]
+    },
+    {
+      "layout": "wide",
+      "capture": "pr-list",
+      "title": {
+        "en": "Download straight from the PR list",
+        "ja": "PR一覧から、そのままダウンロード",
+        "zh_CN": "直接在PR列表中下载",
+        "zh_TW": "直接在PR清單中下載",
+        "ko": "PR 목록에서 바로 다운로드",
+        "es": "Descargue directamente desde la lista de PR",
+        "fr": "Téléchargez directement depuis la liste des PR",
+        "de": "Direkt aus der PR-Liste herunterladen",
+        "pt_BR": "Baixe direto da lista de PRs"
+      },
+      "body": {
+        "en": "GitHub and Azure DevOps lists get a button on every row.",
+        "ja": "GitHubとAzure DevOpsの一覧では、各行にボタンが表示されます。",
+        "zh_CN": "GitHub和Azure DevOps的列表中，每一行都有按钮。",
+        "zh_TW": "GitHub和Azure DevOps的清單中，每一列都有按鈕。",
+        "ko": "GitHub와 Azure DevOps 목록에서는 각 행에 버튼이 표시됩니다.",
+        "es": "En las listas de GitHub y Azure DevOps, cada fila tiene su botón.",
+        "fr": "Dans les listes GitHub et Azure DevOps, chaque ligne a son bouton.",
+        "de": "In den Listen von GitHub und Azure DevOps hat jede Zeile eine Schaltfläche.",
+        "pt_BR": "Nas listas do GitHub e do Azure DevOps, cada linha ganha um botão."
+      }
+    },
+    {
+      "layout": "feature",
+      "capture": "popup-vtt",
+      "kicker": "VTT",
+      "title": {
+        "en": "Meeting transcripts, saved as VTT",
+        "ja": "会議の字幕を、VTTで保存",
+        "zh_CN": "把会议字幕保存为VTT",
+        "zh_TW": "把會議字幕儲存為VTT",
+        "ko": "회의 자막을 VTT로 저장",
+        "es": "Transcripciones de reuniones, guardadas como VTT",
+        "fr": "Transcriptions de réunion, enregistrées en VTT",
+        "de": "Transkripte Ihrer Besprechungen als VTT speichern",
+        "pt_BR": "Transcrições de reuniões salvas como VTT"
+      },
+      "body": {
+        "en": "Open a Teams meeting recording in SharePoint Stream to save or copy its transcript.",
+        "ja": "SharePoint StreamでTeams会議の録画を開くと、字幕（トランスクリプト）を保存・コピーできます。",
+        "zh_CN": "在SharePoint Stream中打开Teams会议录制，即可保存或复制其字幕。",
+        "zh_TW": "在SharePoint Stream中開啟Teams會議錄影，即可儲存或複製其字幕。",
+        "ko": "SharePoint Stream에서 Teams 회의 녹화를 열면 자막을 저장하거나 복사할 수 있습니다.",
+        "es": "Abra una grabación de reunión de Teams en SharePoint Stream para guardar o copiar su transcripción.",
+        "fr": "Ouvrez un enregistrement de réunion Teams dans SharePoint Stream pour enregistrer ou copier sa transcription.",
+        "de": "Öffnen Sie eine Teams-Besprechungsaufzeichnung in SharePoint Stream, um das Transkript zu speichern oder zu kopieren.",
+        "pt_BR": "Abra uma gravação de reunião do Teams no SharePoint Stream para salvar ou copiar a transcrição."
+      },
+      "bullets": [
+        {
+          "en": "Handy as a first draft for meeting minutes",
+          "ja": "議事録の下書きづくりに便利",
+          "zh_CN": "适合用来起草会议纪要",
+          "zh_TW": "適合用來起草會議紀錄",
+          "ko": "회의록 초안 작성에 편리",
+          "es": "Útil como borrador del acta de la reunión",
+          "fr": "Pratique pour un premier jet de compte rendu",
+          "de": "Praktisch als Entwurf für das Protokoll",
+          "pt_BR": "Útil como rascunho da ata da reunião"
+        },
+        {
+          "en": "Recordings without a transcript show no buttons",
+          "ja": "字幕のない録画ではボタンは出ません",
+          "zh_CN": "没有字幕的录制不会显示按钮",
+          "zh_TW": "沒有字幕的錄影不會顯示按鈕",
+          "ko": "자막이 없는 녹화에는 버튼이 나타나지 않습니다",
+          "es": "Las grabaciones sin transcripción no muestran botones",
+          "fr": "Les enregistrements sans transcription n’affichent pas de boutons",
+          "de": "Aufzeichnungen ohne Transkript zeigen keine Schaltflächen",
+          "pt_BR": "Gravações sem transcrição não mostram botões"
+        }
+      ]
+    },
+    {
+      "layout": "feature",
+      "capture": "popup-teams",
+      "kicker": "Microsoft Teams",
+      "title": {
+        "en": "Teams chats, from the month you choose",
+        "ja": "Teamsチャットを\n選んだ月から",
+        "zh_CN": "从所选月份起[[收集]]Teams聊天",
+        "zh_TW": "從所選月份起[[收集]]Teams聊天",
+        "ko": "선택한 월부터 Teams 채팅을 수집",
+        "es": "Chats de Teams, desde el mes que elija",
+        "fr": "Les conversations Teams, depuis le mois de votre choix",
+        "de": "[[Teams-Chats]] ab dem gewählten Monat",
+        "pt_BR": "Chats do Teams a partir do mês escolhido"
+      },
+      "body": {
+        "en": "Pick a start month, and the extension scrolls through the chat up to today and saves it.",
+        "ja": "収集開始月を選ぶと、その月から今日までを自動スクロールで集めて保存します。",
+        "zh_CN": "选择起始月份后，扩展程序会自动滚动聊天记录，收集到今天为止的内容并保存。",
+        "zh_TW": "選擇起始月份後，擴充功能會自動捲動聊天記錄，收集到今天為止的內容並儲存。",
+        "ko": "시작 월을 고르면 그 달부터 오늘까지 채팅을 자동 스크롤로 모아 저장합니다.",
+        "es": "Elija el mes de inicio y la extensión recorrerá el chat hasta hoy y lo guardará.",
+        "fr": "Choisissez le mois de début : l’extension fait défiler la conversation jusqu’à aujourd’hui et l’enregistre.",
+        "de": "Wählen Sie den Startmonat, und die Erweiterung scrollt den Chat bis heute durch und speichert ihn.",
+        "pt_BR": "Escolha o mês de início e a extensão rola o chat até hoje e o salva."
+      },
+      "bullets": [
+        {
+          "en": "Follow progress in a panel on the page and stop any time",
+          "ja": "進捗はページ上のパネルで確認でき、いつでも中止できます",
+          "zh_CN": "可在页面面板中查看进度，并随时中止",
+          "zh_TW": "可在頁面面板中查看進度，並隨時中止",
+          "ko": "진행 상황은 페이지의 패널에서 확인하고 언제든 중단할 수 있습니다",
+          "es": "Siga el progreso en un panel de la página y deténgalo cuando quiera",
+          "fr": "Suivez la progression dans un panneau de la page et arrêtez à tout moment",
+          "de": "Fortschritt im Panel auf der Seite verfolgen und jederzeit abbrechen",
+          "pt_BR": "Acompanhe o progresso em um painel na página e pare quando quiser"
+        },
+        {
+          "en": "Closing the popup does not stop the collection",
+          "ja": "ポップアップを閉じても収集は続きます",
+          "zh_CN": "关闭弹出窗口不会中断收集",
+          "zh_TW": "關閉彈出視窗不會中斷收集",
+          "ko": "팝업을 닫아도 수집은 계속됩니다",
+          "es": "Cerrar la ventana emergente no detiene la recopilación",
+          "fr": "Fermer la fenêtre contextuelle n’arrête pas la collecte",
+          "de": "Das Schließen des Popups beendet die Erfassung nicht",
+          "pt_BR": "Fechar o pop-up não interrompe a coleta"
+        },
+        {
+          "en": "Sender, time, text, reactions and attachment links",
+          "ja": "送信者・日時・本文・リアクション・添付リンク",
+          "zh_CN": "发送者、时间、正文、表情回应和附件链接",
+          "zh_TW": "傳送者、時間、內文、表情回應和附件連結",
+          "ko": "보낸 사람, 시각, 본문, 반응, 첨부 링크",
+          "es": "Remitente, hora, texto, reacciones y enlaces de adjuntos",
+          "fr": "Expéditeur, heure, texte, réactions et liens des pièces jointes",
+          "de": "Absender, Zeit, Text, Reaktionen und Anhangslinks",
+          "pt_BR": "Remetente, horário, texto, reações e links de anexos"
+        }
+      ]
+    }
+  ],
+  "tiles": {
+    "tagline": "PR reviews and Teams chats as Markdown",
+    "capture": "popup-pr"
+  }
+}

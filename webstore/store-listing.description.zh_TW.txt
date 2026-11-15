@@ -1,0 +1,73 @@
+一款可將多個網站的資訊下載為 Markdown / VTT 檔案的 Chrome 擴充功能。
+GitHub、Azure DevOps、AWS CodeCommit 的 PR 審查，SharePoint Stream 中 Teams 會議錄影的字幕（VTT），
+以及 Microsoft Teams 的聊天記錄，一鍵即可儲存到本機。
+
+【功能介紹】
+
+所有操作都透過點擊工具列圖示開啟的彈出視窗進行。
+彈出視窗會判斷目前所在的網站，並自動顯示適合該網站的按鈕。
+
+▼ 下載為 Markdown / 複製（PR 審查）
+在 GitHub / Azure DevOps / AWS CodeCommit 的 PR 頁面點擊圖示，彈出視窗中會出現
+「下載為MD」與「複製MD」。可將標題、內文與所有審查留言
+儲存為單一 .md 檔案，或複製到剪貼簿。
+
+▼ 也可直接從 PR 清單頁面下載
+在 GitHub / Azure DevOps 的 PR 清單頁面，每一列都會顯示下載按鈕，不必開啟 PR 即可直接取得。
+
+▼ 完整取得審查留言
+取得的內容包含發布者名稱、時間、目標檔案路徑與差異程式碼（diff）。
+支援行內留言、檔案層級留言與整體留言。
+在 Azure DevOps 中，若無法從 DOM 取得，會自動改用 REST API。
+
+▼ 支援 GitHub / Azure DevOps / AWS CodeCommit
+・GitHub（github.com）
+・Azure DevOps（dev.azure.com / *.visualstudio.com）
+・自訂網域的 Azure DevOps（透過彈出視窗中的「允許在此網站上執行」，僅對該網站授權後使用）
+・AWS CodeCommit（AWS 管理主控台的 PR 詳細頁面，僅限詳細頁面）
+同時支援 SPA（單頁應用程式）的頁面切換。
+
+▼ 支援 SharePoint Stream（Teams 會議錄影）
+在會議錄影頁面點擊圖示，彈出視窗中會出現「下載為VTT」與「複製VTT」。
+可將逐字稿（字幕）儲存或複製為 .vtt 檔案，方便作為會議記錄的初稿。
+沒有逐字稿的錄影無法使用。
+
+▼ 支援 Microsoft Teams 聊天
+在 Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）的聊天或頻道中
+點擊圖示，彈出視窗中會出現以下按鈕。
+・「下載為MD」「複製MD」：透過自動捲動收集從指定起始月份到目前的內容，並將傳送者、時間、內文、
+  回應與附件連結儲存或複製為單一 .md 檔案。
+・起始月份可選擇 本月 / 從上個月起 / 從2個月前起 / 從3個月前起。歷史記錄較短時，也會儲存可取得的部分。
+・收集期間，頁面右下角會顯示進度面板。點擊「儲存目前進度」僅儲存已取得的部分，點擊「取消」則不儲存並結束。
+  收集會在頁面中繼續進行，因此可以放心關閉彈出視窗。
+・儲存的檔名為「聊天名稱_yyyyMMdd.md」。達到收集上限時，會提示這是儲存到中途的內容。
+
+【適用情境】
+・想在團隊內分享程式碼審查記錄
+・想把 PR 的內容轉錄到文件或會議記錄中
+・想製作審查回顧資料
+・想不開啟 PR，直接從清單以 Markdown 檔案儲存
+・想根據字幕資料把 Teams 會議整理成會議記錄
+・想把 Teams 聊天記錄留作備份或紀錄
+
+【使用方式】
+1. 從 Chrome 線上應用程式商店安裝
+2. 開啟支援的頁面（GitHub / Azure DevOps / AWS CodeCommit 的 PR，SharePoint Stream 的會議錄影，Microsoft Teams 的
+   聊天或頻道）
+3. 點擊工具列的擴充功能圖示 → 彈出視窗中會顯示該網站對應的按鈕
+   - PR：「下載為MD」「複製MD」
+   - SharePoint 會議錄影：「下載為VTT」「複製VTT」
+   - Teams 聊天：「下載為MD」「複製MD」
+   ※ 在 GitHub / Azure DevOps 的 PR 清單頁面，也可以透過每一列的下載按鈕直接儲存
+4. 點擊按鈕 → 儲存（或複製）.md / .vtt 檔案
+
+如需回報問題或詢問，可使用彈出視窗底部的「聯絡支援」傳送。
+
+【隱私權】
+・PR、字幕與聊天的取得以及檔案產生，皆在瀏覽器內處理
+・僅當使用者送出選填的聯絡表單時，才會將填寫的電子郵件地址、選填的姓名、詢問內容與驗證碼傳送給 Kagayoi Support
+・不會基於廣告、分析或遙測目的收集或傳送任何資料
+・僅讀取 PR 頁面 / SharePoint Stream / Teams 頁面的 DOM 與官方 API，
+  並執行寫入剪貼簿與下載檔案的操作
+・對於 Teams 附件，僅記錄畫面上顯示的連結，不會下載檔案本身
+・所有程式碼都包含在擴充功能套件內

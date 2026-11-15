@@ -1,0 +1,73 @@
+一款可将多个网站的信息下载为 Markdown / VTT 文件的 Chrome 扩展程序。
+GitHub、Azure DevOps、AWS CodeCommit 的 PR 评审，SharePoint Stream 中 Teams 会议录制的字幕（VTT），
+以及 Microsoft Teams 的聊天记录，一键即可保存到本地。
+
+【功能介绍】
+
+所有操作都通过点击工具栏图标打开的弹出窗口完成。
+弹出窗口会判断当前所在的网站，并自动显示适合该网站的按钮。
+
+▼ 下载为 Markdown / 复制（PR 评审）
+在 GitHub / Azure DevOps / AWS CodeCommit 的 PR 页面点击图标，弹出窗口中会出现
+“下载为MD”和“复制MD”。可将标题、正文和全部评审评论
+保存为一个 .md 文件，或复制到剪贴板。
+
+▼ 也可直接从 PR 列表页面下载
+在 GitHub / Azure DevOps 的 PR 列表页面，每一行都会显示下载按钮，无需打开 PR 即可直接获取。
+
+▼ 完整获取评审评论
+获取内容包含发布者名称、时间、目标文件路径和差异代码（diff）。
+支持行内评论、文件级评论和整体评论。
+在 Azure DevOps 中，如果无法从 DOM 获取，会自动回退到 REST API。
+
+▼ 支持 GitHub / Azure DevOps / AWS CodeCommit
+・GitHub（github.com）
+・Azure DevOps（dev.azure.com / *.visualstudio.com）
+・自定义域名的 Azure DevOps（通过弹出窗口中的“允许在此网站上运行”，仅对该网站授权后使用）
+・AWS CodeCommit（AWS 管理控制台的 PR 详情页面，仅限详情页面）
+同时支持 SPA（单页应用）的页面跳转。
+
+▼ 支持 SharePoint Stream（Teams 会议录制）
+在会议录制页面点击图标，弹出窗口中会出现“下载为VTT”和“复制VTT”。
+可将转录文本（字幕）保存或复制为 .vtt 文件，方便用作会议纪要的初稿。
+没有转录文本的录制内容无法使用。
+
+▼ 支持 Microsoft Teams 聊天
+在 Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）的聊天或频道中
+点击图标，弹出窗口中会出现以下按钮。
+・“下载为MD”“复制MD”：通过自动滚动收集从指定起始月份到当前的内容，并将发送者、时间、正文、
+  回应和附件链接保存或复制为一个 .md 文件。
+・起始月份可选择 本月 / 从上个月起 / 从2个月前起 / 从3个月前起。历史记录较短时，也会保存可获取的部分。
+・收集过程中，页面右下角会显示进度面板。点击“保存当前进度”仅保存已获取的部分，点击“取消”则不保存并结束。
+  收集会在页面中继续进行，因此可以放心关闭弹出窗口。
+・保存的文件名为“聊天名称_yyyyMMdd.md”。达到收集上限时，会提示这是保存到中途的内容。
+
+【适用场景】
+・想在团队内共享代码评审记录
+・想把 PR 的内容转录到文档或会议纪要中
+・想制作评审复盘资料
+・想不打开 PR，直接从列表以 Markdown 文件保存
+・想根据字幕数据把 Teams 会议整理成会议纪要
+・想把 Teams 聊天记录留作备份或记录
+
+【使用方法】
+1. 从 Chrome 应用商店安装
+2. 打开受支持的页面（GitHub / Azure DevOps / AWS CodeCommit 的 PR，SharePoint Stream 的会议录制，Microsoft Teams 的
+   聊天或频道）
+3. 点击工具栏中的扩展程序图标 → 弹出窗口中会显示该网站对应的按钮
+   - PR：“下载为MD”“复制MD”
+   - SharePoint 会议录制：“下载为VTT”“复制VTT”
+   - Teams 聊天：“下载为MD”“复制MD”
+   ※ 在 GitHub / Azure DevOps 的 PR 列表页面，也可以通过每一行的下载按钮直接保存
+4. 点击按钮 → 保存（或复制）.md / .vtt 文件
+
+如需反馈问题或咨询，可使用弹出窗口底部的“联系支持”发送。
+
+【隐私】
+・PR、字幕和聊天的获取以及文件生成均在浏览器内处理
+・仅当用户提交可选的联系表单时，才会将填写的电子邮件地址、可选的姓名、咨询内容和验证码发送给 Kagayoi Support
+・不会出于广告、分析或遥测目的收集或发送任何数据
+・仅读取 PR 页面 / SharePoint Stream / Teams 页面的 DOM 和官方 API，
+  并执行写入剪贴板和下载文件的操作
+・对于 Teams 附件，仅记录屏幕上显示的链接，不会下载文件本身
+・所有代码都包含在扩展程序包内

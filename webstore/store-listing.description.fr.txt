@@ -1,0 +1,73 @@
+Extension Chrome qui télécharge les informations de plusieurs sites sous forme de fichiers Markdown / VTT.
+Enregistrez sur votre ordinateur, en un seul clic, les revues de pull requests de GitHub, Azure DevOps et AWS CodeCommit, les sous-titres (VTT) des enregistrements de réunions Teams dans SharePoint Stream
+et même l’historique des discussions Microsoft Teams.
+
+【Fonctionnalités】
+
+Tout se fait depuis la fenêtre contextuelle qui s’ouvre lorsque vous cliquez sur l’icône de la barre d’outils.
+La fenêtre contextuelle détecte le site où vous vous trouvez et affiche automatiquement les boutons adaptés.
+
+▼ Télécharger / copier en Markdown (revues de PR)
+Sur une page de pull request GitHub / Azure DevOps / AWS CodeCommit, cliquez sur l’icône : la fenêtre contextuelle affiche
+« Télécharger en MD » et « Copier le MD ». Vous pouvez enregistrer le titre, le corps et tous les commentaires de revue
+dans un seul fichier .md, ou les copier dans le presse-papiers.
+
+▼ Téléchargement direct depuis la page de liste des PR
+Sur les pages de liste des PR de GitHub / Azure DevOps, chaque ligne comporte un bouton de téléchargement, ce qui permet de récupérer une PR sans l’ouvrir.
+
+▼ Commentaires de revue complets
+Les commentaires sont récupérés avec le nom de l’auteur, la date et l’heure, le chemin du fichier concerné et le code de la différence (diff).
+Les commentaires en ligne, les commentaires par fichier et les commentaires généraux sont tous pris en charge.
+Sur Azure DevOps, si les données ne peuvent pas être obtenues depuis le DOM, l’extension bascule automatiquement sur l’API REST.
+
+▼ Compatible avec GitHub / Azure DevOps / AWS CodeCommit
+・GitHub (github.com)
+・Azure DevOps (dev.azure.com / *.visualstudio.com)
+・Azure DevOps avec domaine personnalisé (avec « Autoriser sur ce site » dans la fenêtre contextuelle, seul ce site est autorisé)
+・AWS CodeCommit (pages de détail des PR dans la console de gestion AWS ; pages de détail uniquement)
+La navigation entre les pages des SPA (applications monopages) est également suivie.
+
+▼ Compatible avec SharePoint Stream (enregistrements de réunions Teams)
+Sur la page d’un enregistrement de réunion, cliquez sur l’icône : la fenêtre contextuelle affiche « Télécharger en VTT » et « Copier le VTT ».
+Vous pouvez enregistrer ou copier la transcription (sous-titres) au format .vtt, ce qui est pratique comme brouillon de compte rendu de réunion.
+Elle n’est pas utilisable pour les enregistrements sans transcription.
+
+▼ Compatible avec les discussions Microsoft Teams
+Dans une discussion ou un canal Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft),
+cliquez sur l’icône : la fenêtre contextuelle affiche les boutons suivants.
+・« Télécharger en MD » / « Copier le MD » : collecte par défilement automatique de l’historique, du mois de début choisi jusqu’à aujourd’hui, puis enregistre ou copie l’expéditeur, la date et l’heure, le texte,
+  les réactions et les liens des pièces jointes dans un seul fichier .md.
+・Vous pouvez choisir le mois de début parmi Ce mois-ci / Depuis le mois dernier / Depuis 2 mois / Depuis 3 mois. Si l’historique est plus court, ce qui peut être récupéré est enregistré.
+・Pendant la collecte, un panneau de progression s’affiche en bas à droite de la page. « Enregistrer jusqu’ici » n’enregistre que ce qui a déjà été récupéré, et « Annuler » met fin à la collecte sans rien enregistrer.
+  La collecte se poursuit dans la page : vous pouvez donc fermer la fenêtre contextuelle sans souci.
+・Le fichier est nommé « nom-de-la-discussion_yyyyMMdd.md ». Si la limite de collecte est atteinte, l’extension indique que l’enregistrement est partiel.
+
+【Dans quels cas est-ce utile ?】
+・Vous souhaitez partager avec votre équipe les comptes rendus de revue de code
+・Vous souhaitez reporter le contenu d’une PR dans une documentation ou un compte rendu de réunion
+・Vous souhaitez préparer un support pour une rétrospective de revue
+・Vous souhaitez enregistrer une PR en fichier Markdown depuis la liste, sans l’ouvrir
+・Vous souhaitez rédiger le compte rendu d’une réunion Teams à partir des données de sous-titres
+・Vous souhaitez conserver l’historique des discussions Teams comme sauvegarde ou archive
+
+【Mode d’emploi】
+1. Installez l’extension depuis le Chrome Web Store
+2. Ouvrez une page prise en charge (une PR GitHub / Azure DevOps / AWS CodeCommit, un enregistrement de réunion SharePoint Stream ou une
+   discussion ou un canal Microsoft Teams)
+3. Cliquez sur l’icône de l’extension dans la barre d’outils → la fenêtre contextuelle affiche les boutons propres à ce site
+   - PR : « Télécharger en MD » et « Copier le MD »
+   - Enregistrement de réunion SharePoint : « Télécharger en VTT » et « Copier le VTT »
+   - Discussion Teams : « Télécharger en MD » et « Copier le MD »
+   Remarque : sur les pages de liste des PR de GitHub / Azure DevOps, vous pouvez aussi enregistrer directement avec le bouton de téléchargement de chaque ligne
+4. Cliquez sur le bouton → le fichier .md / .vtt est enregistré (ou copié)
+
+Pour signaler un problème ou poser une question, utilisez « Contacter le support » en bas de la fenêtre contextuelle.
+
+【Confidentialité】
+・La récupération des PR, des sous-titres et des discussions ainsi que la génération des fichiers sont traitées dans le navigateur
+・Ce n’est que lorsque vous envoyez le formulaire de contact facultatif que l’adresse e-mail, le nom facultatif, le contenu de la demande et le code de vérification que vous avez saisis sont transmis à Kagayoi Support
+・Aucune donnée n’est collectée ni transmise à des fins publicitaires, d’analyse ou de télémétrie
+・L’extension se limite à lire le DOM et les API officielles des pages de PR / SharePoint Stream / Teams,
+  à écrire dans le presse-papiers et à télécharger des fichiers
+・Pour les pièces jointes Teams, elle enregistre uniquement les liens affichés à l’écran et ne télécharge pas les fichiers eux-mêmes
+・Tout le code est inclus dans le paquet de l’extension

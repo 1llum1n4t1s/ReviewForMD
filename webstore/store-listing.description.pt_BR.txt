@@ -1,0 +1,73 @@
+Extensão do Chrome que baixa informações de vários sites como arquivos Markdown / VTT.
+Salve no seu computador, com um clique, as revisões de pull requests do GitHub, Azure DevOps e AWS CodeCommit, as legendas (VTT) das gravações de reuniões do Teams no SharePoint Stream
+e até o histórico de conversas do Microsoft Teams.
+
+【O que ela faz】
+
+Tudo é feito pelo pop-up que abre ao clicar no ícone da barra de ferramentas.
+O pop-up detecta o site em que você está e mostra automaticamente os botões adequados a ele.
+
+▼ Baixar / copiar como Markdown (revisões de PR)
+Em uma página de pull request do GitHub / Azure DevOps / AWS CodeCommit, clique no ícone e o pop-up mostrará
+"Baixar como MD" e "Copiar MD". Você pode salvar o título, o corpo e todos os comentários da revisão
+em um único arquivo .md ou copiá-los para a área de transferência.
+
+▼ Download direto também pela página de lista de PRs
+Nas páginas de lista de PRs do GitHub / Azure DevOps, cada linha exibe um botão de download, e você obtém um PR sem precisar abri-lo.
+
+▼ Comentários de revisão completos
+Os comentários são obtidos com o nome do autor, data e hora, caminho do arquivo e código da diferença (diff).
+Comentários em linha, comentários por arquivo e comentários gerais são todos compatíveis.
+No Azure DevOps, se os dados não puderem ser obtidos do DOM, a extensão recorre automaticamente à API REST.
+
+▼ Compatível com GitHub / Azure DevOps / AWS CodeCommit
+・GitHub (github.com)
+・Azure DevOps (dev.azure.com / *.visualstudio.com)
+・Azure DevOps com domínio personalizado (com "Permitir neste site" no pop-up, apenas esse site é autorizado)
+・AWS CodeCommit (páginas de detalhes de PR no Console de Gerenciamento da AWS; somente páginas de detalhes)
+A navegação entre páginas de SPAs (aplicativos de página única) também é acompanhada.
+
+▼ Compatível com SharePoint Stream (gravações de reuniões do Teams)
+Na página de uma gravação de reunião, clique no ícone e o pop-up mostrará "Baixar como VTT" e "Copiar VTT".
+Você pode salvar ou copiar a transcrição (legendas) como arquivo .vtt, o que ajuda como rascunho de ata de reunião.
+Não pode ser usada em gravações sem transcrição.
+
+▼ Compatível com conversas do Microsoft Teams
+Em uma conversa ou canal do Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft),
+clique no ícone e o pop-up mostrará os botões a seguir.
+・"Baixar como MD" / "Copiar MD": coleta, com rolagem automática, o histórico do mês inicial escolhido até hoje e salva ou copia remetente, data e hora, texto,
+  reações e links de anexos em um único arquivo .md.
+・Você pode escolher o mês inicial entre Este mês / Desde o mês passado / Desde 2 meses atrás / Desde 3 meses atrás. Se o histórico for mais curto, o que puder ser obtido é salvo.
+・Durante a coleta, um painel de progresso aparece no canto inferior direito da página. "Salvar até aqui" salva apenas o que já foi coletado, e "Cancelar" encerra sem salvar.
+  A coleta continua na página, então você pode fechar o pop-up sem problemas.
+・O arquivo é salvo como "nome-da-conversa_yyyyMMdd.md". Se o limite de coleta for atingido, a extensão informa que o salvamento é parcial.
+
+【Quando ela é útil】
+・Você quer compartilhar com a equipe os registros de revisão de código
+・Você quer transcrever o conteúdo de um PR para documentação ou atas de reunião
+・Você quer preparar material para uma retrospectiva de revisões
+・Você quer salvar um PR como arquivo Markdown a partir da lista, sem abri-lo
+・Você quer montar a ata de uma reunião do Teams a partir dos dados de legendas
+・Você quer guardar o histórico de conversas do Teams como backup ou registro
+
+【Como usar】
+1. Instale pela Chrome Web Store
+2. Abra uma página compatível (um PR do GitHub / Azure DevOps / AWS CodeCommit, uma gravação de reunião do SharePoint Stream ou uma
+   conversa ou canal do Microsoft Teams)
+3. Clique no ícone da extensão na barra de ferramentas → o pop-up mostra os botões desse site
+   - PR: "Baixar como MD" e "Copiar MD"
+   - Gravação de reunião do SharePoint: "Baixar como VTT" e "Copiar VTT"
+   - Conversa do Teams: "Baixar como MD" e "Copiar MD"
+   Observação: nas páginas de lista de PRs do GitHub / Azure DevOps, você também pode salvar diretamente pelo botão de download de cada linha
+4. Clique no botão → o arquivo .md / .vtt é salvo (ou copiado)
+
+Para relatar um problema ou tirar uma dúvida, use "Falar com o suporte" na parte inferior do pop-up.
+
+【Privacidade】
+・A obtenção de PRs, legendas e conversas e a geração dos arquivos são processadas no navegador
+・Somente quando você envia o formulário de contato opcional, o endereço de e-mail, o nome opcional, o conteúdo da consulta e o código de verificação que você informou são enviados ao Kagayoi Support
+・Nenhum dado é coletado ou enviado para fins de publicidade, análise ou telemetria
+・A extensão apenas lê o DOM e as APIs oficiais das páginas de PR / SharePoint Stream / Teams,
+  grava na área de transferência e baixa arquivos
+・Nos anexos do Teams, ela registra apenas os links exibidos na tela e não baixa os arquivos em si
+・Todo o código está incluído no pacote da extensão

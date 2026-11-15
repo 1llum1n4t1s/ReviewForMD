@@ -1,0 +1,73 @@
+Eine Chrome-Erweiterung, die Informationen von mehreren Websites als Markdown- / VTT-Dateien herunterlädt.
+Speichern Sie mit einem Klick Pull-Request-Reviews von GitHub, Azure DevOps und AWS CodeCommit, Untertitel (VTT) von Teams-Besprechungsaufzeichnungen in SharePoint Stream
+und sogar den Chatverlauf von Microsoft Teams auf Ihrem Computer.
+
+【Funktionen】
+
+Alles läuft über das Popup, das sich beim Klick auf das Symbol in der Symbolleiste öffnet.
+Das Popup erkennt die aktuelle Website und zeigt automatisch die passenden Schaltflächen an.
+
+▼ Als Markdown herunterladen / kopieren (PR-Reviews)
+Klicken Sie auf einer Pull-Request-Seite von GitHub / Azure DevOps / AWS CodeCommit auf das Symbol, dann zeigt das Popup
+„Als MD herunterladen“ und „MD kopieren“ an. Titel, Beschreibung und alle Review-Kommentare
+können in einer einzigen .md-Datei gespeichert oder in die Zwischenablage kopiert werden.
+
+▼ Direkter Download auch von der PR-Listenseite
+Auf den PR-Listenseiten von GitHub / Azure DevOps wird in jeder Zeile eine Download-Schaltfläche angezeigt, sodass Sie einen PR abrufen können, ohne ihn zu öffnen.
+
+▼ Review-Kommentare vollständig erfassen
+Erfasst werden Name des Verfassers, Datum und Uhrzeit, Pfad der betroffenen Datei und der Diff-Code.
+Inline-Kommentare, Kommentare zu einzelnen Dateien und allgemeine Kommentare werden alle unterstützt.
+Bei Azure DevOps wird automatisch auf die REST-API zurückgegriffen, wenn sich die Daten nicht aus dem DOM abrufen lassen.
+
+▼ Unterstützung für GitHub / Azure DevOps / AWS CodeCommit
+・GitHub (github.com)
+・Azure DevOps (dev.azure.com / *.visualstudio.com)
+・Azure DevOps mit benutzerdefinierter Domain (über „Auf dieser Website zulassen“ im Popup wird nur diese Website freigegeben)
+・AWS CodeCommit (PR-Detailseiten in der AWS-Managementkonsole; nur Detailseiten)
+Seitenwechsel innerhalb von SPAs (Single-Page-Anwendungen) werden ebenfalls erkannt.
+
+▼ Unterstützung für SharePoint Stream (Teams-Besprechungsaufzeichnungen)
+Klicken Sie auf der Seite einer Besprechungsaufzeichnung auf das Symbol, dann zeigt das Popup „Als VTT herunterladen“ und „VTT kopieren“ an.
+Das Transkript (Untertitel) lässt sich als .vtt-Datei speichern oder kopieren, praktisch als Entwurf für ein Besprechungsprotokoll.
+Bei Aufzeichnungen ohne Transkript ist die Funktion nicht verfügbar.
+
+▼ Unterstützung für Microsoft-Teams-Chats
+In einem Chat oder Kanal in Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft)
+zeigt das Popup nach einem Klick auf das Symbol die folgenden Schaltflächen an.
+・„Als MD herunterladen“ / „MD kopieren“: Sammelt den Verlauf per automatischem Scrollen ab dem gewählten Startmonat bis heute und speichert oder kopiert Absender, Datum und Uhrzeit, Text,
+  Reaktionen und Anhang-Links in einer einzigen .md-Datei.
+・Als Startmonat können Sie Dieser Monat / Ab letztem Monat / Ab 2 Monaten zuvor / Ab 3 Monaten zuvor wählen. Ist der Verlauf kürzer, wird gespeichert, was abgerufen werden kann.
+・Während der Erfassung erscheint unten rechts auf der Seite ein Fortschrittsfenster. Mit „Bis hierher speichern“ wird nur der bereits erfasste Teil gespeichert, mit „Abbrechen“ wird beendet, ohne zu speichern.
+  Die Erfassung läuft auf der Seite weiter, daher können Sie das Popup bedenkenlos schließen.
+・Die Datei heißt „Chatname_yyyyMMdd.md“. Wird die Erfassungsgrenze erreicht, wird angezeigt, dass nur ein Teil gespeichert wurde.
+
+【Wann es nützlich ist】
+・Sie möchten Code-Review-Protokolle im Team teilen
+・Sie möchten den Inhalt eines PR in Dokumentationen oder Besprechungsprotokolle übernehmen
+・Sie möchten Material für eine Review-Retrospektive erstellen
+・Sie möchten einen PR aus der Liste als Markdown-Datei speichern, ohne ihn zu öffnen
+・Sie möchten aus den Untertiteldaten einer Teams-Besprechung ein Protokoll erstellen
+・Sie möchten den Teams-Chatverlauf als Sicherung oder Aufzeichnung aufbewahren
+
+【So wird es verwendet】
+1. Installieren Sie die Erweiterung aus dem Chrome Web Store
+2. Öffnen Sie eine unterstützte Seite (einen PR bei GitHub / Azure DevOps / AWS CodeCommit, eine Besprechungsaufzeichnung in SharePoint Stream oder einen
+   Chat bzw. Kanal in Microsoft Teams)
+3. Klicken Sie in der Symbolleiste auf das Erweiterungssymbol → das Popup zeigt die Schaltflächen für diese Website an
+   - PR: „Als MD herunterladen“ und „MD kopieren“
+   - SharePoint-Besprechungsaufzeichnung: „Als VTT herunterladen“ und „VTT kopieren“
+   - Teams-Chat: „Als MD herunterladen“ und „MD kopieren“
+   Hinweis: Auf den PR-Listenseiten von GitHub / Azure DevOps können Sie auch direkt über die Download-Schaltfläche in jeder Zeile speichern
+4. Klicken Sie auf die Schaltfläche → die .md- / .vtt-Datei wird gespeichert (oder kopiert)
+
+Fehler melden oder Fragen stellen können Sie über „Support kontaktieren“ unten im Popup.
+
+【Datenschutz】
+・Das Abrufen von PRs, Untertiteln und Chats sowie die Dateierstellung werden im Browser verarbeitet
+・Nur wenn Sie das optionale Kontaktformular absenden, werden die von Ihnen eingegebene E-Mail-Adresse, der optionale Name, der Inhalt der Anfrage und der Bestätigungscode an Kagayoi Support gesendet
+・Zu Werbe-, Analyse- oder Telemetriezwecken werden keine Daten erhoben oder übertragen
+・Es werden nur der DOM und die offiziellen APIs der PR-Seiten / von SharePoint Stream / der Teams-Seiten gelesen,
+  in die Zwischenablage geschrieben und Dateien heruntergeladen
+・Bei Teams-Anhängen werden nur die auf dem Bildschirm angezeigten Links erfasst; die Dateien selbst werden nicht heruntergeladen
+・Der gesamte Code ist im Erweiterungspaket enthalten

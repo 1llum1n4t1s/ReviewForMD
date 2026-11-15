@@ -1,0 +1,73 @@
+A Chrome extension that downloads information from multiple sites as Markdown / VTT files.
+Save pull request reviews from GitHub, Azure DevOps and AWS CodeCommit, meeting transcripts (VTT) from SharePoint Stream (Teams recordings),
+and even Microsoft Teams chat history on your computer with one click.
+
+【What it does】
+
+Everything is done from the popup that opens when you click the toolbar icon.
+The popup detects the site you are on and automatically shows the buttons that fit it.
+
+▼ Download / copy as Markdown (PR reviews)
+On a GitHub / Azure DevOps / AWS CodeCommit pull request page, click the icon and the popup shows
+"Download as MD" and "Copy MD". Save the title, body and all review comments
+as a single .md file, or copy them to the clipboard.
+
+▼ Download directly from the PR list page
+On GitHub / Azure DevOps PR list pages, each row has a download button, so you can get a PR without opening it.
+
+▼ Complete review comments
+Comments are captured with author name, timestamp, target file path and diff code.
+Inline comments, file-level comments and general comments are all supported.
+Azure DevOps automatically falls back to the REST API when the DOM does not provide the data.
+
+▼ GitHub / Azure DevOps / AWS CodeCommit support
+・GitHub (github.com)
+・Azure DevOps (dev.azure.com / *.visualstudio.com)
+・Azure DevOps on a custom domain (use "Allow on this site" in the popup to permit only that site)
+・AWS CodeCommit (PR detail pages in the AWS Management Console; detail pages only)
+Navigation within single-page applications (SPAs) is followed as well.
+
+▼ SharePoint Stream (Teams meeting recordings) support
+On a meeting recording page, click the icon and the popup shows "Download as VTT" and "Copy VTT".
+Save or copy the transcript (captions) as a .vtt file. Handy as a draft for meeting minutes.
+It cannot be used for recordings without a transcript.
+
+▼ Microsoft Teams chat support
+In a chat or channel on Teams (teams.microsoft.com / teams.live.com / teams.cloud.microsoft),
+click the icon and the popup shows the following buttons.
+・"Download as MD" / "Copy MD": collects the history from the selected start month through today via auto-scroll, and saves or copies sender, timestamp, body,
+  reactions and attachment links as a single .md file.
+・You can choose the start month from This month / From last month / From 2 months ago / From 3 months ago. If the history is shorter, whatever can be retrieved is saved.
+・While collecting, a progress panel appears at the bottom right of the page. Use "Save so far" to save only what has been collected, or "Cancel" to stop without saving.
+  Collection continues on the page, so it is fine to close the popup.
+・The file is named "chat-name_yyyyMMdd.md". If a collection limit is reached, the file is marked as a partial export.
+
+【When it helps】
+・You want to share code review records with your team
+・You want to copy PR contents into documentation or meeting minutes
+・You want to build material for a review retrospective
+・You want to save a PR as a Markdown file from the list without opening it
+・You want to turn a Teams meeting into minutes from its caption data
+・You want to keep Teams chat history as a backup or record
+
+【How to use】
+1. Install it from the Chrome Web Store
+2. Open a supported page (a PR on GitHub / Azure DevOps / AWS CodeCommit, a meeting recording on SharePoint Stream, or a Microsoft Teams
+   chat or channel)
+3. Click the extension icon on the toolbar → the popup shows the buttons for that site
+   - PR: "Download as MD" and "Copy MD"
+   - SharePoint meeting recording: "Download as VTT" and "Copy VTT"
+   - Teams chat: "Download as MD" and "Copy MD"
+   Note: on GitHub / Azure DevOps PR list pages, you can also save directly with the download button on each row
+4. Click a button → the .md / .vtt file is saved (or copied)
+
+To report a problem or ask a question, use "Contact support" at the bottom of the popup.
+
+【Privacy】
+・Retrieving PRs, captions and chats and generating files are all processed in your browser
+・Only when you submit the optional contact form are the email address, optional name, inquiry content and verification code you entered sent to Kagayoi Support
+・Nothing is collected or sent for advertising, analytics or telemetry
+・It only reads the DOM and official APIs of PR pages / SharePoint Stream / Teams pages,
+  writes to the clipboard and downloads files
+・For Teams attachments, it only records the links shown on screen and does not download the files themselves
+・All code is included in the extension package

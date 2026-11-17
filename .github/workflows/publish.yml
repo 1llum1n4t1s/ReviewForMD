@@ -71,6 +71,18 @@ jobs:
       - name: Install locked dependencies and verify support assets
         run: bun run deps && bun --bun run sync:support --check
 
+      # ZIP 作成・R2 保存・ストア提出より前に本体の検証を通す。失敗したら公開しない。
+      # dependency-validation.yml と同じ検証。
+      - name: R2 転送プロトコルをオフライン検証
+        shell: pwsh
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/R2Transfer/Run.ps1') -WorkRoot (Join-Path $env:RUNNER_TEMP 'r2-transfer-check')
+          if ($LASTEXITCODE -ne 0) { throw 'R2 transfer tests failed' }
+      - name: AMO listing metadata を検証
+        run: bun test ./scripts/New-AmoMetadata.test.mjs
+      - name: src と scripts の構文を検証
+        run: find src scripts -type f ( -name '*.js' -o -name '*.mjs' ) -print0 | xargs -0 -r bun build --no-bundle --outdir "$RUNNER_TEMP/syntax-check"
+
       - name: zip パッケージを作成
         run: |
           # zip.sh を再利用して除外条件（hidden/.env 等）をローカルと一元化する

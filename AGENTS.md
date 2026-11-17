@@ -14,7 +14,7 @@
 
 CWSはAPI V2を使うため、上記に加えてGitHub Actions variable `CWS_PUBLISHER_ID`（secretでも可）が必要。Developer Dashboardのアカウントページで確認する。提出状態の判定は [DESIGN.md](DESIGN.md#配布設計) を参照する。AMO jobはPowerShellで実行する。
 
-ローカルに自動テスト・専用リンタはない。配信CIは `.github/workflows/publish.yml` にある。実機読み込みは [README.md](README.md#インストール) を参照する。
+製品固有の自動テストは無いが、構文検証（`bun build --no-bundle`）・AMO metadata テスト・R2 転送のオフライン検証・共通部品の同期確認・ZIP 作成を `.github/workflows/dependency-validation.yml` が main への push と全 PR で実行する。配信CI（`.github/workflows/publish.yml`）も `package` job で ZIP 作成前に同じ検証を行い、失敗したら公開しない。実機読み込みは [README.md](README.md#インストール) を参照する。
 
 **構文サニティチェック（テスト代替）:** 自動テスト・専用リンタが無いため、JS を変更したら `bun build --no-bundle <file> --outdir <temporary-directory>` で構文確認するのが慣習（壊れた構文は実機まで気づけない）。例: `bun build --no-bundle src/extractors/teams_extractor.js --outdir <temporary-directory>`。manifest は `Get-Content manifest.json -Raw | ConvertFrom-Json` で JSON 妥当性を確認できる。
 

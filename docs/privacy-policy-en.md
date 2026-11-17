@@ -1,6 +1,6 @@
 # Privacy Policy — いろいろMDコピー (Review For MD)
 
-**Last Updated: August 28, 2026**
+**Last Updated: November 18, 2026**
 
 ## Overview
 
@@ -81,7 +81,7 @@ Data accessed by this Extension (PR titles, body, review comments, SharePoint St
 The Extension does not persist PR content, transcripts, or chat messages taken from pages:
 
 - PR content, transcripts, and chat messages are not saved to localStorage
-- No IndexedDB / chrome.storage usage
+- That content is not saved to IndexedDB or chrome.storage either (chrome.storage.local holds only the display language chosen in the popup and its display dictionary)
 - No external server storage (only what you submit through the contact form is stored by Kagayoi Support so it can be answered)
 
 As an exception, the contact authentication session (the access token, email address, and expiry returned by Kagayoi Support) is saved in the extension's `localStorage`, but only if you use the contact form. It stops working once it expires or the extension is removed, and the verification code itself is never stored.

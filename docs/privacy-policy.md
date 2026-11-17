@@ -1,6 +1,6 @@
 # Privacy Policy — いろいろMDコピー (Review For MD)
 
-**Last Updated: 2026-08-28**
+**Last Updated: 2026-11-18**
 
 ## Overview
 
@@ -81,7 +81,7 @@ SPA（Single Page Application）のページ遷移を検知し、PR 一覧ペー
 本拡張機能がページから取得した PR・トランスクリプト・チャットの内容は、永続的に保存しません。
 
 - 取得した PR・トランスクリプト・チャットの内容は、ローカルストレージ（localStorage）へ保存しません
-- IndexedDB / chrome.storage への保存なし
+- 取得した内容は IndexedDB / chrome.storage にも保存しません（chrome.storage.local に保存するのは、ポップアップで選んだ表示言語とその表示用辞書だけです）
 - 外部サーバーへの保存なし（お問い合わせフォームから送信した内容だけは、返信のため Kagayoi Support に保存されます）
 
 例外として、お問い合わせの認証セッション（Kagayoi Support が返したアクセストークン、メールアドレス、有効期限）は、お問い合わせフォームを使ったときだけ拡張機能の `localStorage` に保存します。有効期限切れまたは拡張機能の削除で利用できなくなり、確認コードは保存しません。

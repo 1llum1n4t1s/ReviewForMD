@@ -152,6 +152,9 @@ Teams（teams.microsoft.com / teams.live.com / teams.cloud.microsoft）のチャ
   clipboardWrite:
   ポップアップの「コピー」操作で、整形した Markdown / VTT テキストをクリップボードに書き込むために使用します（読み取りは行いません）。
 
+  storage:
+  ポップアップで選んだ表示言語（9 言語）と、その言語の表示用辞書をブラウザ内（chrome.storage.local）へ保存するために使用します。保存した内容は端末内にのみ置かれ、外部へ送信されません。ダウンロード・コピーする PR やチャットの内容は保存しません。
+
   ホスト権限:
   GitHub / Azure DevOps の PR ページ、AWS CodeCommit の PR 詳細ページからタイトル・本文・レビューコメントを読み取り Markdown に整形します。SharePoint Stream の会議録画ページでは VTT 字幕取得用の Microsoft 公式 API を呼び出します。Microsoft Teams のチャット/チャネルではメッセージ履歴（送信者・日時・本文・リアクション・添付リンク）を読み取り Markdown に整形します。support.kagayoi.com は、ユーザーがお問い合わせフォームを送信したときのメール確認とチケット作成の通信にだけ使います。任意のホスト権限（https://*/*）は、社内ホストの Azure DevOps などカスタムドメインで、ユーザーがポップアップの『このサイトでの動作を許可する』を押したオリジンに対してだけ要求します。
 

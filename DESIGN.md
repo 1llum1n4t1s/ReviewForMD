@@ -27,7 +27,7 @@
 | `src/shared/` | `@kagayoi/support-extension` から同期したJS/CSSの配布時コピーとして、popup内の問い合わせフォームとフッターを提供する。抽出機能とはデータを共有しない。 |
 | `scripts/create-firefox-manifest.mjs` | Chrome正本からFirefoxの`background.scripts`形式へmanifestを決定的に変換する。 |
 | `zip.ps1` / `zip.sh` | Chrome用`ReviewForMD.zip`とFirefox用`ReviewForMD-firefox.zip`を生成する。 |
-| `.github/workflows/publish.yml` | `release/x.y.z`を検証・梱包し、CWSとAMOを独立ジョブで提出する。 |
+| `.github/workflows/publish.yml` | 版タグ`vx.y.z`のpushを契機に検証・梱包し、CWSとAMOを独立ジョブで提出する。 |
 
 ## 実行モデルとデータフロー
 

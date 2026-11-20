@@ -1,7 +1,7 @@
 name: Dependency validation
 
 # main への push と全 PR（Dependabot 以外も）で本体の検証を走らせる。
-# release/** の公開 workflow（publish.yml）も ZIP 作成前に同じ検証（構文・AMO metadata・R2 転送）を実行する。
+# 版タグ push の公開 workflow（publish.yml）も ZIP 作成前に同じ検証（構文・AMO metadata・R2 転送）を実行する。
 on:
   push:
     branches: [main]
